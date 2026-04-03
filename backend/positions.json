@@ -1,0 +1,26 @@
+[
+  {
+    "id": "1",
+    "ticker": "SPY",
+    "type": "short_call",
+    "strike": 685.0,
+    "expiry": "2026-04-24",
+    "contracts": 6,
+    "sell_price": 1.75,
+    "premium_collected": 1050.00,
+    "open_date": "2026-04-01",
+    "status": "open"
+  },
+  {
+    "id": "2",
+    "ticker": "SPY",
+    "type": "short_call",
+    "strike": 690.0,
+    "expiry": "2026-05-15",
+    "contracts": 6,
+    "sell_price": 4.01,
+    "premium_collected": 2406.00,
+    "open_date": "2026-04-01",
+    "status": "open"
+  }
+]
