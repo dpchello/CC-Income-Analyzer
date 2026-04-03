@@ -1,3 +1,12 @@
+const FACTOR_EXPLAIN = {
+  iv_rank: 'IV Rank measures where today\'s VIX sits within its 52-week range. Think of it as a "cheapness meter" for options. Above 50 means premiums are above average — the seller has an edge. Below 15 means premiums are historically cheap and there\'s little point selling.',
+  vix_level: 'The raw VIX level matters independently of rank. VIX 20–28 is the sweet spot: premiums are fat enough to be worth collecting, but not so high that the market is in panic mode (which brings serial down-days that can overwhelm a short call position).',
+  vvix: 'VVIX is the "volatility of volatility" — it measures how erratically VIX itself is moving. A calm VVIX means the volatility regime is stable and predictable. A spike above 100 is a warning that VIX could jump suddenly, which is dangerous for short option positions.',
+  spy_trend: 'Covered calls underperform in strong uptrends — if SPY is rocketing higher, your sold call caps your upside and you get called away or forced to buy back at a loss. A flat or mildly rising trend is ideal: you collect premium, SPY drifts sideways or up slowly, and the call expires worthless.',
+  rates: 'When the 10-year Treasury yield falls (rates down), bond prices rise and equity markets tend to rally. This is generally a tailwind for SPY and means your OTM calls are less likely to be breached. Rising rates can be a headwind for equities.',
+  curve: 'The yield curve compares short- and long-term interest rates. When the 5-year yield is below the 10-year (normal curve), the economy is healthy. An inverted curve (5yr > 10yr) has historically preceded recessions and adds a macro risk signal.',
+}
+
 function ScoreBar({ score, maxAbs = 3 }) {
   const pct = Math.abs(score) / maxAbs * 100
   const color = score > 0 ? '#00ff88' : score < 0 ? '#ff3d5a' : '#4a5568'
@@ -118,7 +127,14 @@ export default function SignalEngine({ signalData }) {
       <div className="panel p-4">
         <div className="text-xs font-mono text-terminal-muted uppercase tracking-wider mb-3">Factor Scorecard</div>
         {factor_scores && Object.entries(factor_scores).map(([key, data]) => (
-          <FactorRow key={key} name={factorNames[key] || key} data={data} />
+          <div key={key}>
+            <FactorRow name={factorNames[key] || key} data={data} />
+            {FACTOR_EXPLAIN[key] && (
+              <p className="text-xs text-terminal-muted font-sans leading-relaxed px-1 pb-2 border-b border-terminal-border/30">
+                {FACTOR_EXPLAIN[key]}
+              </p>
+            )}
+          </div>
         ))}
       </div>
 

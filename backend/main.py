@@ -2,6 +2,7 @@ import json
 import uuid
 from datetime import datetime, date
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -44,15 +45,15 @@ class PositionIn(BaseModel):
     expiry: str
     contracts: int = 6
     sell_price: float
-    premium_collected: float | None = None
-    open_date: str | None = None
+    premium_collected: Optional[float] = None
+    open_date: Optional[str] = None
     status: str = "open"
 
 
 class PositionUpdate(BaseModel):
-    status: str | None = None
-    close_price: float | None = None
-    close_date: str | None = None
+    status: Optional[str] = None
+    close_price: Optional[float] = None
+    close_date: Optional[str] = None
 
 
 def _dte(expiry_str: str) -> int:

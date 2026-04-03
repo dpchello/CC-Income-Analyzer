@@ -8,7 +8,7 @@ class SignalEngine:
         expiry = datetime.strptime(expiry_str, "%Y-%m-%d").date()
         return (expiry - date.today()).days
 
-    def _score_iv_rank(self, iv_rank: float) -> tuple[int, str, str]:
+    def _score_iv_rank(self, iv_rank: float) -> tuple:
         if iv_rank > 70:
             return 3, "STRONG SELL — fat VRP, elevated premium", "STRONG SELL"
         elif iv_rank >= 50:
@@ -20,7 +20,7 @@ class SignalEngine:
         else:
             return -3, "AVOID — premium too thin, no edge per academic research", "AVOID"
 
-    def _score_vix_level(self, vix: float) -> tuple[int, str, str]:
+    def _score_vix_level(self, vix: float) -> tuple:
         if 20 <= vix <= 28:
             return 2, "Academic sweet spot — fat premium, manageable risk", "GOOD"
         elif 28 < vix <= 35:
@@ -32,7 +32,7 @@ class SignalEngine:
         else:
             return -1, "BXM studies show thin premium below VIX 15", "THIN"
 
-    def _score_vvix(self, vvix: float) -> tuple[int, str, str]:
+    def _score_vvix(self, vvix: float) -> tuple:
         if vvix < 90:
             return 1, "Stable vol regime, safe to sell", "STABLE"
         elif vvix <= 100:
@@ -40,7 +40,7 @@ class SignalEngine:
         else:
             return -2, "Vol-of-vol spike = regime change risk, possible VIX jump", "DANGER"
 
-    def _score_trend(self, spy_ma_signal: dict) -> tuple[int, str, str]:
+    def _score_trend(self, spy_ma_signal: dict) -> tuple:
         above_ma = spy_ma_signal.get("above_ma", True)
         slope = spy_ma_signal.get("slope_pct", 0)
         if above_ma and slope < 0.5:
@@ -52,7 +52,7 @@ class SignalEngine:
         else:
             return 0, "SPY below 20MA — sell very far OTM or skip; downside risk on shares increases", "BELOW MA"
 
-    def _score_rates(self, tnx_history: list, tlt_history: list) -> tuple[int, str, str]:
+    def _score_rates(self, tnx_history: list, tlt_history: list) -> tuple:
         if len(tnx_history) >= 5 and len(tlt_history) >= 5:
             tnx_change = tnx_history[-1] - tnx_history[-5]  # in percentage points
             tlt_change = tlt_history[-1] - tlt_history[-5]
@@ -64,13 +64,13 @@ class SignalEngine:
                 return 0, "Rates neutral", "NEUTRAL"
         return 0, "Insufficient rate history", "NEUTRAL"
 
-    def _score_curve(self, fvx: float, tnx: float) -> tuple[int, str, str]:
+    def _score_curve(self, fvx: float, tnx: float) -> tuple:
         if fvx < tnx:
             return 1, "Normal yield curve (FVX < TNX)", "NORMAL"
         else:
             return -1, "Inverted yield curve (FVX > TNX)", "INVERTED"
 
-    def _compute_regime(self, total_score: int) -> tuple[str, str]:
+    def _compute_regime(self, total_score: int) -> tuple:
         if total_score >= 6:
             return "SELL PREMIUM", "HIGH"
         elif total_score >= 3:
