@@ -29,11 +29,12 @@ function SentimentBadge({ score }) {
 
 // ── Headline ──────────────────────────────────────────────────────────────────
 
-function Headline({ positions, dashData, signalData }) {
+function Headline({ positions, holdings, dashData, signalData }) {
   const open = positions.filter(p => p.status === 'open')
   const totalPremium = open.reduce((s, p) => s + (p.premium_collected || 0), 0)
   const spyPrice = dashData?.spy?.price || 0
-  const underlyingValue = 600 * spyPrice
+  const totalShares = (holdings || []).filter(h => h.ticker === 'SPY').reduce((s, h) => s + h.shares, 0)
+  const underlyingValue = (totalShares || 600) * spyPrice
   const annualizedPct = underlyingValue > 0
     ? ((totalPremium / underlyingValue) * 12 * 100).toFixed(1) : '—'
   const avgDte = open.length ? open.reduce((s, p) => s + (p.dte || 30), 0) / open.length : 30
@@ -188,12 +189,13 @@ function PositionRow({ pos, onNavigate }) {
 
 // ── Main Dashboard ────────────────────────────────────────────────────────────
 
-export default function Dashboard({ dashData, signalData, positions, alphaData, onNavigate }) {
+export default function Dashboard({ dashData, signalData, positions, holdings, alphaData, onNavigate }) {
   const open = positions.filter(p => p.status === 'open')
   const totalPremium = open.reduce((s, p) => s + (p.premium_collected || 0), 0)
   const totalPnl = open.reduce((s, p) => s + (p.pnl || 0), 0)
   const spyPrice = dashData?.spy?.price || 0
-  const underlyingValue = 600 * spyPrice
+  const totalShares = (holdings || []).filter(h => h.ticker === 'SPY').reduce((s, h) => s + h.shares, 0)
+  const underlyingValue = (totalShares || 600) * spyPrice
   const avgCapture = open.length
     ? open.reduce((s, p) => s + (p.profit_capture_pct || 0), 0) / open.length : 0
   const atRisk = open.filter(p => { const r = riskLevel(p); return r === 'critical' || r === 'breach' || r === 'roll' }).length
@@ -208,7 +210,7 @@ export default function Dashboard({ dashData, signalData, positions, alphaData, 
     <div className="space-y-6">
 
       {/* Headline */}
-      <Headline positions={positions} dashData={dashData} signalData={signalData} />
+      <Headline positions={positions} holdings={holdings} dashData={dashData} signalData={signalData} />
 
       {/* Stat Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -322,7 +324,7 @@ export default function Dashboard({ dashData, signalData, positions, alphaData, 
 
         {open.length > 0 && (
           <div className="px-5 py-3 border-t flex flex-wrap gap-6 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
-            <span>Underlying (600 shares): <span style={{ color: 'var(--text)' }}>${underlyingValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span></span>
+            <span>Underlying ({totalShares || 600} shares): <span style={{ color: 'var(--text)' }}>${underlyingValue.toLocaleString(undefined, { maximumFractionDigits: 0 })}</span></span>
             <span>Total premium at stake: <span style={{ color: 'var(--text)' }}>${totalPremium.toLocaleString()}</span></span>
             <span>{atRisk} position{atRisk !== 1 ? 's' : ''} need attention</span>
           </div>

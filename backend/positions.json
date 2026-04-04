@@ -7,9 +7,10 @@
     "expiry": "2026-04-24",
     "contracts": 6,
     "sell_price": 1.75,
-    "premium_collected": 1050.00,
+    "premium_collected": 1050.0,
     "open_date": "2026-04-01",
-    "status": "open"
+    "status": "open",
+    "portfolio_id": "default"
   },
   {
     "id": "2",
@@ -19,8 +20,9 @@
     "expiry": "2026-05-15",
     "contracts": 6,
     "sell_price": 4.01,
-    "premium_collected": 2406.00,
+    "premium_collected": 2406.0,
     "open_date": "2026-04-01",
-    "status": "open"
+    "status": "open",
+    "portfolio_id": "default"
   }
 ]
