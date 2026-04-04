@@ -10,6 +10,7 @@ from pydantic import BaseModel
 
 from data_fetcher import DataFetcher
 from signals import SignalEngine
+import alpha_fetcher as av
 
 app = FastAPI(title="SPY Covered Call Tracker")
 
@@ -269,3 +270,28 @@ def get_spy_history():
         else:
             rec["ma_20"] = None
     return records
+
+
+# ── AlphaVantage endpoints ────────────────────────────────────────────────────
+
+@app.get("/api/alpha/news")
+def alpha_news():
+    return av.get_news_sentiment()
+
+
+@app.get("/api/alpha/technicals")
+def alpha_technicals():
+    return av.get_all_technicals()
+
+
+@app.get("/api/alpha/yields")
+def alpha_yields():
+    return {
+        "ten_year": av.get_treasury_yield_10y(),
+        "five_year": av.get_treasury_yield_5y(),
+    }
+
+
+@app.get("/api/alpha/usage")
+def alpha_usage():
+    return av.get_usage()

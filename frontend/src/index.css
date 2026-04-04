@@ -2,47 +2,86 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  background-color: #0a0e1a;
-  color: #c8d6e5;
+/* ── CSS Token System ──────────────────────────────────────────────────────── */
+
+:root {
+  --bg:        #0a0e1a;
+  --surface:   #0f1629;
+  --border:    #1e2d4a;
+  --text:      #c8d6e5;
+  --muted:     #4a5568;
+  --green:     #00ff88;
+  --red:       #ff3d5a;
+  --amber:     #ffb020;
+  --blue:      #4a9eff;
+}
+
+html.light {
+  --bg:        #f0f4f8;
+  --surface:   #ffffff;
+  --border:    #d1dce8;
+  --text:      #1a2332;
+  --muted:     #64748b;
+  --green:     #059669;
+  --red:       #dc2626;
+  --amber:     #d97706;
+  --blue:      #2563eb;
+}
+
+/* ── Base Styles ───────────────────────────────────────────────────────────── */
+
+html, body {
+  background-color: var(--bg);
+  color: var(--text);
   font-family: 'DM Sans', sans-serif;
+  transition: background-color 0.2s, color 0.2s;
 }
 
 .font-mono {
   font-family: 'IBM Plex Mono', monospace;
 }
 
+/* ── Theme-aware utility classes ───────────────────────────────────────────── */
+
+.th-bg       { background-color: var(--bg); }
+.th-surface  { background-color: var(--surface); }
+.th-border   { border-color: var(--border); }
+.th-text     { color: var(--text); }
+.th-muted    { color: var(--muted); }
+.th-green    { color: var(--green); }
+.th-red      { color: var(--red); }
+.th-amber    { color: var(--amber); }
+.th-blue     { color: var(--blue); }
+
+.th-surface-border {
+  background-color: var(--surface);
+  border: 1px solid var(--border);
+}
+
+/* ── Animations ────────────────────────────────────────────────────────────── */
+
 @keyframes pulse-green {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
+  50%       { opacity: 0.4; }
 }
 
 @keyframes pulse-red {
   0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  50%       { opacity: 0.3; }
 }
 
-.pulse-green {
-  animation: pulse-green 1.5s ease-in-out infinite;
-}
+.pulse-green { animation: pulse-green 1.5s ease-in-out infinite; }
+.pulse-red   { animation: pulse-red   1.0s ease-in-out infinite; }
 
-.pulse-red {
-  animation: pulse-red 1s ease-in-out infinite;
-}
+/* ── Legacy .panel class (still used in some components) ──────────────────── */
 
 .panel {
-  background-color: #0f1629;
-  border: 1px solid #1e2d4a;
+  background-color: var(--surface);
+  border: 1px solid var(--border);
 }
 
-::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
-}
-::-webkit-scrollbar-track {
-  background: #0a0e1a;
-}
-::-webkit-scrollbar-thumb {
-  background: #1e2d4a;
-  border-radius: 3px;
-}
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTheme } from './theme.jsx'
 import Dashboard from './components/Dashboard.jsx'
 import Portfolios from './components/Portfolios.jsx'
 import SignalTracker from './components/SignalTracker.jsx'
@@ -16,19 +17,25 @@ export default function App() {
   const [dashData, setDashData] = useState(null)
   const [signalData, setSignalData] = useState(null)
   const [positions, setPositions] = useState([])
+  const [alphaData, setAlphaData] = useState({ news: null, technicals: null, usage: null })
   const [lastUpdated, setLastUpdated] = useState(null)
   const [loading, setLoading] = useState(true)
+  const { theme } = useTheme()
 
   const fetchAll = useCallback(async () => {
     try {
-      const [dash, sig, pos] = await Promise.all([
+      const [dash, sig, pos, news, tech, usage] = await Promise.all([
         fetch('/api/dashboard').then(r => r.json()),
         fetch('/api/signals').then(r => r.json()),
         fetch('/api/positions').then(r => r.json()),
+        fetch('/api/alpha/news').then(r => r.json()).catch(() => null),
+        fetch('/api/alpha/technicals').then(r => r.json()).catch(() => null),
+        fetch('/api/alpha/usage').then(r => r.json()).catch(() => null),
       ])
       setDashData(dash)
       setSignalData(sig)
       setPositions(pos)
+      setAlphaData({ news, technicals: tech, usage })
       setLastUpdated(new Date())
     } catch (e) {
       console.error('Fetch error:', e)
@@ -44,31 +51,34 @@ export default function App() {
   }, [fetchAll])
 
   return (
-    <div className="min-h-screen bg-[#0a0e1a] text-[#c8d6e5] font-sans">
+    <div className="min-h-screen font-sans" style={{ backgroundColor: 'var(--bg)', color: 'var(--text)' }}>
 
-      {/* ── Header ─────────────────────────────────────────────── */}
-      <header className="bg-[#0f1629] border-b border-[#1e2d4a] px-6 py-0 flex items-center justify-between h-14">
-        {/* App name */}
+      {/* ── Header ───────────────────────────────────────────── */}
+      <header
+        className="px-6 py-0 flex items-center justify-between h-14 border-b"
+        style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
+      >
         <div className="flex items-center gap-3">
-          <span className="text-white font-semibold text-base tracking-tight">Covered Call Generator</span>
+          <span className="font-semibold text-base tracking-tight" style={{ color: 'var(--text)' }}>
+            Covered Call Generator
+          </span>
           {lastUpdated && (
-            <span className="text-xs text-[#4a5568]">
+            <span className="text-xs" style={{ color: 'var(--muted)' }}>
               Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
         </div>
 
-        {/* Tabs */}
         <nav className="flex h-full">
           {TABS.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`px-5 h-full text-sm font-medium border-b-2 transition-colors ${
-                activeTab === tab.id
-                  ? 'border-[#00ff88] text-white'
-                  : 'border-transparent text-[#4a5568] hover:text-[#c8d6e5]'
-              }`}
+              className="px-5 h-full text-sm font-medium border-b-2 transition-colors"
+              style={{
+                borderColor: activeTab === tab.id ? 'var(--green)' : 'transparent',
+                color: activeTab === tab.id ? 'var(--text)' : 'var(--muted)',
+              }}
             >
               {tab.label}
             </button>
@@ -76,13 +86,16 @@ export default function App() {
         </nav>
       </header>
 
-      {/* ── Content ────────────────────────────────────────────── */}
+      {/* ── Content ──────────────────────────────────────────── */}
       <main className="px-6 py-6 max-w-screen-xl mx-auto">
         {loading ? (
           <div className="flex items-center justify-center h-64">
             <div className="text-center space-y-2">
-              <div className="w-6 h-6 border-2 border-[#00ff88] border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="text-sm text-[#4a5568]">Loading market data…</p>
+              <div
+                className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin mx-auto"
+                style={{ borderColor: 'var(--green)', borderTopColor: 'transparent' }}
+              />
+              <p className="text-sm" style={{ color: 'var(--muted)' }}>Loading market data…</p>
             </div>
           </div>
         ) : (
@@ -92,6 +105,7 @@ export default function App() {
                 dashData={dashData}
                 signalData={signalData}
                 positions={positions}
+                alphaData={alphaData}
                 onNavigate={setActiveTab}
               />
             )}
@@ -99,10 +113,10 @@ export default function App() {
               <Portfolios positions={positions} dashData={dashData} signalData={signalData} onRefresh={fetchAll} />
             )}
             {activeTab === 'Signal Tracker' && (
-              <SignalTracker signalData={signalData} dashData={dashData} />
+              <SignalTracker signalData={signalData} dashData={dashData} alphaData={alphaData} />
             )}
             {activeTab === 'Settings' && (
-              <Settings onRefresh={fetchAll} />
+              <Settings onRefresh={fetchAll} alphaUsage={alphaData.usage} />
             )}
           </>
         )}
