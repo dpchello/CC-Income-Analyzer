@@ -210,6 +210,24 @@ class DataFetcher:
         _cache.set("expiries", result)
         return result
 
+    def get_screener_expiries(self, max_dte: int = 60) -> list:
+        cache_key = f"screener_expiries_{max_dte}"
+        cached = _cache.get(cache_key)
+        if cached:
+            return cached
+        try:
+            t = _ticker("SPY")
+            all_expiries = t.options
+            today = datetime.today().date()
+            result = [
+                e for e in all_expiries
+                if 0 <= (datetime.strptime(e, "%Y-%m-%d").date() - today).days <= max_dte
+            ]
+        except Exception:
+            result = []
+        _cache.set(cache_key, result)
+        return result
+
     def get_tnx_history(self, days: int = 10) -> list:
         cached = _cache.get(f"tnx_hist_{days}")
         if cached:

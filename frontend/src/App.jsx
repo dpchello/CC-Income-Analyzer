@@ -127,7 +127,15 @@ export default function App() {
               />
             )}
             {activeTab === 'Signal Tracker' && (
-              <SignalTracker signalData={signalData} dashData={dashData} alphaData={alphaData} />
+              <SignalTracker
+                signalData={signalData}
+                dashData={dashData}
+                alphaData={alphaData}
+                portfolios={portfolios}
+                holdings={holdings}
+                positions={positions}
+                onRefresh={fetchAll}
+              />
             )}
             {activeTab === 'Settings' && (
               <Settings onRefresh={fetchAll} alphaUsage={alphaData.usage} />
