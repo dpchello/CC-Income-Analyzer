@@ -1,3 +1,5 @@
+import { useState } from 'react'
+
 const FACTOR_DEFS = {
   iv_rank:   { name: 'IV Rank',       question: 'Are premiums worth selling today?',              explain: "IV Rank measures where today's VIX sits within its 52-week range. 0 = historically cheap options, 100 = historically expensive. Above 50 means you have a statistical edge as a seller. Below 15 means premiums are too thin." },
   vix_level: { name: 'VIX Level',     question: 'Is volatility in a safe range?',                explain: 'VIX 20–28 is the sweet spot: premiums are fat but the market isn\'t in panic mode. Above 35 brings serial down-days that can overwhelm short call positions.' },
@@ -117,7 +119,279 @@ function TechnicalsPanel({ technicals }) {
   )
 }
 
-export default function SignalTracker({ signalData, dashData, alphaData }) {
+// ── Screener ──────────────────────────────────────────────────────────────────
+
+function ScreenerPanel({ portfolios, holdings, positions, onRefresh }) {
+  const activePortfolios = (portfolios || []).filter(p => !p.archived)
+  const [selectedPortfolioId, setSelectedPortfolioId] = useState(
+    () => activePortfolios[0]?.id || 'default'
+  )
+  const [maxDelta, setMaxDelta] = useState('0.30')
+  const [results, setResults] = useState(null)
+  const [meta, setMeta] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [adding, setAdding] = useState(null)   // id of candidate being added
+  const [added, setAdded] = useState({})        // set of added keys
+
+  async function runScreener() {
+    setLoading(true)
+    setError(null)
+    setResults(null)
+    try {
+      const params = new URLSearchParams({
+        portfolio_id: selectedPortfolioId,
+        max_delta: maxDelta,
+      })
+      const res = await fetch(`/api/screener?${params}`)
+      if (!res.ok) throw new Error(`Server error ${res.status}`)
+      const data = await res.json()
+      setResults(data.candidates || [])
+      setMeta(data.meta || {})
+    } catch (e) {
+      setError(String(e))
+    }
+    setLoading(false)
+  }
+
+  async function addPosition(candidate) {
+    const key = `${candidate.strike}-${candidate.expiry}`
+    setAdding(key)
+    try {
+      const body = {
+        ticker: 'SPY',
+        type: 'short_call',
+        strike: candidate.strike,
+        expiry: candidate.expiry,
+        contracts: candidate.contracts_suggested,
+        sell_price: candidate.mid,
+        premium_collected: candidate.premium_total,
+        portfolio_id: selectedPortfolioId,
+      }
+      const res = await fetch('/api/positions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      if (res.ok) {
+        setAdded(prev => ({ ...prev, [key]: true }))
+        onRefresh()
+      } else {
+        const err = await res.json()
+        setError(err.detail || 'Failed to add position')
+      }
+    } catch (e) {
+      setError(String(e))
+    }
+    setAdding(null)
+  }
+
+  const cell = 'px-3 py-2 text-xs font-mono whitespace-nowrap'
+  const hdr  = 'px-3 py-2 text-xs uppercase tracking-wider font-medium text-left'
+  const inputStyle = { backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }
+
+  function scoreColor(s) {
+    return s >= 75 ? 'var(--green)' : s >= 50 ? 'var(--amber)' : 'var(--muted)'
+  }
+  function deltaColor(d) {
+    return d > 0.25 ? 'var(--red)' : d > 0.20 ? 'var(--amber)' : 'var(--text)'
+  }
+  function taxColor(ratio) {
+    return ratio > 1.0 ? 'var(--red)' : ratio > 0.5 ? 'var(--amber)' : 'var(--green)'
+  }
+
+  return (
+    <div className="border" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}>
+      {/* Header */}
+      <div className="px-5 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+        <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Covered Call Screener</h2>
+        <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+          Ranks live options chains by composite score — signal strength, annualized yield, delta safety, and assignment tax risk.
+        </p>
+      </div>
+
+      {/* Controls */}
+      <div className="px-5 py-4 flex flex-wrap gap-4 items-end border-b" style={{ borderColor: 'var(--border)' }}>
+        <div>
+          <label className="block text-xs uppercase tracking-wider mb-1 font-mono" style={{ color: 'var(--muted)' }}>Portfolio</label>
+          <select
+            className="px-3 py-2 text-sm font-mono border focus:outline-none"
+            style={inputStyle}
+            value={selectedPortfolioId}
+            onChange={e => { setSelectedPortfolioId(e.target.value); setResults(null) }}
+          >
+            {activePortfolios.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs uppercase tracking-wider mb-1 font-mono" style={{ color: 'var(--muted)' }}>Max Delta</label>
+          <input
+            type="number" step="0.01" min="0.05" max="0.50"
+            className="w-24 px-3 py-2 text-sm font-mono border focus:outline-none"
+            style={inputStyle}
+            value={maxDelta}
+            onChange={e => setMaxDelta(e.target.value)}
+          />
+        </div>
+        <button
+          onClick={runScreener}
+          disabled={loading}
+          className="px-5 py-2 text-sm font-medium border disabled:opacity-50 transition-colors"
+          style={{ borderColor: 'var(--green)', color: 'var(--green)', backgroundColor: 'rgba(0,255,136,0.08)' }}
+        >
+          {loading ? 'Scanning…' : 'Run Screener'}
+        </button>
+        {meta && (
+          <div className="text-xs" style={{ color: 'var(--muted)' }}>
+            {meta.total_contracts} contracts available from {meta.total_shares} shares ·
+            avg cost ${meta.avg_cost?.toFixed(2)} ·
+            signal {meta.total_score}/12 ({meta.regime})
+          </div>
+        )}
+      </div>
+
+      {/* Error */}
+      {error && (
+        <div className="px-5 py-3 text-xs font-mono" style={{ color: 'var(--red)', backgroundColor: 'rgba(255,61,90,0.06)' }}>
+          {error}
+        </div>
+      )}
+
+      {/* No holdings warning */}
+      {!loading && results === null && !error && (
+        <div className="px-5 py-8 text-center text-sm" style={{ color: 'var(--muted)' }}>
+          Configure your portfolio and click Run Screener to see ranked candidates.
+          <br />
+          <span className="text-xs">Requires SPY holdings to be entered in the Portfolios tab.</span>
+        </div>
+      )}
+
+      {/* Results table */}
+      {results !== null && results.length === 0 && (
+        <div className="px-5 py-8 text-center text-sm" style={{ color: 'var(--muted)' }}>
+          No candidates found matching your criteria. Try increasing Max Delta or check that SPY holdings are entered.
+        </div>
+      )}
+
+      {results !== null && results.length > 0 && (
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="border-b" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
+                <th className={hdr}>Score</th>
+                <th className={hdr}>Expiry</th>
+                <th className={hdr}>Strike</th>
+                <th className={hdr}>DTE</th>
+                <th className={hdr}>Δ Delta</th>
+                <th className={hdr}>θ/day</th>
+                <th className={hdr}>Mid</th>
+                <th className={hdr}>Yield/yr</th>
+                <th className={hdr}>Premium</th>
+                <th className={hdr}>Tax Risk</th>
+                <th className={hdr}>Contracts</th>
+                <th className={hdr}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {results.map((c, i) => {
+                const key = `${c.strike}-${c.expiry}`
+                const isAdded = added[key]
+                const isAdding = adding === key
+                const atLimit = c.at_strike_limit || c.at_expiry_limit
+                return (
+                  <tr
+                    key={i}
+                    className="border-b"
+                    style={{ borderColor: 'var(--border)', opacity: atLimit ? 0.5 : 1 }}
+                  >
+                    {/* Score */}
+                    <td className={cell}>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-sm" style={{ color: scoreColor(c.composite_score) }}>
+                          {c.composite_score}
+                        </span>
+                        <div className="w-16 h-1" style={{ backgroundColor: 'var(--border)' }}>
+                          <div
+                            className="h-full"
+                            style={{ width: `${c.composite_score}%`, backgroundColor: scoreColor(c.composite_score) }}
+                          />
+                        </div>
+                      </div>
+                    </td>
+                    {/* Expiry */}
+                    <td className={cell} style={{ color: 'var(--text)' }}>
+                      {new Date(c.expiry + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                    </td>
+                    {/* Strike */}
+                    <td className={cell} style={{ color: 'var(--text)', fontWeight: 600 }}>${c.strike}C</td>
+                    {/* DTE */}
+                    <td className={cell} style={{ color: c.dte <= 14 ? 'var(--amber)' : 'var(--muted)' }}>{c.dte}d</td>
+                    {/* Delta */}
+                    <td className={cell} style={{ color: deltaColor(c.delta) }}>{c.delta.toFixed(3)}</td>
+                    {/* Theta */}
+                    <td className={cell} style={{ color: 'var(--green)' }}>${Math.abs(c.theta).toFixed(3)}</td>
+                    {/* Mid */}
+                    <td className={cell} style={{ color: 'var(--text)' }}>${c.mid.toFixed(2)}</td>
+                    {/* Yield */}
+                    <td className={cell} style={{ color: 'var(--green)' }}>{c.annualized_yield_pct.toFixed(1)}%</td>
+                    {/* Premium */}
+                    <td className={cell} style={{ color: 'var(--green)' }}>
+                      {c.contracts_suggested > 0 ? `$${c.premium_total.toLocaleString()}` : '—'}
+                    </td>
+                    {/* Tax Risk */}
+                    <td className={cell}>
+                      <span style={{ color: taxColor(c.tax_ratio) }}>
+                        {c.tax_if_assigned > 0 ? `$${c.tax_if_assigned.toLocaleString()}` : '—'}
+                      </span>
+                      {c.tax_if_assigned > 0 && (
+                        <span className="ml-1 text-[10px]" style={{ color: 'var(--muted)' }}>
+                          ({(c.tax_ratio * 100).toFixed(0)}% of prem)
+                        </span>
+                      )}
+                    </td>
+                    {/* Contracts */}
+                    <td className={cell} style={{ color: 'var(--muted)' }}>
+                      {atLimit ? (
+                        <span style={{ color: 'var(--amber)' }}>At limit</span>
+                      ) : (
+                        `${c.contracts_suggested}`
+                      )}
+                    </td>
+                    {/* Add button */}
+                    <td className={cell}>
+                      {isAdded ? (
+                        <span className="text-xs" style={{ color: 'var(--green)' }}>Added ✓</span>
+                      ) : (
+                        <button
+                          onClick={() => addPosition(c)}
+                          disabled={isAdding || atLimit || c.contracts_suggested === 0}
+                          className="px-3 py-1 text-xs border disabled:opacity-40"
+                          style={{ borderColor: 'var(--green)', color: 'var(--green)', backgroundColor: 'rgba(0,255,136,0.08)' }}
+                        >
+                          {isAdding ? '…' : '+ Add'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+
+          {/* Score legend */}
+          <div className="px-5 py-3 flex flex-wrap gap-4 text-xs border-t" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
+            <span>Score = signal (35pt) + annualized yield (35pt) + delta safety (20pt) + tax efficiency (10pt)</span>
+            <span>Tax Risk = estimated 20% cap gains tax if assigned ÷ premium collected</span>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function SignalTracker({ signalData, dashData, alphaData, portfolios, holdings, positions, onRefresh }) {
   if (!signalData) return <div className="text-sm" style={{ color: 'var(--muted)' }}>Loading signal data…</div>
 
   const { regime, confidence, total_score, max_score, factor_scores, recommended_strikes, warnings } = signalData
@@ -221,6 +495,14 @@ export default function SignalTracker({ signalData, dashData, alphaData }) {
           Optimal window: 30–45 DTE. Exit at 50% profit to maximize annualized return.
         </p>
       </div>
+
+      {/* Screener */}
+      <ScreenerPanel
+        portfolios={portfolios}
+        holdings={holdings}
+        positions={positions}
+        onRefresh={onRefresh}
+      />
     </div>
   )
 }

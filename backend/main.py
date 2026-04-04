@@ -462,6 +462,170 @@ def get_chain(expiry: str):
 def get_option_price(expiry: str, strike: float, type: str = "call"):
     return {"price": fetcher.get_option_price(expiry, strike, type)}
 
+@app.get("/api/screener")
+def screener(
+    portfolio_id: str,
+    max_delta: float = Query(0.30),
+    min_dte: int = Query(7),
+    max_dte: int = Query(60),
+    max_strike_alloc: float = Query(0.30),
+    max_expiry_alloc: float = Query(0.30),
+):
+    # ── Holdings: derive total contracts and weighted avg cost ────────────────
+    all_holdings = load_holdings()
+    port_spy_holdings = [
+        h for h in all_holdings
+        if h.get("portfolio_id") == portfolio_id and h.get("ticker", "").upper() == "SPY"
+    ]
+    total_shares = sum(h.get("shares", 0) for h in port_spy_holdings)
+    total_contracts = int(total_shares // 100)
+
+    if total_shares > 0:
+        avg_cost = sum(h.get("avg_cost", 0) * h.get("shares", 0) for h in port_spy_holdings) / total_shares
+    else:
+        avg_cost = 0.0
+
+    max_per_strike = max(1, int(total_contracts * max_strike_alloc))
+    max_per_expiry = max(1, int(total_contracts * max_expiry_alloc))
+
+    # ── Open positions: tally used allocation ─────────────────────────────────
+    all_positions = load_positions()
+    open_port_positions = [
+        p for p in all_positions
+        if p.get("portfolio_id") == portfolio_id and p.get("status") == "open"
+    ]
+    used_per_strike: dict = {}
+    used_per_expiry: dict = {}
+    for p in open_port_positions:
+        s = float(p.get("strike", 0))
+        e = p.get("expiry", "")
+        c = int(p.get("contracts", 0))
+        used_per_strike[s] = used_per_strike.get(s, 0) + c
+        used_per_expiry[e] = used_per_expiry.get(e, 0) + c
+
+    # ── Signal score ──────────────────────────────────────────────────────────
+    spy_price_data = fetcher.get_spy_price()
+    spy_price = spy_price_data.get("price", 0)
+    signal_tickers = fetcher.get_signal_tickers()
+    vix  = signal_tickers.get("^VIX",  {}).get("price", 20)
+    vvix = signal_tickers.get("^VVIX", {}).get("price", 95)
+    tnx  = signal_tickers.get("^TNX",  {}).get("price", 4.3)
+    fvx  = signal_tickers.get("^FVX",  {}).get("price", 4.0)
+    tlt  = signal_tickers.get("TLT",   {}).get("price", 88)
+    vix_history = fetcher.get_vix_history()
+    iv_rank = vix_history.get("iv_rank", 50)
+    spy_ma = fetcher.get_spy_ma_signal()
+    tnx_history = fetcher.get_tnx_history(10)
+    tlt_history = fetcher.get_tlt_history(10)
+    signal_result = engine.analyze(
+        spy_price=spy_price, vix=vix, vix_iv_rank=iv_rank, vvix=vvix,
+        tnx=tnx, fvx=fvx, tlt=tlt, spy_ma_signal=spy_ma,
+        open_positions=[], tnx_history=tnx_history, tlt_history=tlt_history,
+        available_expiries=[],
+    )
+    total_score = signal_result.get("total_score", 0)
+
+    # ── Scan expiries and options chains ──────────────────────────────────────
+    expiries = fetcher.get_screener_expiries(max_dte)
+    today = date.today()
+    candidates = []
+
+    for exp in expiries:
+        exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+        dte = (exp_date - today).days
+        if dte < min_dte:
+            continue
+
+        chain = fetcher.get_options_chain(exp)
+        used_expiry = used_per_expiry.get(exp, 0)
+        cap_expiry = max(0, max_per_expiry - used_expiry)
+
+        for row in chain:
+            delta = row.get("delta")
+            strike = row.get("strike")
+            if delta is None or strike is None:
+                continue
+            if delta > max_delta:
+                continue
+            if strike <= spy_price:
+                continue  # skip ITM
+
+            bid = row.get("bid") or 0
+            ask = row.get("ask") or 0
+            mid = round((bid + ask) / 2, 2) if (bid or ask) else 0
+            if mid <= 0:
+                continue
+
+            theta = row.get("theta") or 0
+            iv = row.get("impliedVolatility") or 0
+
+            used_strike = used_per_strike.get(float(strike), 0)
+            cap_strike = max(0, max_per_strike - used_strike)
+            contracts_suggested = min(cap_strike, cap_expiry, total_contracts) if total_contracts > 0 else 0
+            premium_total = round(mid * contracts_suggested * 100, 2)
+
+            annualized_yield = round((mid / spy_price) * (365 / dte) * 100, 2) if spy_price > 0 and dte > 0 else 0
+
+            # Tax risk calculation
+            gain_per_share = max(0.0, float(strike) - avg_cost)
+            tax_if_assigned = round(0.20 * gain_per_share * contracts_suggested * 100, 2) if contracts_suggested > 0 else 0
+            tax_ratio = round(tax_if_assigned / max(premium_total, 1), 3)
+
+            # Composite score (0–100)
+            s_signal = max(0.0, total_score) / 12 * 35
+            s_yield  = min(annualized_yield / 30, 1.0) * 35
+            s_delta  = (1 - delta / max_delta) * 20
+            s_tax    = max(0.0, 1 - tax_ratio) * 10
+            composite_score = round(s_signal + s_yield + s_delta + s_tax)
+
+            candidates.append({
+                "strike": float(strike),
+                "expiry": exp,
+                "dte": dte,
+                "delta": round(float(delta), 4),
+                "theta": round(float(theta), 4),
+                "bid": round(float(bid), 2),
+                "ask": round(float(ask), 2),
+                "mid": mid,
+                "iv": round(float(iv), 4),
+                "open_interest": row.get("openInterest") or 0,
+                "volume": row.get("volume") or 0,
+                "contracts_suggested": contracts_suggested,
+                "premium_total": premium_total,
+                "annualized_yield_pct": annualized_yield,
+                "tax_if_assigned": tax_if_assigned,
+                "tax_ratio": tax_ratio,
+                "capacity_strike_remaining": cap_strike,
+                "capacity_expiry_remaining": cap_expiry,
+                "at_strike_limit": cap_strike <= 0,
+                "at_expiry_limit": cap_expiry <= 0,
+                "composite_score": composite_score,
+                "score_breakdown": {
+                    "signal": round(s_signal, 1),
+                    "yield": round(s_yield, 1),
+                    "delta": round(s_delta, 1),
+                    "tax": round(s_tax, 1),
+                },
+            })
+
+    candidates.sort(key=lambda c: c["composite_score"], reverse=True)
+
+    return {
+        "candidates": candidates[:20],
+        "meta": {
+            "portfolio_id": portfolio_id,
+            "total_contracts": total_contracts,
+            "total_shares": total_shares,
+            "avg_cost": round(avg_cost, 2),
+            "max_per_strike": max_per_strike,
+            "max_per_expiry": max_per_expiry,
+            "signal_score": total_score,
+            "regime": signal_result.get("regime"),
+            "spy_price": spy_price,
+        },
+    }
+
+
 @app.get("/api/pnl")
 def get_pnl():
     positions = load_positions()
