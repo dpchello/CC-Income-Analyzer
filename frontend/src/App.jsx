@@ -6,28 +6,32 @@ import SignalTracker from './components/SignalTracker.jsx'
 import Settings from './components/Settings.jsx'
 
 const TABS = [
-  { id: 'Dashboard', label: 'Dashboard' },
-  { id: 'Portfolios', label: 'Portfolios' },
+  { id: 'Dashboard',      label: 'Dashboard' },
+  { id: 'Portfolios',     label: 'Portfolios' },
   { id: 'Signal Tracker', label: 'Signal Tracker' },
-  { id: 'Settings', label: 'Settings' },
+  { id: 'Settings',       label: 'Settings' },
 ]
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('Dashboard')
-  const [dashData, setDashData] = useState(null)
+  const [activeTab, setActiveTab]   = useState('Dashboard')
+  const [dashData, setDashData]     = useState(null)
   const [signalData, setSignalData] = useState(null)
-  const [positions, setPositions] = useState([])
-  const [alphaData, setAlphaData] = useState({ news: null, technicals: null, usage: null })
+  const [positions, setPositions]   = useState([])
+  const [portfolios, setPortfolios] = useState([])
+  const [holdings, setHoldings]     = useState([])
+  const [alphaData, setAlphaData]   = useState({ news: null, technicals: null, usage: null })
   const [lastUpdated, setLastUpdated] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading]       = useState(true)
   const { theme } = useTheme()
 
   const fetchAll = useCallback(async () => {
     try {
-      const [dash, sig, pos, news, tech, usage] = await Promise.all([
+      const [dash, sig, pos, ptf, hld, news, tech, usage] = await Promise.all([
         fetch('/api/dashboard').then(r => r.json()),
         fetch('/api/signals').then(r => r.json()),
         fetch('/api/positions').then(r => r.json()),
+        fetch('/api/portfolios').then(r => r.json()),
+        fetch('/api/holdings').then(r => r.json()),
         fetch('/api/alpha/news').then(r => r.json()).catch(() => null),
         fetch('/api/alpha/technicals').then(r => r.json()).catch(() => null),
         fetch('/api/alpha/usage').then(r => r.json()).catch(() => null),
@@ -35,6 +39,8 @@ export default function App() {
       setDashData(dash)
       setSignalData(sig)
       setPositions(pos)
+      setPortfolios(ptf)
+      setHoldings(hld)
       setAlphaData({ news, technicals: tech, usage })
       setLastUpdated(new Date())
     } catch (e) {
@@ -105,12 +111,20 @@ export default function App() {
                 dashData={dashData}
                 signalData={signalData}
                 positions={positions}
+                holdings={holdings}
                 alphaData={alphaData}
                 onNavigate={setActiveTab}
               />
             )}
             {activeTab === 'Portfolios' && (
-              <Portfolios positions={positions} dashData={dashData} signalData={signalData} onRefresh={fetchAll} />
+              <Portfolios
+                positions={positions}
+                portfolios={portfolios}
+                holdings={holdings}
+                dashData={dashData}
+                signalData={signalData}
+                onRefresh={fetchAll}
+              />
             )}
             {activeTab === 'Signal Tracker' && (
               <SignalTracker signalData={signalData} dashData={dashData} alphaData={alphaData} />
