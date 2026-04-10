@@ -385,15 +385,16 @@ def get_scorecard(portfolio_id: Optional[str] = Query(None)):
 ---
 
 ### PIPE-014 · App Rename — "Harvest"
-**Status:** `approved`
+**Status:** `done`
 **Description:** Rename the app from "Covered Call Generator" to **Harvest** throughout the entire codebase. Update the document `<title>`, the header logo/wordmark, the localStorage theme key (`ccg-theme` → `harvest-theme`), and all copy that references the old name. Remove SPY-specific assumptions from UI labels where possible (e.g., "Covered Call Positions" → "Open Positions") to lay groundwork for multi-ticker expansion. Update the page favicon text if applicable.
 **Scope:** `frontend/src/App.jsx`, `frontend/src/index.css`, `frontend/index.html`, any string "Covered Call Generator" or "CCG" across all `.jsx` files
 **Rationale:** The app is expanding beyond SPY covered calls. The new name is approachable, memorable, and metaphorically accurate — users are harvesting the premium that options buyers overpay. This is also a prerequisite for multi-ticker architecture.
+**Implementation notes:** Updated `frontend/index.html` title to "Harvest". Changed header wordmark from "Covered Call Generator" to "Harvest" in `App.jsx`. Migrated localStorage key from `ccg-theme` to `harvest-theme` in `theme.jsx`. Replaced all UI-facing "covered call" labels: "Covered Call Positions" → "Open Positions" (Dashboard.jsx), "Open Covered Calls" → "Open Positions" (Portfolios.jsx), "Add Covered Call Position" → "Add Position" (Portfolios.jsx), "Covered Call Screener" → "Options Screener" (SignalTracker.jsx), "covered calls" description in regime text (Dashboard.jsx), "Record a new covered call" → "Record a new position" (Settings.jsx), "What They Mean for Covered Calls" → "What They Mean for Your Positions" (ScoreGuide.jsx). Also generalized SPY-specific labels: removed "SPY shares" from holdings empty state, updated ALERT_DEFS text in Portfolios.jsx. Academic citations in ScoreGuide preserved verbatim as accurate financial references. Build passed.
 
 ---
 
 ### PIPE-015 · Design System Foundations
-**Status:** `approved`
+**Status:** `done`
 **Description:** Establish a refined design token system and apply it universally. Changes:
 - **Border radius**: Add `--radius-sm: 6px`, `--radius-md: 10px`, `--radius-lg: 16px` to `:root` and apply `border-radius: var(--radius-md)` to all cards, panels, badges, and buttons
 - **Color refinement**: Replace neon green `#00ff88` with `#10b981` (emerald — warm and confident, not terminal-green). Add `--orange: #f97316` as a proper token (currently hardcoded in 2 places). Update light-mode green to match
@@ -403,11 +404,12 @@ def get_scorecard(portfolio_id: Optional[str] = Query(None)):
 - **Badges**: All status badges get `border-radius: var(--radius-sm)` and slightly larger padding
 **Scope:** `frontend/src/index.css` (token additions), `frontend/src/components/Dashboard.jsx`, `Portfolios.jsx`, `SignalTracker.jsx`, `Screener.jsx`, `Settings.jsx`, `ScoreGuide.jsx`
 **Rationale:** The current aesthetic is "Bloomberg Terminal for traders." The target is "personal finance app for smart people." Rounded corners, warmer greens, and larger numbers make the app feel friendly and readable without sacrificing data density.
+**Implementation notes:** Added `--radius-sm/md/lg`, `--orange`, `--shadow-sm/md` tokens to `:root` and `html.light` in `index.css`. Added `.th-card` utility class with radius + light-mode shadow. Replaced `#00ff88` with `#10b981` in both dark and light root; replaced every hardcoded `rgba(0,255,136,...)` with `rgba(16,185,129,...)` and every `#f97316` with `var(--orange)` across all components. Applied `borderRadius: 'var(--radius-md)'` to all card/panel containers and `borderRadius: 'var(--radius-sm)'` to all badges and buttons. Bumped stat card values from `text-2xl font-semibold` to `text-3xl font-bold` in Dashboard, Portfolios, and Scorecard. Increased stat card padding from `p-4` to `p-5`. Build passed.
 
 ---
 
 ### PIPE-016 · Plain English Labels + Central Glossary
-**Status:** `approved`
+**Status:** `done`
 **Description:** Replace all financial jargon with plain-English labels throughout the app. Build a central `GLOSSARY` object and a reusable `<Term>` component that wraps any label with a (?) tooltip.
 
 **Jargon replacements:**
@@ -433,11 +435,12 @@ def get_scorecard(portfolio_id: Optional[str] = Query(None)):
 **New files:** `frontend/src/glossary.js` (central definitions), `frontend/src/components/Tooltip.jsx` update (ensure it supports click-to-reveal for mobile, not just hover).
 **Scope:** All `.jsx` files — `ALERT_DEFS`, `RISK_BADGE`, `REGIME_EXPLAIN`, `FACTOR_DEFS`, all hardcoded label strings
 **Rationale:** The app's primary user is not a financial analyst. Every piece of jargon is a barrier between the user and a confident decision. Plain English at point-of-use (not just in a separate guide tab) removes that barrier.
+**Implementation notes:** Created `frontend/src/glossary.js` with `GLOSSARY` object (15 term definitions) and `glossaryLabel()` helper. Updated `frontend/src/components/Tooltip.jsx` — rewrote to support click-to-toggle on mobile (outside-click dismiss via useRef/useEffect), changed indicator from ⓘ to (?), styled with CSS variables. Added exported `<Term>` component for inline glossary tooltips. Applied plain-English replacements across all `.jsx` files: `RISK_BADGE` labels (Dashboard.jsx) — e.g. "Expiring Soon — Act Now", "Lock In Profits", "Strike Price at Risk", "Time to Renew"; `ALERT_DEFS` (Portfolios.jsx) — all 6 alert types rewritten; `getAction()` action card labels — e.g. "Expiring Soon — Act Now", "Strike Price at Risk", "High Assignment Risk — Close", "Lock In Profits", "Time to Renew"; regime config labels in Portfolio Intelligence panel; `FACTOR_DEFS` names in SignalTracker.jsx — e.g. "Option Price Level", "Volatility Stability", "Market Trend", "Economic Stress Signal"; `REGIME_EXPLAIN` text and new `REGIME_SHORT_LABEL` map for the regime card heading; screener column headers (DTE → Days Left, Delta → Assignment Risk, Rec → Action); rec filter chip labels; stat card labels across all views (Premium Collected → Income Earned, Avg Profit Capture → % of Max Income Collected, Total Contracts → Total Positions ×100); ScoreGuide section headings and score row labels; Settings strategy quick reference. Used `Term` component with `GLOSSARY` in Dashboard.jsx for "Assignment Risk" and "Positions" column headers with (?) tooltips. Build passed.
 
 ---
 
 ### PIPE-017 · Sidebar + Alert-Aware Navigation
-**Status:** `approved`
+**Status:** `done`
 **Description:** Replace the top tab bar with a left sidebar (desktop) and a slide-in drawer triggered by a hamburger button (mobile — layout overhaul deferred to PIPE-024, but the nav mechanism must work on narrow screens).
 
 **Sidebar structure:**
@@ -459,11 +462,12 @@ def get_scorecard(portfolio_id: Optional[str] = Query(None)):
 - Remove the top tab bar from `App.jsx` header entirely; keep header slim (wordmark + last-updated + refresh button)
 **Scope:** `frontend/src/App.jsx` (layout restructure), new `frontend/src/components/Sidebar.jsx`, `frontend/src/index.css` (sidebar layout utilities)
 **Rationale:** A sidebar gives each section a persistent, visible home. Alert badges mean you never have to navigate blind — you can see at a glance whether something needs attention before clicking in.
+**Implementation notes:** Created `frontend/src/components/Sidebar.jsx` — exports default `Sidebar` (desktop sticky sidebar + mobile drawer overlay) and named `MobileMenuButton` (hamburger, coordinates with Sidebar via a module-level setter). Desktop sidebar is 220px wide, collapses to 56px icon-only via a `‹`/`›` toggle. Mobile drawer is 260px slide-in panel triggered by `☰` in the header, dismissed by outside-click or `✕` button. Red dot badge on "My Positions" when `alertCount > 0`. Active item gets green filled-pill background. Removed `useTheme` import and top tab-bar `<nav>` from `App.jsx`; replaced with `flex` layout (`Sidebar` + right column). `computeAlertCount()` in `App.jsx` flags positions with `dte <= 7` (GAMMA_DANGER) or `distance_to_strike_pct <= 1.5` (STRIKE_BREACH). Build passed.
 
 ---
 
 ### PIPE-018 · Overview Page Redesign
-**Status:** `approved`
+**Status:** `done`
 **Description:** Redesign the Dashboard as the "Overview" — the answer to "how are my positions doing right now?" The new structure:
 
 1. **Greeting + status hero** (plain English): *"Good morning. Everything looks good."* or *"1 position needs your attention today."* — colored by urgency, takes up the top of the page
@@ -478,11 +482,13 @@ def get_scorecard(portfolio_id: Optional[str] = Query(None)):
 Remove the full positions table from Overview — that lives in My Positions. The Overview is "how am I doing" not "show me all the data."
 **Scope:** `frontend/src/components/Dashboard.jsx` (substantial restructure)
 **Rationale:** The user's first job when opening the app is "is everything okay and what do I need to do?" The current Dashboard answers that question across 7 different sections. The new Overview answers it in the first two sections and lets the user stop scrolling if nothing is urgent.
+**Implementation notes:** Removed the positions table and the old `Headline` component entirely. Added `GreetingHero` — time-of-day greeting + one bold status sentence colored green/amber/red by urgency count, with a "View all →" link when everything is fine. Added `UrgentActionStrip` — surfaces URGENT and HIGH action cards (mirrors `getAction()` logic from Portfolios.jsx) directly on the Overview with a "Go to position →" link; hidden when no urgent items. Added `MarketSignalCard` — one plain-English sentence + large pill badge for the current regime. Added `IncomeSummaryRow` — 4-cell grid: this month's income, daily rate, annualized return %, and days until next expiry. Kept `ThetaIncomeChart`, stat cards (Income Earned / Unrealized P&L / % of Max Income / Market Signal), SPY price bar, `PnlSummary`, and `NewsFeed` (reordered to bottom). Removed unused `Term`, `GLOSSARY`, and `riskLevel` imports. Build passed.
 
 ---
 
 ### PIPE-019 · Tax & P&L Aware Action Cards
-**Status:** `approved`
+**Status:** `done`
+**Implementation notes:** Added three computed fields to the `GET /api/positions` enrichment pipeline in `main.py`: `close_pnl_impact` (= current unrealized P&L — dollars gained/lost if closing now), `tax_event_on_close` (always `true` for short calls), `roll_pnl_impact` (always `$0` — rolling defers realization), `break_even_price` (= strike — SPY must stay below this for holding to win), and `loss_as_pct_of_premium` (% of original premium now consumed by the buy-back cost). Added `TaxAwareActionCard` component in `Portfolios.jsx` — collapsible card with three option panels: "Close now" (shows P&L realized, cost to buy back, tax impact, when to choose), "Wait and see" (SPY break-even price, assignment risk), "Roll to next month" ($0 realized, no taxable event, estimated new income). Applied rule softening in `getAction()` — when `loss_as_pct_of_premium > 40%` the urgency is downgraded from URGENT → HIGH and the headline changes to "Watch Carefully — Closing Costs More Than Holding". Updated `Dashboard.jsx` `getAction()` with the same rule softening and enhanced the UrgentActionStrip cards to show P&L-if-closed and SPY break-even price inline. Build passed.
 **Description:** Restructure every action card in Portfolios (and the urgent cards surfaced on Overview) to show the financial reality of following — or not following — the recommendation.
 
 **New action card structure:**
@@ -523,7 +529,7 @@ Your options:
 ---
 
 ### PIPE-020 · Confidence Scoring on Recommendations
-**Status:** `approved`
+**Status:** `done`
 **Description:** Every action card and screener recommendation displays a confidence percentage and a plain-English breakdown of what factors support it.
 
 **Confidence calculation:**
@@ -537,11 +543,12 @@ Your options:
 
 **Scope:** `frontend/src/components/Portfolios.jsx` (action cards), `frontend/src/components/Screener.jsx` (candidate cards), `backend/main.py` (confidence field on action items)
 **Rationale:** "Act now" with no qualification is anxiety-inducing and sometimes wrong. Showing how confident the recommendation is — and what it's based on — lets the user calibrate their response to the actual strength of the signal.
+**Implementation notes:** Added `confidence` (0–100 int) and `confidence_factors` (list of plain-English strings) to the `GET /api/positions` enrichment pipeline in `main.py`. Confidence starts at 100 and takes penalties based on DTE proximity (−10 to −20 for 8–21 DTE), strike distance (−15 for approaching but not breached), delta level (−10 for rising toward 0.30), profit capture (−10 for 40–50% range), OI signal (−10 for UNWINDING), and closing costliness (−15 when loss > 40% of premium). Added `ConfidenceBar` component in `Portfolios.jsx` — narrow progress bar with color-coded tier label (High/Moderate/Low) and a "Based on: …" factor summary line. Rendered inside `TaxAwareActionCard` header below the instruction text. When `confidence < 60`, the expanded "Close now" panel heading changes to "Review your options". In `SignalTracker.jsx` screener table, the Score column now shows a confidence tier label (High/Moderate/Low confidence) below the score bar — the composite_score already maps 1:1 to confidence. Updated footer legend to include confidence tier callouts. Build passed.
 
 ---
 
 ### PIPE-021 · Macro-Aware Rule Engine
-**Status:** `approved`
+**Status:** `done`
 **Description:** Extend the recommendation engine to be aware of upcoming macro events and soften or contextualize timing rules accordingly.
 
 **Event sources:**
@@ -558,12 +565,14 @@ Your options:
 **New Settings UI:** "Upcoming Events" panel — add/remove dated events
 **Scope:** `backend/macro_calendar.py` (new), `backend/signals.py` (macro modifier), `backend/main.py` (pass macro context to enrichment), `frontend/src/components/Settings.jsx` (events panel), `frontend/src/components/Portfolios.jsx` (macro context in action cards)
 **Rationale:** A covered call at 21 DTE two days before a Fed rate decision is a fundamentally different risk than the same position in a quiet week. The rule engine should know the difference. This directly addresses the user's feedback that recommendations don't account for real-world macro context.
+**Implementation notes:** Created `backend/macro_calendar.py` with FOMC_DATES_2025/2026 schedules, `get_upcoming_events()` (merges FOMC + user events, filters to within N days), `detect_news_uncertainty()` (scans AlphaVantage feed for 21 macro keywords in 48h window, flags when >2 articles match), and `add_user_event()`/`remove_user_event()` (persist to `config.json`). Added `import macro_calendar` to `main.py`; in `GET /api/positions` enrichment, compute `upcoming_events` and `news_uncertainty` once per request and attach `macro_event` (nearest event ≤5 days away) and `macro_uncertainty` (bool) to each open position. Added `GET /api/macro`, `POST /api/macro/events`, and `DELETE /api/macro/events` endpoints. In `Portfolios.jsx` `getAction()`, added `macroDowngrade()` helper that shifts URGENT→HIGH and HIGH→WATCH when `pos.macro_event` is set; added an amber inline notice inside each `TaxAwareActionCard` showing the event name and days away. In `Dashboard.jsx`, derived `macroUncertain` from `open.some(p => p.macro_uncertainty)` and rendered a dismissable amber banner below the MarketSignalCard. In `Settings.jsx`, added `UpcomingEventsPanel` component with date+description add form, event list with remove buttons, and a note that FOMC dates are built-in. Added `useEffect` import. Build passed.
 
 ---
 
 ### PIPE-022 · Feedback Mechanism + Notification Delivery
-**Status:** `approved`
+**Status:** `done`
 **Description:** Add a "This doesn't make sense to me" button to every action card. Tapping it opens a simple inline form. Feedback is stored locally and optionally sent via email or SMS.
+**Implementation notes:** Created `backend/feedback_log.py` — appends entries to `feedback_log.json` (rolling 1000), fires SMTP email and/or SMS webhook in a background thread when configured. Added `POST /api/feedback` (stores entry, returns it), `GET /api/feedback` (log), `GET /api/feedback/config` (safe view — omits smtp_pass), and `PUT /api/feedback/config` (merged write to config.json) endpoints in `main.py`; added `FeedbackIn` and `FeedbackConfigIn` Pydantic models. In `Portfolios.jsx`, added `FEEDBACK_OPTIONS` constant, `FeedbackForm` component (radio options + conditional free-text textarea, submits to `/api/feedback`), and wired `feedbackOpen`/`setFeedbackOpen` state into `TaxAwareActionCard` — the "💬 This doesn't make sense to me" link appears at the bottom of every action card, toggling inline to the form. In `Settings.jsx`, added `FeedbackNotificationsPanel` — loads config on mount, provides fields for email, SMTP host/port/user/pass, phone number, SMS webhook URL, and delivery timing radio (immediate vs. daily digest placeholder), saves via `PUT /api/feedback/config`. Build passed.
 
 **Feedback form options:**
 - I disagree with this recommendation
@@ -586,7 +595,8 @@ Your options:
 ---
 
 ### PIPE-023 · Alert Persistence + Nav Badges
-**Status:** `approved`
+**Status:** `done`
+**Implementation notes:** `computeAlertCount()` in `App.jsx` counts positions with DTE ≤7 or distance_to_strike_pct ≤1.5. Passed as prop to `Sidebar.jsx` which shows a red badge on "My Positions". `prevAlertCountRef` auto-un-dismisses the header strip when count rises. Strip renders when alertCount > 0 and user is not on Portfolios tab, with sessionStorage-backed dismiss.
 **Description:** Compute the total count of positions needing urgent attention at the `App.jsx` level and propagate it to the sidebar as a persistent badge.
 
 **Alert count logic:** Count positions where `getAction(pos)` returns urgency = `URGENT` or `HIGH`. Also count if any signal regime has just changed (detect via comparing previous regime in localStorage to current).
@@ -610,7 +620,7 @@ Your options:
 ---
 
 ### PIPE-025 · Contextual Tooltips Throughout
-**Status:** `approved`
+**Status:** `done`
 **Description:** Add (?) tooltip icons to every piece of financial terminology across all tabs, pulling definitions from the central `GLOSSARY` built in PIPE-016.
 
 **Tooltip behavior:**
@@ -623,11 +633,12 @@ Your options:
 **Implementation:** Update `frontend/src/components/Tooltip.jsx` to handle both hover and tap. Wrap terms in `<Term id="delta">Assignment Risk</Term>` which auto-fetches the definition from `GLOSSARY`.
 **Scope:** `frontend/src/components/Tooltip.jsx` (update), `frontend/src/glossary.js` (full definitions, from PIPE-016), all component files (wrap jargon terms)
 **Rationale:** The Score Guide tab exists because the scoring system is opaque. Bringing explanations to the point of use means the user never has to navigate away to understand what they're looking at.
+**Implementation notes:** Expanded `glossary.js` with 11 new entries: Theta, Gamma, Premium, Strike, Expiry, Roll, CoveredCall, PutCallRatio, OpenInterest, CompositeScore, SignalScore. Updated `Tooltip.jsx` — desktop now uses 250ms `setTimeout` on `mouseEnter` (cleared on `mouseLeave`) before revealing; tap/click toggles visibility; max-width 280px; popover uses `var(--radius-md)`. Rewrote `Term` to import `GLOSSARY` directly (no prop required) — usage is `<Term id="Delta">Assignment Risk</Term>` or `<Term id="DTE" />`. Applied `<Term>` throughout: Dashboard.jsx — "Income Earned", "% of Max Income Collected", "Market Signal", "VIX" in SPY bar; Portfolios.jsx — position card stat labels (DTE, Contracts, Current Price, Profit Capture, Delta, Strike distance, Open Interest), portfolio intelligence health metrics (Avg DTE, Avg Delta, Signal score), All Portfolios summary stats (Income Earned, Total Positions), top opportunities mini-grid (Score, Δ Risk, DTE); SignalTracker.jsx — screener table column headers (Strike, Expiry/Days Left, Mid, Δ Assign. Risk, Γ Gamma, θ/day, IV%, OI, Total/Signal score), regime card Score label, factor card names (IV Rank → IVRank term, VVIX → VVIX term), OI chart footer (Total Call OI, Total Put OI, Put/Call ratio), recommended strikes DTE. Build passed.
 
 ---
 
 ### PIPE-026 · Score Guide Refresh + Inline Explanations
-**Status:** `approved`
+**Status:** `done`
 **Description:** Rename the "Score Guide" tab to **"How It Works"** and redesign it for a non-trader audience. Also add contextual "Learn more" inline panels inside Screener and Market Conditions tabs.
 
 **New "How It Works" structure:**
@@ -640,11 +651,12 @@ Your options:
 **Inline panels:** In the Market Conditions tab, each factor card gets a collapsible "How is this calculated?" section. In the Screener, each score component gets a "Why does this matter?" line — without navigating to How It Works.
 **Scope:** `frontend/src/components/ScoreGuide.jsx` (full rewrite), `frontend/src/components/SignalTracker.jsx` (inline expand sections), `frontend/src/components/Screener.jsx` (inline score explanations)
 **Rationale:** The current Score Guide reads like a technical document. The target user wants to understand "should I trust this?" and "what does this number mean for me?" — not read academic-style factor definitions.
+**Implementation notes:** Rewrote `ScoreGuide.jsx` from scratch as a 5-section "How It Works" page for non-traders: (1) What is Harvest — plain English covered call explanation + "why does this work" academic basis; (2) The Market Signal — each of the 4 regimes (Good Time/Hold/Be Careful/Not a Good Time) in a color-coded card with "what to do" guidance, plus a plain-English breakdown of all 6 underlying factors; (3) How We Score Opportunities — 4-component visual formula bar, individual cards for Signal/Income/Risk/Timing with "Why it matters" callouts, score-to-recommendation table; (4) Understanding Your Alerts — all 5 alert types (Expiring Soon, Strike at Risk, Time to Renew, Lock In Profits, Market Recovery) with example scenarios and urgency badges; (5) Common Questions — 7 collapsible FAQ items covering assignment, following recommendations, crashes, rolling, and tax. Added `calc` field to every entry in `FACTOR_DEFS` in `SignalTracker.jsx`; added collapsible "How is this calculated?" toggle inside each `FactorCard` (shows scoring formula and data source). Added `scoreGuideOpen` state and a "How scoring works" expand button in the ScreenerPanel header; collapsed panel shows 4 score-component cards each with a "Why does this matter?" paragraph. Added plain-English subtitles to expanded Score column headers (Signal → "market conditions", Yield → "income potential", Risk → "assignment safety", Days → "timing sweet spot"). Updated screener footer legend to include score component breakdown row. Build passed.
 
 ---
 
 ### PIPE-027 · Empty State Redesign
-**Status:** `approved`
+**Status:** `done`
 **Description:** Replace all passive empty states with helpful, action-oriented prompts.
 
 **Empty states to redesign:**
@@ -656,6 +668,7 @@ Your options:
 
 **Scope:** `frontend/src/components/Dashboard.jsx`, `Portfolios.jsx`, `SignalTracker.jsx`, `Settings.jsx`
 **Rationale:** Empty states are the highest-anxiety moments in any app — the user doesn't know what to do next. Action-oriented prompts with clear next steps remove that anxiety.
+**Implementation notes:** In `Dashboard.jsx`, updated `GreetingHero` — when no open positions, shows "You don't have any open positions yet. Check the Market Conditions tab to see if now is a good time to start." with a "View Market Conditions →" button (navigates to SignalTracker); `NewsFeed` already returned null for the whole component (including section header) when feed is empty — confirmed correct per spec. In `Portfolios.jsx`: updated the `!selected` (no portfolio) state from a passive one-liner to a full onboarding card — 🌾 icon, "Let's set up your first portfolio", guidance text, and "Create portfolio →" button that opens the new portfolio form; updated "Open Positions" empty state to "You don't have any open positions yet..." with an "+ Add your first position →" button; updated "Stock Holdings" empty state to explain the benefit of adding holdings and include an "+ Add Holding →" button; updated Portfolio Intelligence "Top Opportunities" AVOID-regime empty state to "No strong candidates right now. The market signal is Not a Good Time... Check back after the next market session." and the zero-results state to match; updated AllPortfoliosView exposure grid empty state with a two-line explanation and next-step instruction; updated `ScorecardView` recommendation log empty state to the spec text "No feedback recorded yet. Use the 'This doesn't make sense' button on any recommendation to start logging." with a secondary note about the screener. In `SignalTracker.jsx`, both empty screener states ("no holdings" and "no candidates") now show "No strong candidates right now." as the headline, with regime-aware plain-English reasons (AVOID → signal is Not a Good Time; CAUTION → Be Careful with suggestion to widen filters; default → try different range) and "Check back after the next market session." footer in all cases. Build passed.
 
 ---
 

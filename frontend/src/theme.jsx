@@ -11,11 +11,11 @@ function resolveSystemTheme() {
 
 export function ThemeProvider({ children }) {
   const [theme, setTheme] = useState(() => {
-    return localStorage.getItem('ccg-theme') || 'system'
+    return localStorage.getItem('harvest-theme') || 'system'
   })
 
   useEffect(() => {
-    localStorage.setItem('ccg-theme', theme)
+    localStorage.setItem('harvest-theme', theme)
     const resolved = theme === 'system' ? resolveSystemTheme() : theme
     const root = document.documentElement
     if (resolved === 'light') {
