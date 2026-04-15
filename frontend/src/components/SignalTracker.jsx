@@ -204,7 +204,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
   const [added, setAdded] = useState({})
   const [sortCol, setSortCol] = useState('composite_score')
   const [sortDir, setSortDir] = useState('desc')
-  const [colExp, setColExp]   = useState({ price: false, greeks: false, volume: false, score: false })
+  const [colExp, setColExp]   = useState({ price: false, greeks: false, volume: false, score: false, value: false })
 
   useEffect(() => { runScreener() }, [selectedPortfolioId])  // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -573,7 +573,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
         <>
           {/* Column hint */}
           <div className="px-5 py-2 border-b text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--muted)', backgroundColor: 'rgba(128,128,128,0.04)' }}>
-            Click <span style={{ color: 'var(--green)' }}>▸</span> group headers to expand · Δ = assignment risk · θ = daily income decay · Γ = gamma · OI = open interest · Yield% = income ÷ stock price
+            Click <span style={{ color: 'var(--green)' }}>▸</span> group headers to expand · Δ = assignment risk · θ = daily income decay · Γ = gamma · OI = open interest · Yield% = income ÷ stock price · Value = intrinsic (in-the-money portion) + time value (pure premium)
           </div>
 
           <div className="overflow-x-auto">
@@ -594,6 +594,16 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
                       <CollapseTh groupKey="price">Bid</CollapseTh>
                       <Th col="ask">Ask</Th>
                       <Th col="mid"><Term id="Premium">Mid</Term></Th>
+                    </>
+                  )}
+                  {/* 4b Value group */}
+                  {!colExp.value ? (
+                    <GroupTh groupKey="value" label="Value" />
+                  ) : (
+                    <>
+                      <CollapseTh groupKey="value">Intrinsic</CollapseTh>
+                      <Th col="time_premium">Time Value</Th>
+                      <Th col="ex_div">Ex-Div</Th>
                     </>
                   )}
                   {/* 5 Greeks group */}
@@ -693,6 +703,46 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
                           <td className={cell} style={{ color: 'var(--muted)' }}>${c.bid.toFixed(2)}</td>
                           <td className={cell} style={{ color: 'var(--muted)' }}>${c.ask.toFixed(2)}</td>
                           <td className={cell} style={{ color: 'var(--text)', fontWeight: 600 }}>${c.mid.toFixed(2)}</td>
+                        </>
+                      )}
+                      {/* Value group */}
+                      {!colExp.value ? (
+                        <td className={cell}>
+                          <div style={{ color: 'var(--text)', fontWeight: 600 }}>${(c.time_premium ?? c.mid ?? 0).toFixed(2)}</div>
+                          <div className="text-[10px] font-mono" style={{ color: 'var(--muted)' }}>time val</div>
+                          {c.expiry_after_ex_div && c.upcoming_dividend > 0 && (
+                            <div className="text-[10px] font-mono px-1 mt-0.5 inline-block"
+                                 style={{ color: 'var(--amber)', backgroundColor: 'rgba(255,176,32,0.12)', border: '1px solid rgba(255,176,32,0.3)', borderRadius: 'var(--radius-sm)' }}>
+                              ex-div risk
+                            </div>
+                          )}
+                        </td>
+                      ) : (
+                        <>
+                          <td className={cell} style={{ color: (c.intrinsic_value ?? 0) > 0 ? 'var(--red)' : 'var(--muted)' }}>
+                            ${(c.intrinsic_value ?? 0).toFixed(2)}
+                          </td>
+                          <td className={cell}>
+                            <div style={{ color: 'var(--green)', fontWeight: 600 }}>${(c.time_premium ?? 0).toFixed(2)}</div>
+                            {c.expiry_after_ex_div && c.upcoming_dividend > 0 && (c.time_premium ?? 0) < c.upcoming_dividend && (
+                              <div className="text-[10px] font-mono" style={{ color: 'var(--amber)' }}>div trap</div>
+                            )}
+                          </td>
+                          <td className={cell}>
+                            {c.next_ex_div_date ? (
+                              <>
+                                <div style={{ color: c.expiry_after_ex_div ? 'var(--amber)' : 'var(--muted)' }}>
+                                  {c.next_ex_div_date}
+                                </div>
+                                {c.days_until_ex_div != null && (
+                                  <div className="text-[10px]" style={{ color: 'var(--muted)' }}>{c.days_until_ex_div}d away</div>
+                                )}
+                                {c.expiry_after_ex_div && (
+                                  <div className="text-[10px] font-semibold" style={{ color: 'var(--amber)' }}>straddles</div>
+                                )}
+                              </>
+                            ) : <span style={{ color: 'var(--muted)' }}>—</span>}
+                          </td>
                         </>
                       )}
                       {/* Greeks group */}

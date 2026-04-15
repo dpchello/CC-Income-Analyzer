@@ -24,5 +24,44 @@
     "open_date": "2026-04-01",
     "status": "open",
     "portfolio_id": "default"
+  },
+  {
+    "ticker": "SPY",
+    "type": "short_call",
+    "strike": 687.0,
+    "expiry": "2026-05-15",
+    "contracts": 18,
+    "sell_price": 4.2,
+    "premium_collected": 7560.0,
+    "open_date": "2026-04-06",
+    "status": "open",
+    "portfolio_id": "fc7841be-0aaa-4279-96af-2cb0558a844a",
+    "id": "0e4c2b52-e3aa-4cdf-9403-5fbf8d433e33"
+  },
+  {
+    "ticker": "SPY",
+    "type": "short_call",
+    "strike": 690.0,
+    "expiry": "2026-05-08",
+    "contracts": 17,
+    "sell_price": 2.29,
+    "premium_collected": 3893.0,
+    "open_date": "2026-04-06",
+    "status": "open",
+    "portfolio_id": "fc7841be-0aaa-4279-96af-2cb0558a844a",
+    "id": "5e338d59-f58f-4e30-971d-65b957e4530b"
+  },
+  {
+    "ticker": "SPY",
+    "type": "short_call",
+    "strike": 689.0,
+    "expiry": "2026-05-01",
+    "contracts": 17,
+    "sell_price": 1.69,
+    "premium_collected": 2873.0,
+    "open_date": "2026-04-06",
+    "status": "open",
+    "portfolio_id": "fc7841be-0aaa-4279-96af-2cb0558a844a",
+    "id": "93d4a954-b4fc-4148-be64-6c56ed63539e"
   }
 ]

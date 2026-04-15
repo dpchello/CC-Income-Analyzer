@@ -4,5 +4,11 @@
     "name": "Default",
     "created_date": "2026-04-04",
     "archived": false
+  },
+  {
+    "id": "fc7841be-0aaa-4279-96af-2cb0558a844a",
+    "name": "Personal",
+    "created_date": "2026-04-04",
+    "archived": false
   }
 ]
