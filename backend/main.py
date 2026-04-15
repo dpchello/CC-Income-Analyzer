@@ -138,6 +138,26 @@ class HoldingUpdate(BaseModel):
 def _dte(expiry_str: str) -> int:
     return (datetime.strptime(expiry_str, "%Y-%m-%d").date() - date.today()).days
 
+
+def _roll_score(net_credit: float, new_time_prem: float, new_intrinsic: float, dte: int) -> float:
+    """
+    Score a roll candidate 0–100. Weights:
+      - Time premium collected (40 pts): what we earn from selling the new call
+      - Net credit/debit (30 pts): immediate P&L of the spread
+      - Intrinsic penalty (20 pts): lower is better — retaining intrinsic keeps assignment risk
+      - DTE quality (10 pts): 28–50 DTE is the sweet spot
+    """
+    s_time_prem   = min(new_time_prem / 3.0, 1.0) * 40                          # cap at $3.00 TP
+    s_credit_norm = (min(max(net_credit, -5.0), 3.0) + 5.0) / 8.0 * 30          # -5 to +3 → 0-30
+    s_intrinsic   = max(0.0, 1.0 - new_intrinsic / 10.0) * 20                   # penalize intrinsic
+    if 28 <= dte <= 50:
+        s_dte = 10.0
+    elif dte < 28:
+        s_dte = (dte / 28) * 10
+    else:
+        s_dte = max(0.0, (1 - (dte - 50) / 30.0) * 10)
+    return round(s_time_prem + s_credit_norm + s_intrinsic + s_dte, 1)
+
 def _portfolio_stats(portfolio_id: str, positions: list, spy_price: float) -> dict:
     """Compute stats for a single portfolio from pre-loaded positions."""
     mine = [p for p in positions if p.get("portfolio_id") == portfolio_id]
@@ -275,6 +295,12 @@ def get_positions(portfolio_id: Optional[str] = Query(None)):
     spy_price = spy_data.get("price", 0)
     spy_change = spy_data.get("change", 0)   # dollar move today, used for daily P&L estimate
 
+    # ── Dividend data (computed once per request, 24h cached) ────────────────
+    div_data          = fetcher.get_spy_dividends()
+    upcoming_dividend = div_data.get("next_div_amount") or 0.0
+    days_until_ex_div = div_data.get("days_until_ex_div")   # int or None
+    next_ex_div_date  = div_data.get("next_ex_div_date")    # "YYYY-MM-DD" or None
+
     # ── Macro context (computed once per request) ─────────────────────────────
     upcoming_events = macro_calendar.get_upcoming_events(within_days=7)
     try:
@@ -326,6 +352,26 @@ def get_positions(portfolio_id: Optional[str] = Query(None)):
                 p["delta"] = None
                 p["theta"] = None
                 p["daily_pnl"] = None
+            # Intrinsic value & time premium
+            intrinsic_val = round(max(0.0, spy_price - float(pos["strike"])), 2) if spy_price > 0 else 0.0
+            p["intrinsic_value"] = intrinsic_val
+            p["time_premium"] = round(max(0.0, (p.get("current_price") or 0.0) - intrinsic_val), 2)
+            # Dividend proximity
+            p["next_ex_div_date"]    = next_ex_div_date
+            p["days_until_ex_div"]   = days_until_ex_div
+            p["upcoming_dividend"]   = upcoming_dividend
+            p["expiry_after_ex_div"] = (pos["expiry"] >= next_ex_div_date) if next_ex_div_date else None
+            # ── Early exercise risk (Battalio/Figlewski/Neal 2020) ────────────
+            if intrinsic_val <= 0:
+                p["early_exercise_risk"] = "NONE"
+            elif p["expiry_after_ex_div"] and p["time_premium"] < upcoming_dividend:
+                p["early_exercise_risk"] = "CRITICAL"  # holder exercises early to capture dividend
+            elif p["time_premium"] < 0.20:
+                p["early_exercise_risk"] = "HIGH"       # EBV territory: ~99% of bids below intrinsic
+            elif p["time_premium"] < 0.50:
+                p["early_exercise_risk"] = "MEDIUM"
+            else:
+                p["early_exercise_risk"] = "LOW"
             # Attach OI change data
             oi_data = oi_tracker.get_changes_batch([{"expiry": pos["expiry"], "strike": float(strike)}])
             oi = oi_data.get(f"{pos['expiry']}|{float(strike)}", {})
@@ -407,6 +453,17 @@ def get_positions(portfolio_id: Optional[str] = Query(None)):
             if loss_as_pct_of_premium > 40:
                 conf -= 15
                 conf_factors.append(f"Buying back costs {loss_as_pct_of_premium:.0f}% of original premium")
+            # 7. Early exercise risk (Battalio/Figlewski/Neal 2020)
+            _ee = p.get("early_exercise_risk", "NONE")
+            if _ee == "CRITICAL":
+                conf -= 30
+                conf_factors.append("Critical early exercise risk — time value below upcoming dividend")
+            elif _ee == "HIGH":
+                conf -= 20
+                conf_factors.append(f"High early exercise risk — time value only ${p.get('time_premium', 0):.2f}")
+            elif _ee == "MEDIUM":
+                conf -= 10
+                conf_factors.append(f"Early exercise risk elevated — time value ${p.get('time_premium', 0):.2f}")
             conf = max(0, min(100, round(conf)))
             p["confidence"] = conf
             p["confidence_factors"] = conf_factors
@@ -712,6 +769,12 @@ def screener(
         used_per_strike[s] = used_per_strike.get(s, 0) + c
         used_per_expiry[e] = used_per_expiry.get(e, 0) + c
 
+    # ── Dividend data (24h cached) ────────────────────────────────────────────
+    _scr_div       = fetcher.get_spy_dividends()
+    scr_next_exdiv = _scr_div.get("next_ex_div_date")
+    scr_days_exdiv = _scr_div.get("days_until_ex_div")
+    scr_div_amount = _scr_div.get("next_div_amount") or 0.0
+
     # ── Signal score ──────────────────────────────────────────────────────────
     spy_price_data = fetcher.get_spy_price()
     spy_price = spy_price_data.get("price", 0)
@@ -816,6 +879,7 @@ def screener(
                  if float(p.get("strike", 0)) == float(strike) and p.get("expiry") == exp),
                 None,
             )
+            _intrinsic = round(max(0.0, spy_price - float(strike)), 2)
             candidates.append({
                 "strike": float(strike),
                 "expiry": exp,
@@ -827,6 +891,12 @@ def screener(
                 "bid": round(float(bid), 2),
                 "ask": round(float(ask), 2),
                 "mid": mid,
+                "intrinsic_value": _intrinsic,
+                "time_premium": round(max(0.0, mid - _intrinsic), 2),
+                "next_ex_div_date":    scr_next_exdiv,
+                "days_until_ex_div":   scr_days_exdiv,
+                "expiry_after_ex_div": (exp >= scr_next_exdiv) if scr_next_exdiv else None,
+                "upcoming_dividend":   scr_div_amount,
                 "iv": round(float(iv), 4),
                 "open_interest": row.get("openInterest") or 0,
                 "volume": row.get("volume") or 0,
@@ -904,6 +974,7 @@ def screener(
         else:
             s_dte = 0.0
         composite_score = round(s_signal + s_yield + s_delta + s_dte)
+        _intrinsic2 = round(max(0.0, spy_price - p_strike), 2)
         candidates.append({
             "strike": p_strike,
             "expiry": p_expiry,
@@ -915,6 +986,12 @@ def screener(
             "bid": round(float(bid), 2),
             "ask": round(float(ask), 2),
             "mid": mid,
+            "intrinsic_value": _intrinsic2,
+            "time_premium": round(max(0.0, mid - _intrinsic2), 2),
+            "next_ex_div_date":    scr_next_exdiv,
+            "days_until_ex_div":   scr_days_exdiv,
+            "expiry_after_ex_div": (p_expiry >= scr_next_exdiv) if scr_next_exdiv else None,
+            "upcoming_dividend":   scr_div_amount,
             "iv": round(float(iv), 4),
             "open_interest": row.get("openInterest") or 0,
             "volume": row.get("volume") or 0,
@@ -1063,6 +1140,11 @@ def get_pnl_summary(portfolio_id: Optional[str] = Query(None)):
 @app.get("/api/iv-rank")
 def get_iv_rank():
     return fetcher.get_vix_history()
+
+@app.get("/api/dividends")
+def get_dividends():
+    """Return next SPY ex-dividend date and amount. Cached 24 hours."""
+    return fetcher.get_spy_dividends()
 
 @app.get("/api/history/spy")
 def get_spy_history():
@@ -1333,6 +1415,164 @@ def trigger_oi_snapshot():
         "strikes_recorded": strikes_recorded,
         "errors": errors,
         "timestamp": datetime.now().isoformat(),
+    }
+
+
+@app.get("/api/roll-targets/{position_id}")
+def get_roll_targets(position_id: str):
+    """
+    Return 3 roll scenarios for an open position:
+      DEFENSIVE  — highest OTM strike with net credit
+      BALANCED   — best roll_score near ATM (±2%)
+      INCOME     — highest time premium available
+    """
+    positions = load_positions()
+    pos = next((p for p in positions if p["id"] == position_id), None)
+    if not pos:
+        raise HTTPException(status_code=404, detail="Position not found")
+    if pos.get("status") != "open":
+        raise HTTPException(status_code=400, detail="Position is not open")
+
+    spy_data      = fetcher.get_spy_price()
+    spy_price     = spy_data.get("price", 0)
+    current_price = fetcher.get_option_price(pos["expiry"], pos["strike"], "call")
+    close_cost    = round(current_price * pos["contracts"] * 100, 2)
+
+    intrinsic_now = round(max(0.0, spy_price - float(pos["strike"])), 2)
+    time_prem_now = round(max(0.0, current_price - intrinsic_now), 2)
+
+    # Target 28–50 DTE; fall back to 21–60 if nothing found
+    today         = date.today()
+    all_expiries  = fetcher.get_screener_expiries(max_dte=60)
+    target_expiries = [
+        e for e in all_expiries
+        if 28 <= (datetime.strptime(e, "%Y-%m-%d").date() - today).days <= 50
+    ]
+    if not target_expiries:
+        target_expiries = [
+            e for e in all_expiries
+            if 21 <= (datetime.strptime(e, "%Y-%m-%d").date() - today).days <= 60
+        ]
+
+    all_candidates: list = []
+    for exp in target_expiries:
+        chain   = fetcher.get_options_chain(exp)
+        exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+        dte      = (exp_date - today).days
+        for row in chain:
+            strike = row.get("strike")
+            if strike is None:
+                continue
+            bid  = row.get("bid") or 0
+            ask  = row.get("ask") or 0
+            mid  = round((bid + ask) / 2, 2) if (bid or ask) else 0
+            if mid <= 0:
+                continue
+            new_intrinsic = round(max(0.0, spy_price - float(strike)), 2)
+            new_time_prem = round(max(0.0, mid - new_intrinsic), 2)
+            net_credit    = round(mid - current_price, 2)
+            delta         = row.get("delta")
+            score         = _roll_score(net_credit, new_time_prem, new_intrinsic, dte)
+            all_candidates.append({
+                "strike":        float(strike),
+                "expiry":        exp,
+                "dte":           dte,
+                "mid":           mid,
+                "new_intrinsic": new_intrinsic,
+                "new_time_prem": new_time_prem,
+                "net_credit":    net_credit,
+                "delta":         round(float(delta), 4) if delta is not None else None,
+                "roll_score":    score,
+            })
+
+    def _fmt(scenario_key: str, c: dict | None, label: str, description: str) -> dict:
+        if c is None:
+            return {"scenario": scenario_key, "viable": False,
+                    "label": label, "description": description}
+        net_credit_total = round(c["net_credit"] * pos["contracts"] * 100, 2)
+        break_even = round(float(c["strike"]) + c["new_time_prem"], 2)
+        return {
+            "scenario":         scenario_key,
+            "viable":           True,
+            "label":            label,
+            "description":      description,
+            "new_strike":       c["strike"],
+            "new_expiry":       c["expiry"],
+            "new_dte":          c["dte"],
+            "new_mid":          c["mid"],
+            "close_cost":       round(current_price, 2),
+            "net_credit":       c["net_credit"],
+            "net_credit_total": net_credit_total,
+            "new_time_premium": c["new_time_prem"],
+            "new_intrinsic":    c["new_intrinsic"],
+            "new_delta":        c["delta"],
+            "break_even_price": break_even,
+            "roll_score":       c["roll_score"],
+        }
+
+    # ── DEFENSIVE: highest OTM strike with net credit ─────────────────────────
+    otm_credit = [c for c in all_candidates if c["strike"] > spy_price and c["net_credit"] >= 0]
+    otm_credit.sort(key=lambda c: (-c["strike"], c["dte"]))
+    defensive_cand = otm_credit[0] if otm_credit else None
+
+    # ── BALANCED: best roll_score in ATM ±2% band ────────────────────────────
+    atm_low  = spy_price * 0.98
+    atm_high = spy_price * 1.02
+    atm_range = [c for c in all_candidates if atm_low <= c["strike"] <= atm_high]
+    atm_range.sort(key=lambda c: -c["roll_score"])
+    balanced_cand = atm_range[0] if atm_range else None
+
+    # ── INCOME: highest time premium overall ─────────────────────────────────
+    by_tp = sorted(all_candidates, key=lambda c: -c["new_time_prem"])
+    income_cand = by_tp[0] if by_tp else None
+
+    # Deduplicate: if two scenarios share the same strike+expiry, use next-best
+    used: set = set()
+    def _dedup(cand, pool):
+        if cand is None:
+            return None
+        key = (cand["strike"], cand["expiry"])
+        if key not in used:
+            used.add(key)
+            return cand
+        for alt in pool:
+            ak = (alt["strike"], alt["expiry"])
+            if ak not in used:
+                used.add(ak)
+                return alt
+        return None
+
+    defensive_cand = _dedup(defensive_cand, otm_credit)
+    balanced_cand  = _dedup(balanced_cand,  atm_range)
+    income_cand    = _dedup(income_cand,    by_tp)
+
+    scenarios = [
+        _fmt("DEFENSIVE", defensive_cand,
+             "Safe Harbor Roll",
+             "Move to a higher strike and collect a credit — you stay out-of-the-money and bring in new income."),
+        _fmt("BALANCED", balanced_cand,
+             "Balanced Harvest",
+             "Roll near the current price to maximize time value. You may carry some intrinsic risk but collect the most premium per day."),
+        _fmt("INCOME", income_cand,
+             "Income-First Roll",
+             "Go where the time value is richest. Best income potential; may carry assignment risk at the new strike if it's near the money."),
+    ]
+
+    return {
+        "position_id":     position_id,
+        "position": {
+            "strike":          pos["strike"],
+            "expiry":          pos["expiry"],
+            "dte":             _dte(pos["expiry"]),
+            "sell_price":      pos["sell_price"],
+            "contracts":       pos["contracts"],
+            "current_price":   round(current_price, 2),
+            "intrinsic_value": intrinsic_now,
+            "time_premium":    time_prem_now,
+        },
+        "spy_price":         spy_price,
+        "close_cost_total":  close_cost,
+        "scenarios":         scenarios,
     }
 
 

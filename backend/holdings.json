@@ -1,1 +1,18 @@
-[]
+[
+  {
+    "portfolio_id": "default",
+    "ticker": "SPY",
+    "shares": 2500,
+    "avg_cost": 506.77,
+    "purchase_date": "2025-01-01",
+    "id": "c14e7865-bc30-4073-a80e-6f792eed1a93"
+  },
+  {
+    "portfolio_id": "fc7841be-0aaa-4279-96af-2cb0558a844a",
+    "ticker": "SPY",
+    "shares": 5846,
+    "avg_cost": 564.29250841,
+    "purchase_date": "2025-01-01",
+    "id": "a1937e87-f05c-45c3-8463-3b2f05e35c33"
+  }
+]

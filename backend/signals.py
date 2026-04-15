@@ -64,6 +64,40 @@ class SignalEngine:
                 return 0, "Rates neutral", "NEUTRAL"
         return 0, "Insufficient rate history", "NEUTRAL"
 
+    def _score_recovery_phase(self, vix_recent: list, spy_recent: list) -> tuple:
+        """
+        Detects a post-crash recovery: VIX falling sharply from an elevated peak
+        while SPY is bouncing hard. This is precisely when existing covered calls
+        impose the highest upside cost (Felix's mean-reversion impairment argument).
+
+        Fires when ALL of:
+          - VIX peak in window was >= 28 (was elevated — a real stress event)
+          - VIX has fallen >= 25% from that peak to today
+          - SPY has risen >= 4% from its 10-day low to today
+
+        Score: -2 (suppresses new entries; triggers position-level RECOVERY_MODE alert)
+        """
+        if len(vix_recent) < 5 or len(spy_recent) < 5:
+            return 0, "Insufficient history for recovery detection", "UNKNOWN"
+
+        vix_peak = max(vix_recent)
+        vix_now  = vix_recent[-1]
+        spy_low  = min(spy_recent)
+        spy_now  = spy_recent[-1]
+
+        vix_drop_pct = (vix_peak - vix_now) / vix_peak * 100 if vix_peak > 0 else 0
+        spy_bounce_pct = (spy_now - spy_low) / spy_low * 100 if spy_low > 0 else 0
+
+        if vix_peak >= 28 and vix_drop_pct >= 25 and spy_bounce_pct >= 4:
+            return (
+                -2,
+                f"Recovery phase detected — VIX fell {vix_drop_pct:.0f}% from peak of {vix_peak:.1f}, "
+                f"SPY up {spy_bounce_pct:.1f}% from recent low. "
+                "Existing calls cap upside during recovery; review all open positions.",
+                "RECOVERY",
+            )
+        return 0, "No recovery phase detected", "NORMAL"
+
     def _score_curve(self, fvx: float, tnx: float) -> tuple:
         if fvx < tnx:
             return 1, "Normal yield curve (FVX < TNX)", "NORMAL"
@@ -219,15 +253,36 @@ class SignalEngine:
 
         return alerts
 
+    def _build_recovery_alerts(self, open_positions: list, recovery_reasoning: str) -> list:
+        """Attach a RECOVERY_MODE alert to every open position during a recovery phase."""
+        alerts = []
+        for pos in open_positions:
+            if pos.get("status") != "open":
+                continue
+            alerts.append({
+                "position_id": pos["id"],
+                "type": "RECOVERY_MODE",
+                "message": (
+                    f"Recovery phase active — your ${pos['strike']} call on {pos['expiry']} may cap "
+                    f"upside participation during the market rebound. Consider closing or rolling higher. "
+                    f"({recovery_reasoning})"
+                ),
+                "urgency": "HIGH",
+            })
+        return alerts
+
     def analyze(self, spy_price: float, vix: float, vix_iv_rank: float,
                  vvix: float, tnx: float, fvx: float, tlt: float,
                  spy_ma_signal: dict, open_positions: list,
                  tnx_history: list = None, tlt_history: list = None,
-                 available_expiries: list = None) -> dict:
+                 available_expiries: list = None,
+                 vix_recent: list = None, spy_recent: list = None) -> dict:
 
         tnx_history = tnx_history or []
         tlt_history = tlt_history or []
         available_expiries = available_expiries or []
+        vix_recent = vix_recent or []
+        spy_recent = spy_recent or []
 
         s1, r1, l1 = self._score_iv_rank(vix_iv_rank)
         s2, r2, l2 = self._score_vix_level(vix)
@@ -235,8 +290,9 @@ class SignalEngine:
         s4, r4, l4 = self._score_trend(spy_ma_signal)
         s5, r5, l5 = self._score_rates(tnx_history, tlt_history)
         s6, r6, l6 = self._score_curve(fvx, tnx)
+        s7, r7, l7 = self._score_recovery_phase(vix_recent, spy_recent)
 
-        total_score = s1 + s2 + s3 + s4 + s5 + s6
+        total_score = s1 + s2 + s3 + s4 + s5 + s6 + s7
         regime, confidence = self._compute_regime(total_score)
         should_sell = regime == "SELL PREMIUM"
 
@@ -249,25 +305,30 @@ class SignalEngine:
             warnings.append("Strong uptrend detected — covered calls will underperform, consider pausing")
         if vvix > 100:
             warnings.append("VVIX > 100 — elevated vol-of-vol, regime change risk")
+        if s7 < 0:
+            warnings.append(r7)
 
         recs = self._build_strike_recommendations(spy_price, vix, available_expiries) if should_sell else []
         position_alerts = self._build_position_alerts(open_positions, spy_price, spy_ma_signal)
+        if s7 < 0:
+            position_alerts += self._build_recovery_alerts(open_positions, r7)
 
         return {
             "regime": regime,
             "confidence": confidence,
             "total_score": total_score,
-            "max_score": 12,
+            "max_score": 14,
             "factor_scores": {
-                "iv_rank": {"score": s1, "label": l1, "reasoning": r1},
-                "vix_level": {"score": s2, "label": l2, "reasoning": r2},
-                "vvix": {"score": s3, "label": l3, "reasoning": r3},
-                "spy_trend": {"score": s4, "label": l4, "reasoning": r4},
-                "rates": {"score": s5, "label": l5, "reasoning": r5},
-                "curve": {"score": s6, "label": l6, "reasoning": r6},
+                "iv_rank":         {"score": s1, "label": l1, "reasoning": r1},
+                "vix_level":       {"score": s2, "label": l2, "reasoning": r2},
+                "vvix":            {"score": s3, "label": l3, "reasoning": r3},
+                "spy_trend":       {"score": s4, "label": l4, "reasoning": r4},
+                "rates":           {"score": s5, "label": l5, "reasoning": r5},
+                "curve":           {"score": s6, "label": l6, "reasoning": r6},
+                "recovery_phase":  {"score": s7, "label": l7, "reasoning": r7},
             },
             "should_sell": should_sell,
-            "reasoning": [r1, r2, r3, r4, r5, r6],
+            "reasoning": [r1, r2, r3, r4, r5, r6, r7],
             "recommended_strikes": recs,
             "position_alerts": position_alerts,
             "warnings": warnings,

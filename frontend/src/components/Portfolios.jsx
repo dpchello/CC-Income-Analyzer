@@ -12,6 +12,7 @@ const ALERT_DEFS = {
   STRIKE_BREACH:  { icon: '🚨', label: 'Strike Price at Risk',         color: 'var(--red)',   title: 'Stock Is Within 1.5% of Your Strike',         explain: "The stock price is very close to your strike price. If the stock closes above your strike at expiry, your shares will be sold at that price — you miss any upside above it.", action: 'Consider rolling to a higher strike price with a later expiry date, or close the position.' },
   RECOVERY_MODE:  { icon: '↗', label: 'Market Recovery — Review Calls', color: 'var(--amber)', title: 'Market Is Bouncing Back — Your Call Caps Gains', explain: "The market is recovering strongly from a recent dip. When stocks rally hard, a short call limits how much you benefit from that recovery — you are capped at your strike price. Academic research identifies this as the primary source of underperformance in options-selling strategies during recoveries.", action: 'Consider closing or rolling calls to a higher strike to participate in the recovery. Avoid opening new positions until the rebound stabilizes.' },
   TREND_REVERSAL: { icon: '📈', label: 'Strong Uptrend — Watch Calls', color: 'var(--amber)', title: 'Market Is Trending Up Sharply',                explain: 'The stock is rising steeply. When the market moves up fast, your short call limits your upside and increases the chance your shares get called away.', action: 'Pause new entries. Watch existing positions closely for strike breach risk.' },
+  EARLY_EXERCISE: { icon: '⚡', label: 'Shares May Be Called Early',  color: 'var(--red)',   title: 'Early Assignment Risk — Call Is Deep In-The-Money', explain: "When almost no time value remains, the buyer of your call has a financial reason to exercise early and take your shares now rather than wait until expiry. Academic research shows that 98.7% of bids on deep in-the-money calls are below intrinsic value — the market has essentially priced in early exercise. If your call expires after the upcoming SPY dividend, early exercise is even more likely because the buyer exercises early to collect that dividend.", action: "Roll to a higher strike or buy back the call. If the ex-dividend date is approaching and your time value is below the dividend amount, act quickly — early exercise can happen any business day." },
 }
 
 function alertTypes(pos) {
@@ -20,6 +21,7 @@ function alertTypes(pos) {
   if (pos.dte <= 7) t.push('GAMMA_DANGER')
   else if (pos.dte <= 21) t.push('ROLL_WARNING')
   if (pos.distance_to_strike_pct != null && pos.distance_to_strike_pct <= 1.5 && pos.distance_to_strike_pct > 0) t.push('STRIKE_BREACH')
+  if (pos.early_exercise_risk === 'HIGH' || pos.early_exercise_risk === 'CRITICAL') t.push('EARLY_EXERCISE')
   return t
 }
 
@@ -168,9 +170,63 @@ function FeedbackForm({ pos, action, onClose }) {
   )
 }
 
+function RollScenarioCard({ scenario: s, contracts }) {
+  const creditColor = (s.net_credit ?? 0) >= 0 ? 'var(--green)' : 'var(--amber)'
+  const creditLabel = (s.net_credit ?? 0) >= 0 ? 'Credit' : 'Debit'
+  const intrinsicColor = (s.new_intrinsic ?? 0) > 0 ? 'var(--amber)' : 'var(--muted)'
+  if (!s.viable) {
+    return (
+      <div className="px-3 py-2 border text-xs" style={{ borderColor: 'var(--border)', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(128,128,128,0.04)' }}>
+        <div className="font-semibold mb-0.5" style={{ color: 'var(--muted)' }}>{s.label}</div>
+        <div style={{ color: 'var(--muted)' }}>No suitable target available right now.</div>
+      </div>
+    )
+  }
+  return (
+    <div className="px-3 py-2.5 border text-xs" style={{ borderColor: 'var(--border)', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(128,128,128,0.04)' }}>
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="font-semibold" style={{ color: 'var(--text)' }}>{s.label}</span>
+        <span className="text-[10px] font-mono px-1.5 py-0.5" style={{ color: creditColor, backgroundColor: `${creditColor}20`, border: `1px solid ${creditColor}40`, borderRadius: 'var(--radius-sm)' }}>
+          {(s.net_credit ?? 0) >= 0 ? '+' : ''}${(s.net_credit ?? 0).toFixed(2)} {creditLabel}
+        </span>
+      </div>
+      <p className="mb-2 leading-snug" style={{ color: 'var(--muted)' }}>{s.description}</p>
+      <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono text-[11px]">
+        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>New strike:</span><span style={{ color: 'var(--text)' }}>${s.new_strike}</span></div>
+        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Expiry:</span><span style={{ color: 'var(--text)' }}>{s.new_expiry} ({s.new_dte}d)</span></div>
+        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Time value:</span><span style={{ color: 'var(--green)' }}>${(s.new_time_premium ?? 0).toFixed(2)}</span></div>
+        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Intrinsic kept:</span><span style={{ color: intrinsicColor }}>{(s.new_intrinsic ?? 0) > 0 ? `$${(s.new_intrinsic).toFixed(2)}` : '—'}</span></div>
+        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Net {creditLabel.toLowerCase()}:</span><span style={{ color: creditColor }}>${Math.abs(s.net_credit_total ?? 0).toFixed(0)} total</span></div>
+        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Break-even:</span><span style={{ color: 'var(--text)' }}>${(s.break_even_price ?? 0).toFixed(2)}</span></div>
+      </div>
+      {s.new_delta != null && (
+        <div className="mt-1.5 text-[10px]" style={{ color: 'var(--muted)' }}>
+          Assignment risk at new strike: Δ {s.new_delta.toFixed(2)}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TaxAwareActionCard({ pos, action }) {
   const [expanded, setExpanded] = useState(false)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
+  const [rollTargets, setRollTargets] = useState(null)
+  const [rollLoading, setRollLoading] = useState(false)
+  const [rollError, setRollError] = useState(null)
+
+  const shouldShowRolls = ['ROLL', 'GAMMA_DANGER', 'BREACH_RISK', 'EARLY_EXERCISE', 'CLOSE'].includes(action.key)
+
+  // Lazy-fetch roll targets when card is expanded and the action warrants it
+  useEffect(() => {
+    if (!expanded || !shouldShowRolls || rollTargets !== null || rollLoading) return
+    setRollLoading(true)
+    fetch(`/api/roll-targets/${pos.id}`)
+      .then(r => r.json())
+      .then(d => setRollTargets(d))
+      .catch(() => setRollError('Could not load roll suggestions.'))
+      .finally(() => setRollLoading(false))
+  }, [expanded, shouldShowRolls, pos.id]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const closePnl     = pos.close_pnl_impact != null ? pos.close_pnl_impact : null
   const closePnlPos  = closePnl != null && closePnl >= 0
@@ -291,28 +347,35 @@ function TaxAwareActionCard({ pos, action }) {
             </div>
           </div>
 
-          {/* ── Option C: Roll ──────────────────────────────────────── */}
+          {/* ── Option C: Roll — live scenarios when available ────────── */}
           <div className="px-4 py-3">
-            <div className="font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Roll to next month</div>
-            <div className="space-y-1" style={{ color: 'var(--muted)' }}>
-              <div className="flex justify-between">
-                <span>P&L realized:</span>
-                <span className="font-mono">$0 (no loss locked in)</span>
+            <div className="font-semibold mb-2" style={{ color: 'var(--text)' }}>Roll to next month</div>
+            {shouldShowRolls && rollLoading && (
+              <div className="text-xs" style={{ color: 'var(--muted)' }}>Finding roll targets…</div>
+            )}
+            {shouldShowRolls && rollError && (
+              <div className="space-y-1 text-xs" style={{ color: 'var(--muted)' }}>
+                <div className="flex justify-between"><span>P&L realized:</span><span className="font-mono">$0 (no loss locked in)</span></div>
+                <div className="flex justify-between"><span>Tax impact:</span><span className="font-mono">No new taxable event</span></div>
+                {rollIncomeEst != null && <div className="flex justify-between"><span>New income potential:</span><span className="font-mono" style={{ color: 'var(--green)' }}>~${rollIncomeEst.toLocaleString()} est.</span></div>}
+                <div className="mt-1" style={{ color: 'var(--muted)' }}>Buy back this call and sell a new one at the same or higher strike, targeting 30–45 days until expiry.</div>
               </div>
-              <div className="flex justify-between">
-                <span>Tax impact:</span>
-                <span className="font-mono">No new taxable event</span>
+            )}
+            {shouldShowRolls && rollTargets && (
+              <div className="space-y-2">
+                {rollTargets.scenarios.map(s => (
+                  <RollScenarioCard key={s.scenario} scenario={s} contracts={pos.contracts} />
+                ))}
               </div>
-              {rollIncomeEst != null && (
-                <div className="flex justify-between">
-                  <span>New income potential:</span>
-                  <span className="font-mono" style={{ color: 'var(--green)' }}>~${rollIncomeEst.toLocaleString()} at current prices</span>
-                </div>
-              )}
-            </div>
-            <div className="mt-2 leading-snug" style={{ color: 'var(--muted)' }}>
-              Buy back this call and sell a new one at the same or higher strike, targeting 30–45 days until expiry.
-            </div>
+            )}
+            {!shouldShowRolls && (
+              <div className="space-y-1 text-xs" style={{ color: 'var(--muted)' }}>
+                <div className="flex justify-between"><span>P&L realized:</span><span className="font-mono">$0 (no loss locked in)</span></div>
+                <div className="flex justify-between"><span>Tax impact:</span><span className="font-mono">No new taxable event</span></div>
+                {rollIncomeEst != null && <div className="flex justify-between"><span>New income potential:</span><span className="font-mono" style={{ color: 'var(--green)' }}>~${rollIncomeEst.toLocaleString()} est.</span></div>}
+                <div className="mt-1">Buy back this call and sell a new one at the same or higher strike, targeting 30–45 days until expiry.</div>
+              </div>
+            )}
           </div>
 
         </div>
@@ -399,6 +462,26 @@ function PortfolioIntelligence({ portfolioId, openPos, holdings, signalData, onR
       return urgency
     }
 
+    // Early exercise risk — highest-priority assignment scenario (before DTE checks)
+    if (pos.early_exercise_risk === 'CRITICAL') {
+      const urgency = macroDowngrade('URGENT')
+      const divLabel = pos.days_until_ex_div != null
+        ? ` — Dividend in ${pos.days_until_ex_div}d`
+        : ''
+      return { key: 'EARLY_EXERCISE',
+        label: `Shares May Be Called Early${divLabel}`,
+        color: 'var(--red)', urgency,
+        instruction: `Your call has almost no time value left ($${(pos.time_premium ?? 0).toFixed(2)}) and expires after the upcoming SPY dividend ($${(pos.upcoming_dividend ?? 0).toFixed(2)}). The buyer is very likely to exercise early to collect that dividend — taking your shares before expiry.`,
+        closingCostly }
+    }
+    if (pos.early_exercise_risk === 'HIGH') {
+      const urgency = macroDowngrade('HIGH')
+      return { key: 'EARLY_EXERCISE',
+        label: 'Shares May Be Called Early',
+        color: 'var(--red)', urgency,
+        instruction: `Time value is only $${(pos.time_premium ?? 0).toFixed(2)} — nearly all premium has decayed. Research shows that when time value drops below $0.20, early exercise becomes highly likely. Your shares could be called away before expiry.`,
+        closingCostly }
+    }
     if (pos.dte <= 7) {
       const baseUrgency = closingCostly ? 'HIGH' : 'URGENT'
       const urgency = macroDowngrade(baseUrgency)
@@ -1091,9 +1174,20 @@ function EditHoldingModal({ holding, onSave, onClose }) {
   )
 }
 
-// ── Position card ─────────────────────────────────────────────────────────────
+// ── Position row (table + inline drawer) ──────────────────────────────────────
 
-function PositionCard({ pos, portfolios, currentPortfolioId, onClose, onDelete, onMove }) {
+function statusFromPos(pos) {
+  if (pos.dte <= 7) return { label: 'Urgent', color: 'var(--red)' }
+  if (pos.distance_to_strike_pct != null && pos.distance_to_strike_pct > 0 && pos.distance_to_strike_pct <= 1.5)
+    return { label: 'Urgent', color: 'var(--red)' }
+  if (pos.delta != null && pos.delta > 0.35) return { label: 'Watch', color: 'var(--amber)' }
+  if ((pos.profit_capture_pct || 0) >= 50) return { label: 'Take Profit', color: 'var(--green)' }
+  if (pos.dte <= 21) return { label: 'Watch', color: 'var(--amber)' }
+  return { label: 'On Track', color: 'var(--muted)' }
+}
+
+function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, onMove }) {
+  const [expanded, setExpanded] = useState(false)
   const [isClosing, setIsClosing] = useState(false)
   const [closePrice, setClosePrice] = useState('')
   const [moving, setMoving] = useState(false)
@@ -1106,6 +1200,11 @@ function PositionCard({ pos, portfolios, currentPortfolioId, onClose, onDelete, 
   const alerts = alertTypes(pos)
   const pnlPos = (pos.pnl || 0) >= 0
   const otherPortfolios = portfolios.filter(p => p.id !== currentPortfolioId && !p.archived)
+  const status = statusFromPos(pos)
+  const dteColor = pos.dte <= 7 ? 'var(--red)' : pos.dte <= 21 ? 'var(--amber)' : 'var(--muted)'
+  const rowBg = status.label === 'Urgent' ? 'rgba(255,61,90,0.04)'
+    : status.label === 'Watch' ? 'rgba(255,176,32,0.03)'
+    : 'transparent'
 
   async function doSaveNotes() {
     setNotesSaving(true)
@@ -1155,189 +1254,174 @@ function PositionCard({ pos, portfolios, currentPortfolioId, onClose, onDelete, 
   }
 
   return (
-    <div className="px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
-      <div className="flex flex-wrap gap-4 items-start">
-        {/* Identity */}
-        <div className="flex items-center gap-3 min-w-[160px]">
-          <div className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold shrink-0"
-               style={{ backgroundColor: 'var(--border)', color: 'var(--blue)' }}>
-            {pos.ticker}
-          </div>
-          <div>
-            <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>${pos.strike} Call</div>
-            <div className="text-xs" style={{ color: 'var(--muted)' }}>Expires {pos.expiry}</div>
-          </div>
-        </div>
+    <Fragment>
+      {/* ── Table row ── */}
+      <tr
+        className="border-b cursor-pointer transition-colors"
+        style={{ borderColor: 'var(--border)', backgroundColor: expanded ? 'rgba(255,255,255,0.02)' : rowBg }}
+        onClick={() => setExpanded(e => !e)}
+      >
+        <td className="px-4 py-3 font-mono font-semibold text-xs" style={{ color: 'var(--blue)' }}>
+          {pos.ticker}
+        </td>
+        <td className="px-4 py-3 font-mono text-xs font-semibold" style={{ color: 'var(--text)' }}>
+          ${pos.strike}
+        </td>
+        <td className="px-4 py-3 text-xs font-mono" style={{ color: 'var(--muted)' }}>
+          {pos.expiry}
+        </td>
+        <td className="px-4 py-3">
+          <span className="text-xs font-mono font-semibold" style={{ color: dteColor }}>{pos.dte}d</span>
+        </td>
+        <td className="px-4 py-3">
+          <span className="text-xs font-mono font-semibold" style={{ color: pnlPos ? 'var(--green)' : 'var(--red)' }}>
+            {pnlPos ? '+' : ''}${pos.pnl?.toFixed(0) ?? '—'}
+          </span>
+        </td>
+        <td className="px-4 py-3">
+          <span
+            className="text-[11px] px-2 py-0.5 font-medium"
+            style={{ backgroundColor: status.color + '20', color: status.color, borderRadius: 'var(--radius-sm)' }}
+          >
+            {status.label}
+          </span>
+        </td>
+        <td className="px-4 py-3 text-xs text-right" style={{ color: 'var(--muted)' }}>
+          {expanded ? '▲' : '▼'}
+        </td>
+      </tr>
 
-        {/* Stats */}
-        <div className="flex flex-wrap gap-5 flex-1">
-          {[
-            { label: <Term id="DTE">Days Until Expiry</Term>,      labelKey: 'DTE',           value: `${pos.dte}d`,                                                                        color: pos.dte <= 7 ? 'var(--red)' : pos.dte <= 21 ? 'var(--amber)' : 'var(--text)' },
-            { label: <Term id="Contracts">Positions (×100 shares)</Term>, labelKey: 'Contracts', value: `${pos.contracts} × 100`,                                                            color: 'var(--text)' },
-            { label: 'Sold At',                                    labelKey: 'SoldAt',        value: `$${pos.sell_price?.toFixed(2)}`,                                                      color: 'var(--text)' },
-            { label: <Term id="Premium">Current Price</Term>,      labelKey: 'CurrentPrice',  value: `$${pos.current_price?.toFixed(2) ?? '—'}`,                                            color: 'var(--text)' },
-            { label: 'P&L',                                        labelKey: 'PnL',           value: `${pnlPos?'+':''}$${pos.pnl?.toFixed(0)}`,                                             color: pnlPos ? 'var(--green)' : 'var(--red)' },
-            { label: <Term id="ProfitCapturePct">% of Max Income</Term>, labelKey: 'ProfitCapture', value: `${pos.profit_capture_pct?.toFixed(1)}%`,                                       color: pos.profit_capture_pct >= 50 ? 'var(--green)' : 'var(--text)' },
-            { label: <Term id="Delta">Assignment Risk</Term>,      labelKey: 'Delta',         value: pos.delta != null ? pos.delta.toFixed(2) : '—',                                        color: pos.delta > 0.35 ? 'var(--red)' : pos.delta > 0.25 ? 'var(--amber)' : 'var(--text)' },
-            { label: <Term id="Strike">Distance to Strike</Term>,  labelKey: 'StrikeDist',    value: pos.distance_to_strike_pct != null ? `${pos.distance_to_strike_pct.toFixed(2)}%` : '—', color: (pos.distance_to_strike_pct || 99) <= 1.5 ? 'var(--red)' : 'var(--text)' },
-          ].map(f => (
-            <div key={f.labelKey}>
-              <div className="text-xs mb-0.5" style={{ color: 'var(--muted)' }}>{f.label}</div>
-              <div className="text-sm font-mono font-semibold" style={{ color: f.color }}>{f.value}</div>
-            </div>
-          ))}
+      {/* ── Inline drawer ── */}
+      {expanded && (
+        <tr>
+          <td colSpan={7} className="border-b" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)' }}>
+            <div className="px-5 py-4 space-y-4">
 
-          {/* OI tracking */}
-          {pos.open_interest != null && (() => {
-            const sig = pos.oi_signal
-            const chg = pos.oi_change_1d_pct
-            const oiColor = sig === 'MAJOR_UNWIND' ? 'var(--red)'
-              : sig === 'UNWINDING' ? 'var(--amber)'
-              : sig === 'BUILDING'  ? 'var(--blue)'
-              : 'var(--muted)'
-            return (
-              <div>
-                <div className="text-xs mb-0.5" style={{ color: 'var(--muted)' }}>
-                  <Term id="OpenInterest">Open Interest</Term>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-mono font-semibold" style={{ color: 'var(--text)' }}>
-                    {pos.open_interest.toLocaleString()}
-                  </span>
-                  {chg != null && (
-                    <span className="text-[10px] px-1.5 py-0.5 font-mono font-semibold"
-                          style={{ backgroundColor: oiColor + '20', color: oiColor }}>
-                      {chg > 0 ? '+' : ''}{chg}%
-                    </span>
-                  )}
-                </div>
-              </div>
-            )
-          })()}
-        </div>
-
-        {/* Actions */}
-        <div className="shrink-0 flex flex-col gap-2 items-end">
-          {isClosing ? (
-            <div className="flex items-center gap-2">
-              <input
-                type="number" step="0.01" placeholder="buy-back price" value={closePrice}
-                onChange={e => setClosePrice(e.target.value)}
-                className="w-28 px-2 py-1 text-xs font-mono border focus:outline-none"
-                style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
-              />
-              <button onClick={doClose} className="text-sm" style={{ color: 'var(--green)' }}>✓</button>
-              <button onClick={() => setIsClosing(false)} className="text-sm" style={{ color: 'var(--muted)' }}>✗</button>
-            </div>
-          ) : (
-            <button onClick={() => setIsClosing(true)} className="text-xs hover:underline" style={{ color: 'var(--amber)' }}>
-              Close position
-            </button>
-          )}
-
-          {/* Edit contracts / sell price */}
-          {isEditing ? (
-            <div className="flex flex-col gap-1.5">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs w-20 shrink-0" style={{ color: 'var(--muted)' }}>Contracts</span>
-                <input
-                  type="number" min="1" step="1" value={editContracts}
-                  onChange={e => setEditContracts(e.target.value)}
-                  className="w-20 px-2 py-1 text-xs font-mono border focus:outline-none"
-                  style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
-                />
-              </div>
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs w-20 shrink-0" style={{ color: 'var(--muted)' }}>Sold at $</span>
-                <input
-                  type="number" min="0.01" step="0.01" value={editSellPrice}
-                  onChange={e => setEditSellPrice(e.target.value)}
-                  className="w-20 px-2 py-1 text-xs font-mono border focus:outline-none"
-                  style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
-                />
-              </div>
-              <div className="flex gap-2 mt-0.5">
-                <button onClick={doEdit} className="text-xs px-2 py-0.5 border" style={{ borderColor: 'var(--green)', color: 'var(--green)' }}>Save</button>
-                <button onClick={() => { setIsEditing(false); setEditContracts(String(pos.contracts)); setEditSellPrice(String(pos.sell_price ?? '')) }} className="text-xs" style={{ color: 'var(--muted)' }}>Cancel</button>
-              </div>
-            </div>
-          ) : (
-            <button onClick={() => setIsEditing(true)} className="text-xs hover:underline" style={{ color: 'var(--blue)' }}>
-              Edit position
-            </button>
-          )}
-
-          {/* Move to */}
-          {otherPortfolios.length > 0 && (
-            moving ? (
-              <div className="flex flex-wrap gap-1">
-                <span className="text-xs" style={{ color: 'var(--muted)' }}>Move to:</span>
-                {otherPortfolios.map(p => (
-                  <button key={p.id} onClick={() => doMove(p.id)}
-                    className="text-xs px-2 py-0.5 border" style={{ borderColor: 'var(--border)', color: 'var(--blue)' }}>
-                    {p.name}
-                  </button>
+              {/* Detail stats */}
+              <div className="flex flex-wrap gap-5 text-xs">
+                {[
+                  { label: 'Contracts', value: `${pos.contracts} × 100` },
+                  { label: 'Sold At', value: `$${pos.sell_price?.toFixed(2)}` },
+                  { label: 'Current Price', value: `$${pos.current_price?.toFixed(2) ?? '—'}` },
+                  pos.time_premium != null ? { label: 'Time Value', value: `$${pos.time_premium.toFixed(2)}`, color: 'var(--green)' } : null,
+                  pos.intrinsic_value != null ? { label: 'Intrinsic', value: `$${pos.intrinsic_value.toFixed(2)}`, color: pos.intrinsic_value > 0 ? 'var(--red)' : 'var(--muted)' } : null,
+                  pos.early_exercise_risk && pos.early_exercise_risk !== 'NONE' ? { label: 'Exercise Risk', value: pos.early_exercise_risk, color: (pos.early_exercise_risk === 'CRITICAL' || pos.early_exercise_risk === 'HIGH') ? 'var(--red)' : pos.early_exercise_risk === 'MEDIUM' ? 'var(--amber)' : 'var(--muted)' } : null,
+                  pos.days_until_ex_div != null && pos.days_until_ex_div >= 0 ? { label: 'Ex-Div', value: `${pos.next_ex_div_date} (${pos.days_until_ex_div}d)`, color: pos.days_until_ex_div <= 14 ? 'var(--amber)' : 'var(--muted)' } : null,
+                  { label: '% of Max Income', value: `${pos.profit_capture_pct?.toFixed(1) ?? '—'}%`, color: (pos.profit_capture_pct || 0) >= 50 ? 'var(--green)' : 'var(--text)' },
+                  { label: 'Assignment Risk (Δ)', value: pos.delta != null ? pos.delta.toFixed(2) : '—', color: (pos.delta || 0) > 0.35 ? 'var(--red)' : (pos.delta || 0) > 0.25 ? 'var(--amber)' : 'var(--text)' },
+                  pos.distance_to_strike_pct != null ? { label: 'Distance to Strike', value: `${pos.distance_to_strike_pct.toFixed(2)}%`, color: (pos.distance_to_strike_pct || 99) <= 1.5 ? 'var(--red)' : 'var(--text)' } : null,
+                  pos.open_interest != null ? { label: 'Open Interest', value: pos.open_interest.toLocaleString() } : null,
+                ].filter(Boolean).map(f => (
+                  <div key={f.label}>
+                    <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: 'var(--muted)' }}>{f.label}</div>
+                    <div className="font-mono font-semibold" style={{ color: f.color || 'var(--text)' }}>{f.value}</div>
+                  </div>
                 ))}
-                <button onClick={() => setMoving(false)} className="text-xs" style={{ color: 'var(--muted)' }}>✗</button>
               </div>
-            ) : (
-              <button onClick={() => setMoving(true)} className="text-xs hover:underline" style={{ color: 'var(--blue)' }}>
-                Move to…
-              </button>
-            )
-          )}
 
-          <button onClick={() => { if (confirm('Remove this position?')) onDelete(pos.id) }}
-            className="text-xs" style={{ color: 'var(--muted)' }}>
-            Remove
-          </button>
-        </div>
-      </div>
+              {/* Alerts */}
+              {alerts.length > 0 && (
+                <div className="space-y-1 max-w-lg">
+                  {alerts.map(type => <AlertCard key={type} type={type} />)}
+                </div>
+              )}
 
-      {alerts.length > 0 && (
-        <div className="mt-3 max-w-lg space-y-1">
-          {alerts.map(type => <AlertCard key={type} type={type} />)}
-        </div>
-      )}
+              {/* Notes */}
+              <div>
+                {notesOpen ? (
+                  <div className="flex flex-col gap-2">
+                    <textarea
+                      rows={2} value={notesDraft} onChange={e => setNotesDraft(e.target.value)}
+                      placeholder="Add notes about this position…"
+                      className="w-full max-w-md px-3 py-2 text-xs border resize-none focus:outline-none"
+                      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}
+                    />
+                    <div className="flex gap-2">
+                      <button onClick={doSaveNotes} disabled={notesSaving}
+                        className="text-xs px-2 py-0.5 border" style={{ borderColor: 'var(--green)', color: 'var(--green)' }}>
+                        {notesSaving ? 'Saving…' : 'Save'}
+                      </button>
+                      <button onClick={() => { setNotesOpen(false); setNotesDraft(pos.notes || '') }}
+                        className="text-xs" style={{ color: 'var(--muted)' }}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start gap-2">
+                    {pos.notes && <p className="text-xs" style={{ color: 'var(--muted)' }}>{pos.notes}</p>}
+                    <button onClick={e => { e.stopPropagation(); setNotesOpen(true) }}
+                      className="text-xs hover:underline shrink-0" style={{ color: 'var(--blue)' }}>
+                      {pos.notes ? 'Edit note' : '+ Add note'}
+                    </button>
+                  </div>
+                )}
+              </div>
 
-      {/* Notes */}
-      <div className="mt-3">
-        {notesOpen ? (
-          <div className="flex flex-col gap-2">
-            <textarea
-              rows={3}
-              value={notesDraft}
-              onChange={e => setNotesDraft(e.target.value)}
-              placeholder="Add notes about this position…"
-              className="w-full px-3 py-2 text-xs border resize-none focus:outline-none"
-              style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
-            />
-            <div className="flex gap-2">
-              <button onClick={doSaveNotes} disabled={notesSaving}
-                className="text-xs px-2 py-0.5 border"
-                style={{ borderColor: 'var(--green)', color: 'var(--green)' }}>
-                {notesSaving ? 'Saving…' : 'Save'}
-              </button>
-              <button onClick={() => { setNotesOpen(false); setNotesDraft(pos.notes || '') }}
-                className="text-xs" style={{ color: 'var(--muted)' }}>
-                Cancel
-              </button>
+              {/* Action row */}
+              <div className="flex flex-wrap items-center gap-4 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                {isClosing ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number" step="0.01" placeholder="buy-back price" value={closePrice}
+                      onChange={e => setClosePrice(e.target.value)}
+                      className="w-28 px-2 py-1 text-xs font-mono border focus:outline-none"
+                      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}
+                    />
+                    <button onClick={doClose} className="text-xs" style={{ color: 'var(--green)' }}>✓ Confirm</button>
+                    <button onClick={() => setIsClosing(false)} className="text-xs" style={{ color: 'var(--muted)' }}>Cancel</button>
+                  </div>
+                ) : (
+                  <button onClick={e => { e.stopPropagation(); setIsClosing(true) }}
+                    className="text-xs hover:underline" style={{ color: 'var(--amber)' }}>
+                    Close position
+                  </button>
+                )}
+
+                {isEditing ? (
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <input type="number" min="1" step="1" value={editContracts}
+                      onChange={e => setEditContracts(e.target.value)}
+                      className="w-20 px-2 py-1 text-xs font-mono border focus:outline-none" placeholder="contracts"
+                      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }} />
+                    <input type="number" min="0.01" step="0.01" value={editSellPrice}
+                      onChange={e => setEditSellPrice(e.target.value)}
+                      className="w-20 px-2 py-1 text-xs font-mono border focus:outline-none" placeholder="sold at"
+                      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }} />
+                    <button onClick={doEdit} className="text-xs px-2 py-0.5 border" style={{ borderColor: 'var(--green)', color: 'var(--green)' }}>Save</button>
+                    <button onClick={() => { setIsEditing(false); setEditContracts(String(pos.contracts)); setEditSellPrice(String(pos.sell_price ?? '')) }}
+                      className="text-xs" style={{ color: 'var(--muted)' }}>Cancel</button>
+                  </div>
+                ) : (
+                  <button onClick={e => { e.stopPropagation(); setIsEditing(true) }}
+                    className="text-xs hover:underline" style={{ color: 'var(--blue)' }}>Edit position</button>
+                )}
+
+                {otherPortfolios.length > 0 && (
+                  moving ? (
+                    <div className="flex flex-wrap gap-1 items-center">
+                      <span className="text-xs" style={{ color: 'var(--muted)' }}>Move to:</span>
+                      {otherPortfolios.map(p => (
+                        <button key={p.id} onClick={() => doMove(p.id)}
+                          className="text-xs px-2 py-0.5 border" style={{ borderColor: 'var(--border)', color: 'var(--blue)' }}>
+                          {p.name}
+                        </button>
+                      ))}
+                      <button onClick={() => setMoving(false)} className="text-xs" style={{ color: 'var(--muted)' }}>✗</button>
+                    </div>
+                  ) : (
+                    <button onClick={e => { e.stopPropagation(); setMoving(true) }}
+                      className="text-xs hover:underline" style={{ color: 'var(--blue)' }}>Move to…</button>
+                  )
+                )}
+
+                <button onClick={() => { if (confirm('Remove this position?')) onDelete(pos.id) }}
+                  className="text-xs ml-auto" style={{ color: 'var(--muted)' }}>Remove</button>
+              </div>
+
             </div>
-          </div>
-        ) : (
-          <div className="flex items-start gap-2">
-            {pos.notes && (
-              <p className="text-xs flex-1" style={{ color: 'var(--muted)' }}>{pos.notes}</p>
-            )}
-            <button onClick={() => setNotesOpen(true)}
-              className="text-xs hover:underline shrink-0"
-              style={{ color: 'var(--blue)' }}>
-              {pos.notes ? 'Edit note' : '+ Add note'}
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
+          </td>
+        </tr>
+      )}
+    </Fragment>
   )
 }
 
@@ -1782,16 +1866,35 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                   </button>
                 </div>
               ) : (
-                openPos.map(pos => (
-                  <PositionCard
-                    key={pos.id} pos={pos}
-                    portfolios={portfolios}
-                    currentPortfolioId={selectedId}
-                    onClose={onRefresh}
-                    onDelete={deletePosition}
-                    onMove={onRefresh}
-                  />
-                ))
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
+                    <thead>
+                      <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
+                        {['Ticker', 'Strike', 'Expiry', 'DTE', 'P&L', 'Status', ''].map(h => (
+                          <th key={h} className="px-4 py-2.5 text-left font-normal text-[11px] uppercase tracking-wider"
+                            style={{ color: 'var(--muted)' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {openPos.map(pos => (
+                        <PositionRow
+                          key={pos.id} pos={pos}
+                          portfolios={portfolios}
+                          currentPortfolioId={selectedId}
+                          onClose={onRefresh}
+                          onDelete={deletePosition}
+                          onMove={onRefresh}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                  <div className="px-4 py-2.5 border-t" style={{ borderColor: 'var(--border)' }}>
+                    <button onClick={() => setShowAddPosition(true)} className="text-xs" style={{ color: 'var(--green)' }}>
+                      + Add Position
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
 

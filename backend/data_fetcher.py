@@ -4,8 +4,59 @@ import numpy as np
 from datetime import datetime, timedelta
 import time
 import threading
+import math
+
+
+# ── Black-Scholes Greeks (pure Python, no scipy) ──────────────────────────────
+
+def _ncdf(x):
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+def _npdf(x):
+    return math.exp(-0.5 * x * x) / math.sqrt(2.0 * math.pi)
+
+def _bs_greeks(S, K, T, sigma, r=0.043, q=0.012):
+    """
+    Return (delta, gamma, theta, vega) for a European call using
+    Black-Scholes-Merton with continuous dividend yield q.
+    S     = spot price
+    K     = strike
+    T     = time to expiry in years
+    sigma = implied volatility (annualized, e.g. 0.20 for 20%)
+    r     = risk-free rate (10-yr TNX ≈ 4.3%)
+    q     = continuous dividend yield (SPY ≈ 1.2%)
+    """
+    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        return None, None, None, None
+    try:
+        d1 = (math.log(S / K) + (r - q + 0.5 * sigma ** 2) * T) / (sigma * math.sqrt(T))
+        d2 = d1 - sigma * math.sqrt(T)
+        eq_T  = math.exp(-q * T)
+        er_T  = math.exp(-r * T)
+        nd1   = _ncdf(d1)
+        nd2   = _ncdf(d2)
+        npd1  = _npdf(d1)
+
+        delta = eq_T * nd1
+        gamma = eq_T * npd1 / (S * sigma * math.sqrt(T))
+        # theta: daily P&L decay per share (negative = time decay costs the holder)
+        theta = (
+            -S * eq_T * npd1 * sigma / (2.0 * math.sqrt(T))
+            - r * K * er_T * nd2
+            + q * S * eq_T * nd1
+        ) / 365.0
+        # vega: $ change per 1 percentage-point move in IV
+        vega  = S * eq_T * npd1 * math.sqrt(T) / 100.0
+
+        return round(delta, 4), round(gamma, 4), round(theta, 4), round(vega, 4)
+    except Exception:
+        return None, None, None, None
 
 CACHE_TTL = 60  # seconds
+
+# ── Dividend cache (24h TTL — quarterly data doesn't change intraday) ─────────
+_div_cache: dict = {"data": None, "ts": 0.0}
+DIV_CACHE_TTL = 86400  # 24 hours
 
 
 class Cache:
@@ -149,7 +200,7 @@ class DataFetcher:
         _cache.set("spy_ma_signal", result)
         return result
 
-    def get_options_chain(self, expiry: str) -> dict:
+    def get_options_chain(self, expiry: str) -> list:
         cached = _cache.get(f"chain_{expiry}")
         if cached:
             return cached
@@ -157,15 +208,61 @@ class DataFetcher:
             t = _ticker("SPY")
             chain = t.option_chain(expiry)
             calls = chain.calls
-            result = calls[["strike", "bid", "ask", "lastPrice", "volume",
-                             "openInterest", "impliedVolatility", "delta", "theta"]].to_dict("records")
+
+            # SPY spot price for B-S calculation
+            spot = self.get_spy_price().get("price", 0)
+
+            # Time to expiry in years
+            exp_date = datetime.strptime(expiry, "%Y-%m-%d").date()
+            T = max((exp_date - datetime.today().date()).days, 1) / 365.0
+
+            available_cols = [c for c in ["strike", "bid", "ask", "lastPrice", "volume",
+                              "openInterest", "impliedVolatility"]
+                              if c in calls.columns]
+            result = calls[available_cols].to_dict("records")
+
+            # Build put OI lookup by strike
+            put_oi_by_strike: dict = {}
+            try:
+                puts = chain.puts
+                if "strike" in puts.columns and "openInterest" in puts.columns:
+                    for _, row in puts[["strike", "openInterest"]].iterrows():
+                        k = round(float(row["strike"]), 2)
+                        oi = row["openInterest"]
+                        put_oi_by_strike[k] = int(oi) if oi is not None and not (isinstance(oi, float) and np.isnan(oi)) else None
+            except Exception:
+                pass
+
             for row in result:
-                for k, v in row.items():
+                # Clean NaNs
+                for k, v in list(row.items()):
                     if isinstance(v, float) and np.isnan(v):
                         row[k] = None
                     elif isinstance(v, float):
                         row[k] = round(v, 4)
-        except Exception as e:
+
+                # Attach put OI for this strike
+                row["put_oi"] = put_oi_by_strike.get(round(float(row.get("strike") or 0), 2))
+
+                # Compute Greeks via Black-Scholes (yfinance doesn't supply them)
+                iv = row.get("impliedVolatility") or 0
+                strike = row.get("strike") or 0
+                if spot > 0 and iv > 0 and strike > 0:
+                    delta, gamma, theta, vega = _bs_greeks(spot, strike, T, iv)
+                else:
+                    delta = gamma = theta = vega = None
+                row["delta"] = delta
+                row["gamma"] = gamma
+                row["theta"] = theta
+                row["vega"]  = vega
+
+                # Intrinsic value & time premium
+                mid = round(((row.get("bid") or 0) + (row.get("ask") or 0)) / 2, 2)
+                intrinsic = round(max(0.0, spot - float(row.get("strike") or 0)), 2)
+                row["intrinsic_value"] = intrinsic
+                row["time_premium"]    = round(max(0.0, mid - intrinsic), 2)
+
+        except Exception:
             result = []
         _cache.set(f"chain_{expiry}", result)
         return result
@@ -228,6 +325,35 @@ class DataFetcher:
         _cache.set(cache_key, result)
         return result
 
+    def get_vix_recent_history(self, days: int = 10) -> list:
+        """Return list of recent VIX daily closes, oldest first."""
+        cache_key = f"vix_recent_{days}"
+        cached = _cache.get(cache_key)
+        if cached:
+            return cached
+        try:
+            t = _ticker("^VIX")
+            hist = t.history(period=f"{days}d", interval="1d")
+            result = [round(float(v), 2) for v in hist["Close"].tolist()]
+        except Exception:
+            result = []
+        _cache.set(cache_key, result)
+        return result
+
+    def get_spy_recent_history(self, days: int = 10) -> list:
+        """Return list of recent SPY daily closes, oldest first."""
+        cache_key = f"spy_recent_{days}"
+        cached = _cache.get(cache_key)
+        if cached:
+            return cached
+        try:
+            df = self.get_spy_history(days + 5)
+            result = [round(float(v), 2) for v in df["Close"].tolist()[-days:]]
+        except Exception:
+            result = []
+        _cache.set(cache_key, result)
+        return result
+
     def get_tnx_history(self, days: int = 10) -> list:
         cached = _cache.get(f"tnx_hist_{days}")
         if cached:
@@ -239,6 +365,81 @@ class DataFetcher:
         except Exception:
             result = []
         _cache.set(f"tnx_hist_{days}", result)
+        return result
+
+    def get_spy_dividends(self) -> dict:
+        """
+        Return SPY dividend data with 24h cache.
+        {
+          "next_ex_div_date": "YYYY-MM-DD" | None,
+          "next_div_amount":  float,         # upcoming dividend per share
+          "days_until_ex_div": int | None,
+          "recent_quarterly_avg": float,     # avg of last 4 dividends
+        }
+        Falls back to $1.60/quarter if yfinance data unavailable.
+        """
+        if time.time() - _div_cache["ts"] < DIV_CACHE_TTL and _div_cache["data"]:
+            return _div_cache["data"]
+        try:
+            t = _ticker("SPY")
+            next_ex_div: str | None = None
+            next_amount: float | None = None
+
+            # Try .calendar for next ex-dividend date
+            try:
+                cal = t.calendar
+                if cal is not None and "Ex-Dividend Date" in cal:
+                    raw = cal["Ex-Dividend Date"]
+                    next_ex_div = raw.date().isoformat() if hasattr(raw, "date") else str(raw)[:10]
+            except Exception:
+                pass
+
+            # .dividends for amounts and fallback ex-div estimation
+            recent_quarterly_avg = 1.60
+            try:
+                divs = t.dividends
+                if divs is not None and len(divs) >= 1:
+                    next_amount = round(float(divs.iloc[-1]), 4)
+                if divs is not None and len(divs) >= 4:
+                    recent_quarterly_avg = round(float(divs.iloc[-4:].mean()), 4)
+                # If calendar failed, estimate next ex-div from last payment date + ~91 days
+                if next_ex_div is None and len(divs) >= 1:
+                    last_ts = divs.index[-1]
+                    last_date = last_ts.date() if hasattr(last_ts, "date") else last_ts
+                    estimated = last_date + timedelta(days=91)
+                    next_ex_div = estimated.isoformat()
+            except Exception:
+                pass
+
+            days_until: int | None = None
+            if next_ex_div:
+                try:
+                    ex_date = datetime.strptime(next_ex_div, "%Y-%m-%d").date()
+                    days_until = (ex_date - datetime.today().date()).days
+                    if days_until < 0:
+                        # Already passed — clear it so callers don't act on stale data
+                        next_ex_div = None
+                        days_until = None
+                except Exception:
+                    next_ex_div = None
+                    days_until = None
+
+            result = {
+                "next_ex_div_date":    next_ex_div,
+                "next_div_amount":     next_amount or recent_quarterly_avg,
+                "days_until_ex_div":   days_until,
+                "recent_quarterly_avg": recent_quarterly_avg,
+            }
+        except Exception as e:
+            result = {
+                "next_ex_div_date":    None,
+                "next_div_amount":     1.60,
+                "days_until_ex_div":   None,
+                "recent_quarterly_avg": 1.60,
+                "error": str(e),
+            }
+        _div_cache["data"] = result
+        _div_cache["ts"] = time.time()
         return result
 
     def get_tlt_history(self, days: int = 10) -> list:
