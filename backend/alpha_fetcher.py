@@ -12,12 +12,16 @@ Endpoints used (5 calls/day max):
 """
 
 import json
+import os
 import time
 import requests
 from datetime import date, datetime
 from pathlib import Path
+from dotenv import load_dotenv
 
-API_KEY = "REDACTED-ALPHAVANTAGE-KEY"
+load_dotenv()
+
+API_KEY = os.getenv("ALPHAVANTAGE_API_KEY", "")
 BASE_URL = "https://www.alphavantage.co/query"
 
 CACHE_DIR = Path(__file__).parent / "av_cache"

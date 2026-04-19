@@ -6,6 +6,9 @@ import Screener from './components/Screener.jsx'
 import Settings from './components/Settings.jsx'
 import ScoreGuide from './components/ScoreGuide.jsx'
 import Sidebar, { MobileMenuButton } from './components/Sidebar.jsx'
+import AuthGate from './components/AuthGate.jsx'
+import UpgradeModal from './components/UpgradeModal.jsx'
+import { useAuth } from './auth.jsx'
 
 // Compute alert count: positions with URGENT or HIGH urgency
 function computeAlertCount(positions) {
@@ -19,6 +22,7 @@ function computeAlertCount(positions) {
 }
 
 export default function App() {
+  const { user, ready, logout, apiFetch } = useAuth()
   const [activeTab, setActiveTab]     = useState('Dashboard')
   const [dashData, setDashData]       = useState(null)
   const [signalData, setSignalData]   = useState(null)
@@ -33,19 +37,27 @@ export default function App() {
   const [stripDismissed, setStripDismissed] = useState(
     () => sessionStorage.getItem('alertStripDismissed') === 'true'
   )
+  const [upgradeModal, setUpgradeModal] = useState(null) // null | { reason: string }
+
+  function openUpgrade(reason = '') {
+    setUpgradeModal({ reason })
+  }
+  function closeUpgrade() {
+    setUpgradeModal(null)
+  }
 
   const fetchAll = useCallback(async () => {
     try {
       const [dash, sig, pos, ptf, hld, news, tech, usage, pnl] = await Promise.all([
-        fetch('/api/dashboard').then(r => r.json()),
-        fetch('/api/signals').then(r => r.json()),
-        fetch('/api/positions').then(r => r.json()),
-        fetch('/api/portfolios').then(r => r.json()),
-        fetch('/api/holdings').then(r => r.json()),
-        fetch('/api/alpha/news').then(r => r.json()).catch(() => null),
-        fetch('/api/alpha/technicals').then(r => r.json()).catch(() => null),
-        fetch('/api/alpha/usage').then(r => r.json()).catch(() => null),
-        fetch('/api/pnl-summary').then(r => r.json()).catch(() => null),
+        apiFetch('/api/dashboard').then(r => r.json()),
+        apiFetch('/api/signals').then(r => r.json()),
+        apiFetch('/api/positions').then(r => r.json()),
+        apiFetch('/api/portfolios').then(r => r.json()),
+        apiFetch('/api/holdings').then(r => r.json()),
+        apiFetch('/api/alpha/news').then(r => r.json()).catch(() => null),
+        apiFetch('/api/alpha/technicals').then(r => r.json()).catch(() => null),
+        apiFetch('/api/alpha/usage').then(r => r.json()).catch(() => null),
+        apiFetch('/api/pnl-summary').then(r => r.json()).catch(() => null),
       ])
       setDashData(dash)
       setSignalData(sig)
@@ -63,10 +75,11 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    if (!user) return
     fetchAll()
     const interval = setInterval(fetchAll, 60000)
     return () => clearInterval(interval)
-  }, [fetchAll])
+  }, [fetchAll, user])
 
   const alertCount = computeAlertCount(positions)
 
@@ -96,6 +109,17 @@ export default function App() {
     setStripDismissed(true)
   }
 
+  // Waiting for localStorage token validation
+  if (!ready) return (
+    <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
+      <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin"
+        style={{ borderColor: 'var(--green)', borderTopColor: 'transparent' }} />
+    </div>
+  )
+
+  // Not authenticated — show login/signup
+  if (!user) return <AuthGate />
+
   return (
     <div className="flex min-h-screen font-sans" style={{ backgroundColor: 'var(--bg)', color: 'var(--text)' }}>
 
@@ -123,25 +147,56 @@ export default function App() {
             )}
           </div>
 
-          <button
-            onClick={async () => { setRefreshing(true); await fetchAll(); setRefreshing(false) }}
-            disabled={refreshing}
-            title="Refresh all data"
-            className="flex items-center gap-1.5 px-2.5 py-1 text-xs border transition-colors"
-            style={{
-              borderColor: 'var(--border)',
-              color: refreshing ? 'var(--muted)' : 'var(--text)',
-              backgroundColor: 'transparent',
-              borderRadius: 'var(--radius-sm)',
-              cursor: refreshing ? 'not-allowed' : 'pointer',
-            }}
-          >
-            <span
-              className={refreshing ? 'animate-spin' : ''}
-              style={{ display: 'inline-block', fontSize: '11px' }}
-            >↻</span>
-            {refreshing ? 'Refreshing…' : 'Refresh'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={async () => { setRefreshing(true); await fetchAll(); setRefreshing(false) }}
+              disabled={refreshing}
+              title="Refresh all data"
+              className="flex items-center gap-1.5 px-2.5 py-1 text-xs border transition-colors"
+              style={{
+                borderColor: 'var(--border)',
+                color: refreshing ? 'var(--muted)' : 'var(--text)',
+                backgroundColor: 'transparent',
+                borderRadius: 'var(--radius-sm)',
+                cursor: refreshing ? 'not-allowed' : 'pointer',
+              }}
+            >
+              <span
+                className={refreshing ? 'animate-spin' : ''}
+                style={{ display: 'inline-block', fontSize: '11px' }}
+              >↻</span>
+              {refreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
+
+            <span className="text-xs hidden sm:inline" style={{ color: 'var(--muted)' }}>
+              {user.email}
+            </span>
+            {user.tier === 'pro' && (
+              <span
+                className="text-xs px-1.5 py-0.5 font-semibold"
+                style={{
+                  background: 'rgba(255,176,32,0.15)',
+                  color: 'var(--amber, #ffb020)',
+                  borderRadius: 'var(--radius-sm)',
+                }}
+              >
+                Pro
+              </span>
+            )}
+            <button
+              onClick={logout}
+              className="text-xs px-2 py-1 border"
+              style={{
+                borderColor: 'var(--border)',
+                color: 'var(--muted)',
+                backgroundColor: 'transparent',
+                borderRadius: 'var(--radius-sm)',
+                cursor: 'pointer',
+              }}
+            >
+              Sign out
+            </button>
+          </div>
         </header>
 
         {/* ── Content ────────────────────────────────────────────────── */}
@@ -177,6 +232,8 @@ export default function App() {
                   dashData={dashData}
                   signalData={signalData}
                   onRefresh={fetchAll}
+                  userTier={user.tier}
+                  onUpgrade={openUpgrade}
                 />
               )}
               {activeTab === 'Screener' && (
@@ -186,6 +243,8 @@ export default function App() {
                   positions={positions}
                   onRefresh={fetchAll}
                   signalData={signalData}
+                  userTier={user.tier}
+                  onUpgrade={openUpgrade}
                 />
               )}
               {activeTab === 'Signal Tracker' && (
@@ -202,6 +261,13 @@ export default function App() {
           )}
         </main>
       </div>
+
+      {upgradeModal && (
+        <UpgradeModal
+          onClose={closeUpgrade}
+          triggerReason={upgradeModal.reason}
+        />
+      )}
     </div>
   )
 }

@@ -26,6 +26,71 @@
 
 ## Pipeline
 
+### PIPE-028 · Frontend Auth Gate (Phase 2)
+**Status:** `done`
+**Implementation notes:** Created `frontend/src/auth.jsx` — AuthProvider context with JWT stored in `harvest-token` localStorage key; validates token via `GET /api/auth/me` on mount; exposes `login()`, `signup()`, `logout()`, and `apiFetch()` (injects Bearer header, auto-logouts on 401). Created `frontend/src/components/AuthGate.jsx` — login/signup form using CSS variables, toggles between modes, shows inline error messages. Updated `frontend/src/App.jsx` — imports `useAuth`, shows spinner while token validates, shows `<AuthGate />` if no user, replaces all `fetch()` with `apiFetch()`, skips data fetch when not logged in, adds user email + Pro badge + Sign out button to header. Updated `frontend/src/main.jsx` — wraps with `<AuthProvider>` inside existing `<ThemeProvider>`. Build passed.
+**Description:** Wire the existing JWT backend into the React frontend so unauthenticated visitors see a login/signup screen and all API calls include `Authorization: Bearer <token>`.
+
+**Tasks:**
+1. `frontend/src/auth.jsx` — `AuthProvider` context: JWT stored in localStorage, `user` state, `login(email, pw)` / `signup(email, pw)` / `logout()` functions, all calling `POST /api/auth/login` and `/api/auth/signup`
+2. `frontend/src/components/AuthGate.jsx` — Login/signup form using existing CSS variables; toggle between login and signup mode
+3. `frontend/src/App.jsx` — Wrap with `<AuthProvider>` (inside existing `<ThemeProvider>`). If `user === null`, render `<AuthGate />`. Replace all `fetch('/api/...')` calls with an `apiFetch(url, opts)` helper that injects `Authorization: Bearer ${token}` from context
+4. Show a "Signed in as {email}" line in the sidebar + logout button
+
+**Scope:** `frontend/src/auth.jsx` (new), `frontend/src/components/AuthGate.jsx` (new), `frontend/src/App.jsx` (auth wrap + apiFetch)
+**Rationale:** Backend auth is fully built (`backend/auth.py`, JWT endpoints live, test users seeded). This sprint completes the user-facing half. Without it, any real user who hits the app gets raw data with no auth.
+
+---
+
+### PIPE-029 · Freemium Gate Enforcement + Upgrade UI (Phase 3)
+**Status:** `approved`
+**Description:** Enforce free tier limits in the backend, wire up blur/lock overlays in the frontend, and add the upgrade modal so a free user hitting a limit can convert to Pro.
+
+**Backend changes (`backend/main.py`):**
+- `GET /api/positions` — slice to first 3 positions when `user.tier == "free"`
+- `GET /api/screener` — check `UsageLog` table: if free user has already run screener today, return `403 {"code": "DAILY_LIMIT_REACHED"}`; otherwise log the run
+- `GET /api/scorecard`, `GET /api/oi/chain` — `require_pro` dependency (403 for free users)
+- Add `require_pro` helper: `if user.tier != "pro": raise HTTPException(403, {"code": "UPGRADE_REQUIRED"})`
+
+**New frontend components:**
+- `frontend/src/components/UpgradeModal.jsx` — full-screen modal, pricing table (free vs pro, annual/monthly toggle), "Upgrade" CTA (placeholder until Stripe is wired)
+- `frontend/src/components/LockedFeature.jsx` — blur overlay + lock icon + upgrade CTA wrapping any child; used to gate screener results 2+
+- `frontend/src/components/PositionLimitBanner.jsx` — amber banner shown above position list when `positions.length >= 3 && user.tier === "free"`
+
+**Wiring:**
+- `App.jsx`: `useUpgrade()` context so any component can trigger the modal with `triggerUpgrade("reason")`
+- `Screener.jsx`: wrap results after index 0 with `<LockedFeature />`
+- `Portfolios.jsx`: render `<PositionLimitBanner />` when at free limit
+
+**Scope:** `backend/main.py`, `frontend/src/components/UpgradeModal.jsx` (new), `LockedFeature.jsx` (new), `PositionLimitBanner.jsx` (new), `App.jsx`, `Screener.jsx`, `Portfolios.jsx`
+**Rationale:** Free tier limits are the core freemium mechanic. Without them, there's no upgrade pressure and no business. Must ship before any real users are invited.
+
+---
+
+### PIPE-030 · Marketing Site Deploy + QA Pass (Launch Readiness)
+**Status:** `approved`
+**Description:** Deploy the marketing site to Vercel, run a full QA pass on the end-to-end user flow, and validate the product is ready for real users.
+
+**Deploy steps:**
+1. Set `NEXT_PUBLIC_API_URL` env var in Vercel pointing to Railway backend URL
+2. Connect `marketing/` subdirectory to Vercel project (or use `vercel --cwd marketing/`)
+3. Verify all 7 routes build cleanly (`npm run build` in `marketing/`)
+4. Confirm calculator widget calls backend correctly from the live Vercel URL
+
+**QA checklist:**
+- Anonymous visitor: calculator works 3 times, email gate on use 4, email captured in `waitlist.json`
+- Signup: `POST /api/auth/signup` → JWT returned → app renders with auth
+- Free user: add 4 positions → banner shown at position 3 limit
+- Free user: run screener twice → second run blocked with upgrade prompt
+- Free user: navigate to Scorecard → 403 handled gracefully
+- Pro user: all limits bypass, unlimited positions, all features visible
+- Logout and login: JWT cleared, AuthGate shown, JWT restored on login
+
+**Scope:** Vercel deployment config, no new code — this is an integration and validation sprint
+**Rationale:** The `/qa` pass is the gate before any public link is shared. A broken auth flow or broken limit enforcement on the first real user's session destroys trust before it can be earned.
+
+---
+
 ### PIPE-001 · Roll Recommendation Engine
 **Status:** `pending`
 **Description:** When the Portfolio Intelligence Panel shows a ROLL or GAMMA_DANGER action item, surface a specific roll target — the best-scoring screener candidate at the same or higher strike with 30–45 DTE — directly in the action card. Include a one-click "Roll to this" button that closes the current position at market and opens the suggested one.
