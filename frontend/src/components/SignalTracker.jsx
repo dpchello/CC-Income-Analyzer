@@ -1,5 +1,12 @@
 import { useState, useEffect } from 'react'
-import { ComposedChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from 'recharts'
+import { useAuth } from '../auth.jsx'
+import { Bar } from '@visx/shape'
+import { scaleLinear, scaleBand } from '@visx/scale'
+import { AxisBottom, AxisLeft } from '@visx/axis'
+import { GridRows } from '@visx/grid'
+import { Group } from '@visx/group'
+import { useTooltip, TooltipWithBounds, defaultStyles as tooltipDefaultStyles } from '@visx/tooltip'
+import { ParentSize } from '@visx/responsive'
 import { Term } from './Tooltip.jsx'
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -175,7 +182,8 @@ function TechnicalsPanel({ technicals }) {
 
 // ── Screener ──────────────────────────────────────────────────────────────────
 
-export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regime }) {
+export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regime, userTier, onUpgrade }) {
+  const { apiFetch } = useAuth()
   const activePortfolios = (portfolios || []).filter(p => !p.archived)
   const [selectedPortfolioId, setSelectedPortfolioId] = useState(
     () => activePortfolios[0]?.id || 'default'
@@ -224,7 +232,20 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
         max_dte: dte.maxDte,
         limit: showCount,
       })
-      const res = await fetch(`/api/screener?${params}`)
+      const res = await apiFetch(`/api/screener?${params}`)
+      if (res.status === 403) {
+        const body = await res.json().catch(() => ({}))
+        const code = body?.detail?.code || body?.code
+        if (code === 'DAILY_LIMIT_REACHED') {
+          setError('DAILY_LIMIT_REACHED')
+        } else if (code === 'UPGRADE_REQUIRED') {
+          setError('UPGRADE_REQUIRED')
+        } else {
+          setError(`Server error ${res.status}`)
+        }
+        setLoading(false)
+        return
+      }
       if (!res.ok) throw new Error(`Server error ${res.status}`)
       const data = await res.json()
       setResults(data.candidates || [])
@@ -535,7 +556,24 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
 
       </div>
 
-      {error && (
+      {error === 'DAILY_LIMIT_REACHED' && (
+        <div className="px-5 py-8 text-center space-y-3">
+          <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Daily screener limit reached</p>
+          <p className="text-sm" style={{ color: 'var(--muted)' }}>
+            Free accounts get 1 screener run per day. Upgrade to Pro for unlimited runs.
+          </p>
+          {onUpgrade && (
+            <button
+              onClick={() => onUpgrade('You\'ve used your 1 free screener run for today.')}
+              className="text-xs px-3 py-1.5 font-semibold"
+              style={{ background: 'var(--green)', color: '#000', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}
+            >
+              Upgrade to Pro →
+            </button>
+          )}
+        </div>
+      )}
+      {error && error !== 'DAILY_LIMIT_REACHED' && error !== 'UPGRADE_REQUIRED' && (
         <div className="px-5 py-3 text-xs font-mono" style={{ color: 'var(--red)', backgroundColor: 'rgba(255,61,90,0.06)' }}>{error}</div>
       )}
 
@@ -894,6 +932,109 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
   )
 }
 
+// ── OI Chart inner (Visx) ─────────────────────────────────────────────────────
+
+function OIChartInner({ data, width, height, spyPrice }) {
+  const { showTooltip, hideTooltip, tooltipData, tooltipLeft, tooltipTop, tooltipOpen } = useTooltip()
+  const MARGIN = { top: 8, right: 16, left: 44, bottom: 22 }
+  const innerW = Math.max(0, width - MARGIN.left - MARGIN.right)
+  const innerH = Math.max(0, height - MARGIN.top - MARGIN.bottom)
+  const BAR_MAX = 14
+
+  const strikes = data.map(d => String(d.strike))
+  const xScale = scaleBand({ domain: strikes, range: [0, innerW], padding: 0.15 })
+  const maxOI = Math.max(...data.flatMap(d => [d.call_oi, d.put_oi]), 1)
+  const yScale = scaleLinear({ domain: [0, maxOI * 1.1], range: [innerH, 0] })
+  const barW = Math.min(xScale.bandwidth() / 2, BAR_MAX)
+
+  const handleMouseMove = (d, e) => {
+    const rect = e.currentTarget.closest('svg').getBoundingClientRect()
+    const x = e.clientX - rect.left
+    showTooltip({ tooltipData: d, tooltipLeft: x, tooltipTop: yScale(Math.max(d.call_oi, d.put_oi)) + MARGIN.top - 8 })
+  }
+
+  // Find the nearest strike index for SPY price reference line
+  const spyLineX = spyPrice > 0
+    ? (() => {
+        const sorted = [...data].sort((a, b) => Math.abs(a.strike - spyPrice) - Math.abs(b.strike - spyPrice))
+        const nearest = sorted[0]
+        return nearest ? (xScale(String(nearest.strike)) ?? 0) + xScale.bandwidth() / 2 : null
+      })()
+    : null
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <svg width={width} height={height}>
+        <Group left={MARGIN.left} top={MARGIN.top}>
+          <GridRows scale={yScale} width={innerW} stroke="var(--border)" strokeDasharray="3 3" strokeOpacity={0.5} />
+          {data.map(d => {
+            const x = xScale(String(d.strike)) ?? 0
+            const putH = innerH - yScale(d.put_oi)
+            const callH = innerH - yScale(d.call_oi)
+            return (
+              <Group key={d.strike}>
+                <Bar x={x} y={yScale(d.put_oi)} width={barW} height={putH}
+                  fill="var(--green)" opacity={0.7}
+                  onMouseMove={e => handleMouseMove(d, e)} onMouseLeave={hideTooltip}
+                />
+                <Bar x={x + barW} y={yScale(d.call_oi)} width={barW} height={callH}
+                  fill="var(--red)" opacity={0.7}
+                  onMouseMove={e => handleMouseMove(d, e)} onMouseLeave={hideTooltip}
+                />
+              </Group>
+            )
+          })}
+          {spyLineX !== null && (
+            <line
+              x1={spyLineX} x2={spyLineX} y1={0} y2={innerH}
+              stroke="var(--amber)" strokeWidth={1.5} strokeDasharray="4 3"
+            />
+          )}
+          {spyLineX !== null && (
+            <text x={spyLineX + 3} y={10} fontSize={9} fill="var(--amber)">
+              SPY ${spyPrice}
+            </text>
+          )}
+          <AxisBottom
+            scale={xScale}
+            top={innerH}
+            stroke="var(--border)"
+            tickStroke="transparent"
+            tickLabelProps={() => ({ fill: 'var(--muted)', fontSize: 10, textAnchor: 'middle' })}
+            tickFormat={v => `$${v}`}
+          />
+          <AxisLeft
+            scale={yScale}
+            stroke="transparent"
+            tickStroke="transparent"
+            tickLabelProps={() => ({ fill: 'var(--muted)', fontSize: 10, textAnchor: 'end', dx: -4 })}
+            tickFormat={v => v === 0 ? '0' : `${(Math.abs(Number(v)) / 1000).toFixed(0)}k`}
+            numTicks={4}
+            width={42}
+          />
+        </Group>
+      </svg>
+      {tooltipOpen && tooltipData && (
+        <TooltipWithBounds
+          top={tooltipTop} left={tooltipLeft}
+          style={{
+            ...tooltipDefaultStyles,
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            fontSize: 11,
+            color: 'var(--text)',
+          }}
+        >
+          <div style={{ color: 'var(--muted)', marginBottom: 2 }}>${tooltipData.strike} Strike</div>
+          <div style={{ color: 'var(--green)' }}>Put OI: {tooltipData.put_oi.toLocaleString()}</div>
+          <div style={{ color: 'var(--red)' }}>Call OI: {tooltipData.call_oi.toLocaleString()}</div>
+        </TooltipWithBounds>
+      )}
+    </div>
+  )
+}
+
 // ── OI Chart ──────────────────────────────────────────────────────────────────
 
 export function OIChart() {
@@ -984,42 +1125,16 @@ export function OIChart() {
       {!loading && !error && chartData.length > 0 && (
         <>
           <div className="px-2 py-4" style={{ height: 280 }}>
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={chartData} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                <XAxis
-                  dataKey="strike"
-                  tick={{ fontSize: 10, fill: 'var(--muted)' }}
-                  tickFormatter={v => `$${v}`}
-                  axisLine={{ stroke: 'var(--border)' }}
-                  tickLine={false}
+            <ParentSize>
+              {({ width, height }) => (
+                <OIChartInner
+                  data={chartData}
+                  width={width}
+                  height={height}
+                  spyPrice={spyPrice}
                 />
-                <YAxis
-                  tick={{ fontSize: 10, fill: 'var(--muted)' }}
-                  tickFormatter={v => v === 0 ? '0' : `${(Math.abs(v) / 1000).toFixed(0)}k`}
-                  axisLine={false}
-                  tickLine={false}
-                  width={42}
-                />
-                <Tooltip
-                  contentStyle={{ backgroundColor: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 'var(--radius-sm)', fontSize: 11 }}
-                  labelFormatter={v => `$${v} Strike`}
-                  formatter={(val, name) => {
-                    const abs = Math.abs(val).toLocaleString()
-                    if (name === 'put_oi') return [abs, 'Put OI']
-                    if (name === 'call_oi') return [abs, 'Call OI']
-                    return [val, name]
-                  }}
-                />
-                {spyPrice > 0 && (
-                  <ReferenceLine x={spyPrice} stroke="var(--amber)" strokeDasharray="4 3" strokeWidth={1.5}
-                    label={{ value: `SPY $${spyPrice}`, position: 'top', fontSize: 9, fill: 'var(--amber)' }} />
-                )}
-                <ReferenceLine y={0} stroke="var(--border)" strokeWidth={1} />
-                <Bar dataKey="put_oi"  fill="var(--green)" opacity={0.7} maxBarSize={18} />
-                <Bar dataKey="call_oi" fill="var(--red)"   opacity={0.7} maxBarSize={18} />
-              </ComposedChart>
-            </ResponsiveContainer>
+              )}
+            </ParentSize>
           </div>
           <div className="px-5 py-2 border-t flex gap-6 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
             <span><Term id="OpenInterest">Total Call OI</Term>: <span style={{ color: 'var(--red)' }}>{totalCallOI.toLocaleString()}</span></span>

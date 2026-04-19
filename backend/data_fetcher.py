@@ -454,3 +454,93 @@ class DataFetcher:
             result = []
         _cache.set(f"tlt_hist_{days}", result)
         return result
+
+    def get_calculator_data(self, ticker: str, max_dte: int = 45) -> dict:
+        """Fetch spot price + nearest 20-45 DTE options chain for any ticker.
+
+        Returns { spot, expiry, dte, chain } or raises ValueError on failure.
+        Used by the public /api/calculator endpoint.
+        """
+        cache_key = f"calc_{ticker}_{max_dte}"
+        cached = _cache.get(cache_key)
+        if cached:
+            return cached
+
+        try:
+            t = _ticker(ticker)
+            info = t.fast_info
+            spot = round(float(info.last_price), 2)
+            if spot <= 0:
+                raise ValueError(f"Could not get price for {ticker}")
+
+            all_expiries = t.options
+            if not all_expiries:
+                raise ValueError(f"No options available for {ticker}")
+
+            today = datetime.today().date()
+            target_expiry = None
+            for exp in all_expiries:
+                exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+                dte = (exp_date - today).days
+                if 20 <= dte <= max_dte:
+                    target_expiry = exp
+                    break
+
+            # Fall back to nearest expiry with at least 7 DTE
+            if not target_expiry:
+                for exp in all_expiries:
+                    exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+                    dte = (exp_date - today).days
+                    if dte >= 7:
+                        target_expiry = exp
+                        break
+
+            if not target_expiry:
+                raise ValueError(f"No suitable expiry found for {ticker}")
+
+            exp_date = datetime.strptime(target_expiry, "%Y-%m-%d").date()
+            dte = max((exp_date - today).days, 1)
+            T = dte / 365.0
+
+            chain_raw = t.option_chain(target_expiry)
+            calls = chain_raw.calls
+
+            available_cols = [c for c in ["strike", "bid", "ask", "impliedVolatility"]
+                              if c in calls.columns]
+            rows = calls[available_cols].to_dict("records")
+
+            # Compute Greeks and clean NaNs
+            chain = []
+            for row in rows:
+                for k, v in list(row.items()):
+                    if isinstance(v, float) and np.isnan(v):
+                        row[k] = None
+
+                iv = row.get("impliedVolatility") or 0
+                strike = row.get("strike") or 0
+                bid = row.get("bid") or 0
+                ask = row.get("ask") or 0
+                mid = round((bid + ask) / 2, 4)
+
+                if spot > 0 and iv > 0 and strike > 0:
+                    delta, _, _, _ = _bs_greeks(spot, strike, T, iv)
+                else:
+                    delta = None
+
+                chain.append({
+                    "strike": float(strike),
+                    "bid": float(bid),
+                    "ask": float(ask),
+                    "mid": mid,
+                    "delta": delta,
+                    "iv": round(float(iv), 4) if iv else None,
+                })
+
+            result = {"spot": spot, "expiry": target_expiry, "dte": dte, "chain": chain}
+        except (ValueError, KeyError) as exc:
+            raise ValueError(str(exc))
+        except Exception as exc:
+            raise ValueError(f"Market data unavailable for {ticker}: {exc}")
+
+        _cache.set(cache_key, result)
+        return result

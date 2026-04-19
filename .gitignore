@@ -1,5 +1,19 @@
 frontend/node_modules/
 frontend/.vite/
+# frontend/dist/ — intentionally committed for Railway deploy
 __pycache__/
 *.pyc
 .env
+backend/.env
+backend/harvest.db
+backend/av_cache/
+backend/av_usage.json
+backend/oi_chain_history.json
+backend/oi_history.json
+backend/oi_tracker_data.json
+backend/recommendations_log.json
+marketing/.env.local
+marketing/node_modules/
+marketing/.next/
+marketing/.vercel/
+.vercel/

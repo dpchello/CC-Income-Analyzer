@@ -1,6 +1,12 @@
 import { useEffect, useRef } from 'react'
 import { prepare, layout } from '@chenglou/pretext'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
+import { AreaClosed, LinePath } from '@visx/shape'
+import { scaleLinear, scaleBand } from '@visx/scale'
+import { AxisBottom } from '@visx/axis'
+import { LinearGradient } from '@visx/gradient'
+import { curveMonotoneX } from '@visx/curve'
+import { ParentSize } from '@visx/responsive'
+import { useTooltip, TooltipWithBounds, defaultStyles as tooltipDefaultStyles } from '@visx/tooltip'
 import { Term } from './Tooltip.jsx'
 
 // ── Urgency logic ─────────────────────────────────────────────────────────────
@@ -184,44 +190,99 @@ function IncomeTrendChart({ positions }) {
         Income Trend
       </div>
       <div style={{ flex: 1, minHeight: 100 }}>
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-            <defs>
-              <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%"  stopColor="var(--green)" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="var(--green)" stopOpacity={0.03} />
-              </linearGradient>
-            </defs>
-            <XAxis
-              dataKey="month"
-              tick={{ fontSize: 10, fill: 'var(--muted)' }}
-              axisLine={false}
-              tickLine={false}
-            />
-            <YAxis hide />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: 'var(--surface)',
-                border: '1px solid var(--border)',
-                borderRadius: 'var(--radius-sm)',
-                fontSize: 12,
-              }}
-              labelStyle={{ color: 'var(--muted)', marginBottom: 4 }}
-              formatter={v => [`$${v.toLocaleString()}`, 'Income']}
-              cursor={{ stroke: 'var(--border)' }}
-            />
-            <Area
-              type="monotone"
-              dataKey="income"
-              stroke="var(--green)"
-              strokeWidth={2}
-              fill="url(#trendGrad)"
-              dot={false}
-              activeDot={{ r: 3, fill: 'var(--green)' }}
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        <ParentSize>
+          {({ width, height }) => (
+            <IncomeTrendInner data={data} width={width} height={height} />
+          )}
+        </ParentSize>
       </div>
+    </div>
+  )
+}
+
+function IncomeTrendInner({ data, width, height }) {
+  const { showTooltip, hideTooltip, tooltipData, tooltipLeft, tooltipTop, tooltipOpen } = useTooltip()
+  const MARGIN = { top: 4, right: 4, left: 0, bottom: 20 }
+  const innerW = Math.max(0, width - MARGIN.left - MARGIN.right)
+  const innerH = Math.max(0, height - MARGIN.top - MARGIN.bottom)
+
+  const xScale = scaleBand({ domain: data.map(d => d.month), range: [0, innerW], padding: 0.2 })
+  const maxIncome = Math.max(...data.map(d => d.income), 1)
+  const yScale = scaleLinear({ domain: [0, maxIncome * 1.1], range: [innerH, 0] })
+
+  const getX = d => (xScale(d.month) ?? 0) + xScale.bandwidth() / 2
+  const getY = d => yScale(d.income)
+
+  const handleMouseMove = (e) => {
+    const svgRect = e.currentTarget.getBoundingClientRect()
+    const mouseX = e.clientX - svgRect.left - MARGIN.left
+    const closest = data.reduce((best, d) => {
+      return Math.abs(getX(d) - mouseX) < Math.abs(getX(best) - mouseX) ? d : best
+    }, data[0])
+    showTooltip({
+      tooltipData: closest,
+      tooltipLeft: getX(closest) + MARGIN.left,
+      tooltipTop: getY(closest) + MARGIN.top,
+    })
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <svg width={width} height={height}>
+        <LinearGradient id="trendGrad" from="var(--green)" fromOpacity={0.3} to="var(--green)" toOpacity={0.03} vertical />
+        <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
+          <AreaClosed
+            data={data}
+            x={getX}
+            y={getY}
+            yScale={yScale}
+            curve={curveMonotoneX}
+            fill="url(#trendGrad)"
+          />
+          <LinePath
+            data={data}
+            x={getX}
+            y={getY}
+            curve={curveMonotoneX}
+            stroke="var(--green)"
+            strokeWidth={2}
+          />
+          <AxisBottom
+            scale={xScale}
+            top={innerH}
+            stroke="transparent"
+            tickStroke="transparent"
+            tickLabelProps={() => ({ fill: 'var(--muted)', fontSize: 10, textAnchor: 'middle' })}
+          />
+          {/* invisible overlay for hover */}
+          <rect
+            width={innerW} height={innerH} fill="transparent"
+            onMouseMove={handleMouseMove} onMouseLeave={hideTooltip}
+          />
+          {tooltipOpen && tooltipData && (
+            <circle
+              cx={getX(tooltipData)} cy={getY(tooltipData)} r={3}
+              fill="var(--green)" stroke="var(--surface)" strokeWidth={1}
+            />
+          )}
+        </g>
+      </svg>
+      {tooltipOpen && tooltipData && (
+        <TooltipWithBounds
+          top={tooltipTop} left={tooltipLeft}
+          style={{
+            ...tooltipDefaultStyles,
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 6,
+            fontSize: 12,
+            color: 'var(--text)',
+          }}
+        >
+          <div style={{ color: 'var(--muted)', marginBottom: 2 }}>{tooltipData.month}</div>
+          <div style={{ fontWeight: 600 }}>${tooltipData.income.toLocaleString()}</div>
+        </TooltipWithBounds>
+      )}
     </div>
   )
 }

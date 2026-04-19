@@ -2,73 +2,10 @@ import { useState, useEffect, Fragment } from 'react'
 import AddPosition from './AddPosition.jsx'
 import AddHolding from './AddHolding.jsx'
 import { Term } from './Tooltip.jsx'
-
-// ── Alert definitions ─────────────────────────────────────────────────────────
-
-const ALERT_DEFS = {
-  TAKE_PROFIT:    { icon: '💰', label: 'Lock In Profits',              color: 'var(--green)', title: '50% of Max Income Already Captured',           explain: "You've already earned 50% or more of the maximum income this trade could generate. Closing here frees up your shares for the next trade sooner and avoids the riskier final weeks before expiry.", action: 'Buy back this call at market and open a new position at a later expiry.' },
-  ROLL_WARNING:   { icon: '⏰', label: 'Time to Renew',                 color: 'var(--amber)', title: '21 Days Until Expiry — High-Sensitivity Zone', explain: 'With 21 days or fewer until expiry, small stock price moves start causing larger, faster changes in your option price. This is a good time to close this position and open a fresh one further out.', action: 'Close this position and sell a new call at the same or higher strike, targeting 30–45 days until expiry.' },
-  GAMMA_DANGER:   { icon: '🔥', label: 'Expiring Soon — Act Now',      color: 'var(--red)',   title: 'Expires in 7 Days or Fewer',                   explain: 'This option expires very soon. In the final week, a 1% move in the stock can cause an outsized swing in your option price with very little time to react or recover.', action: 'Close or roll to a later date immediately.' },
-  STRIKE_BREACH:  { icon: '🚨', label: 'Strike Price at Risk',         color: 'var(--red)',   title: 'Stock Is Within 1.5% of Your Strike',         explain: "The stock price is very close to your strike price. If the stock closes above your strike at expiry, your shares will be sold at that price — you miss any upside above it.", action: 'Consider rolling to a higher strike price with a later expiry date, or close the position.' },
-  RECOVERY_MODE:  { icon: '↗', label: 'Market Recovery — Review Calls', color: 'var(--amber)', title: 'Market Is Bouncing Back — Your Call Caps Gains', explain: "The market is recovering strongly from a recent dip. When stocks rally hard, a short call limits how much you benefit from that recovery — you are capped at your strike price. Academic research identifies this as the primary source of underperformance in options-selling strategies during recoveries.", action: 'Consider closing or rolling calls to a higher strike to participate in the recovery. Avoid opening new positions until the rebound stabilizes.' },
-  TREND_REVERSAL: { icon: '📈', label: 'Strong Uptrend — Watch Calls', color: 'var(--amber)', title: 'Market Is Trending Up Sharply',                explain: 'The stock is rising steeply. When the market moves up fast, your short call limits your upside and increases the chance your shares get called away.', action: 'Pause new entries. Watch existing positions closely for strike breach risk.' },
-  EARLY_EXERCISE: { icon: '⚡', label: 'Shares May Be Called Early',  color: 'var(--red)',   title: 'Early Assignment Risk — Call Is Deep In-The-Money', explain: "When almost no time value remains, the buyer of your call has a financial reason to exercise early and take your shares now rather than wait until expiry. Academic research shows that 98.7% of bids on deep in-the-money calls are below intrinsic value — the market has essentially priced in early exercise. If your call expires after the upcoming SPY dividend, early exercise is even more likely because the buyer exercises early to collect that dividend.", action: "Roll to a higher strike or buy back the call. If the ex-dividend date is approaching and your time value is below the dividend amount, act quickly — early exercise can happen any business day." },
-}
-
-function alertTypes(pos) {
-  const t = []
-  if ((pos.profit_capture_pct || 0) >= 50) t.push('TAKE_PROFIT')
-  if (pos.dte <= 7) t.push('GAMMA_DANGER')
-  else if (pos.dte <= 21) t.push('ROLL_WARNING')
-  if (pos.distance_to_strike_pct != null && pos.distance_to_strike_pct <= 1.5 && pos.distance_to_strike_pct > 0) t.push('STRIKE_BREACH')
-  if (pos.early_exercise_risk === 'HIGH' || pos.early_exercise_risk === 'CRITICAL') t.push('EARLY_EXERCISE')
-  return t
-}
-
-function AlertCard({ type }) {
-  const [open, setOpen] = useState(false)
-  const d = ALERT_DEFS[type]
-  return (
-    <div className="border text-xs mb-1 last:mb-0" style={{ borderColor: d.color + '40', backgroundColor: d.color + '0d', borderRadius: 'var(--radius-sm)' }}>
-      <button onClick={() => setOpen(o => !o)} className="w-full flex items-center gap-2 px-3 py-1.5 text-left" style={{ color: d.color }}>
-        <span>{d.icon}</span><span className="font-semibold">{d.label}</span>
-        <span className="ml-auto opacity-50 text-[10px]">{open ? '▲ less' : '▼ why?'}</span>
-      </button>
-      {open && (
-        <div className="px-3 pb-2 pt-1 space-y-1 border-t" style={{ borderColor: d.color + '30' }}>
-          <p className="font-semibold" style={{ color: d.color }}>{d.title}</p>
-          <p style={{ color: 'var(--muted)' }} className="leading-relaxed">{d.explain}</p>
-          <p style={{ color: d.color }}>→ {d.action}</p>
-        </div>
-      )}
-    </div>
-  )
-}
+import PositionLimitBanner from './PositionLimitBanner.jsx'
 
 // ── Tax & P&L Aware Action Card (PIPE-019 + PIPE-020) ───────────────────────
 
-function ConfidenceBar({ confidence, factors }) {
-  const color = confidence >= 80 ? 'var(--green)'
-    : confidence >= 60 ? 'var(--amber)'
-    : 'var(--muted)'
-  const label = confidence >= 80 ? 'High' : confidence >= 60 ? 'Moderate' : 'Low'
-  return (
-    <div className="mt-2 space-y-1">
-      <div className="flex items-center gap-2">
-        <span className="text-[10px] font-mono" style={{ color: 'var(--muted)' }}>Confidence</span>
-        <div className="flex-1 h-1" style={{ backgroundColor: 'var(--border)' }}>
-          <div className="h-full" style={{ width: `${confidence}%`, backgroundColor: color }} />
-        </div>
-        <span className="text-[10px] font-mono font-semibold" style={{ color }}>{confidence}% — {label}</span>
-      </div>
-      {factors && factors.length > 0 && (
-        <div className="text-[10px] leading-snug" style={{ color: 'var(--muted)' }}>
-          Based on: {factors.join(' · ')}
-        </div>
-      )}
-    </div>
-  )
-}
 
 const FEEDBACK_OPTIONS = [
   'I disagree with this recommendation',
@@ -209,7 +146,7 @@ function RollScenarioCard({ scenario: s, contracts }) {
 }
 
 function TaxAwareActionCard({ pos, action }) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded] = useState(true)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [rollTargets, setRollTargets] = useState(null)
   const [rollLoading, setRollLoading] = useState(false)
@@ -233,9 +170,8 @@ function TaxAwareActionCard({ pos, action }) {
   const premiumSold  = (pos.sell_price || 0) * (pos.contracts || 0) * 100
   const costToClose  = (pos.current_price || 0) * (pos.contracts || 0) * 100
 
-  const confidence       = pos.confidence != null ? pos.confidence : null
-  const confidenceFactors = pos.confidence_factors || []
-  const lowConfidence    = confidence != null && confidence < 60
+  const confidence    = pos.confidence != null ? pos.confidence : null
+  const lowConfidence = confidence != null && confidence < 60
 
   // Urgency label display
   const urgencyLabel = action.urgency === 'URGENT' ? 'Act Now'
@@ -257,10 +193,7 @@ function TaxAwareActionCard({ pos, action }) {
   return (
     <div className="border text-xs" style={{ backgroundColor: action.color + '0d', borderColor: action.color + '40', borderRadius: 'var(--radius-md)' }}>
       {/* Card header */}
-      <button
-        onClick={() => setExpanded(e => !e)}
-        className="w-full flex items-start justify-between gap-3 px-4 py-3 text-left"
-      >
+      <div className="flex items-start gap-3 px-4 py-3">
         <div className="flex-1">
           {/* Title row */}
           <div className="flex items-center gap-2 flex-wrap mb-1">
@@ -276,32 +209,11 @@ function TaxAwareActionCard({ pos, action }) {
           </div>
           {/* Explanation */}
           <div className="mt-0.5 leading-snug" style={{ color: 'var(--muted)' }}>{action.instruction}</div>
-          {/* Rule softening notice */}
-          {action.closingCostly && (
-            <div className="mt-1 leading-snug" style={{ color: 'var(--amber)' }}>
-              Closing now costs more than holding — the buy-back price has eaten into your original premium. Consider rolling instead of closing outright.
-            </div>
-          )}
-          {/* Macro event context (PIPE-021) */}
-          {pos.macro_event && (
-            <div className="mt-1 leading-snug text-[10px] px-2 py-1" style={{ backgroundColor: 'var(--amber)12', color: 'var(--amber)', border: '1px solid var(--amber)30', borderRadius: 'var(--radius-sm)' }}>
-              {pos.macro_event.description} in {pos.macro_event.days_away} day{pos.macro_event.days_away !== 1 ? 's' : ''}.
-              Waiting until after the announcement reduces your timing risk.
-            </div>
-          )}
-          {/* Confidence bar (PIPE-020) */}
-          {confidence != null && (
-            <ConfidenceBar confidence={confidence} factors={confidenceFactors} />
-          )}
         </div>
-        <span className="text-[10px] shrink-0 mt-0.5" style={{ color: 'var(--muted)' }}>
-          {expanded ? '▲ less' : '▼ your options'}
-        </span>
-      </button>
+      </div>
 
-      {/* Expanded: your options panels */}
-      {expanded && (
-        <div className="border-t space-y-0" style={{ borderColor: action.color + '30' }}>
+      {/* Options panels */}
+      <div className="border-t space-y-0" style={{ borderColor: action.color + '30' }}>
 
           {/* ── Option A: Close now (label softened to "Review your options" when confidence < 60%) */}
           <div className="px-4 py-3 border-b" style={{ borderColor: action.color + '20' }}>
@@ -332,18 +244,11 @@ function TaxAwareActionCard({ pos, action }) {
           {/* ── Option B: Wait and see ──────────────────────────────── */}
           <div className="px-4 py-3 border-b" style={{ borderColor: action.color + '20' }}>
             <div className="font-semibold mb-1.5" style={{ color: 'var(--text)' }}>Wait and see</div>
-            <div className="space-y-1" style={{ color: 'var(--muted)' }}>
-              <div className="flex justify-between">
-                <span>What you're waiting for:</span>
-                <span className="font-mono">SPY to stay below ${breakEvenPrice?.toFixed(0)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span>Risk if wrong:</span>
-                <span className="font-mono" style={{ color: 'var(--amber)' }}>Assignment — shares called away</span>
-              </div>
+            <div className="font-mono text-2xl font-bold" style={{ color: pos.delta != null && (1 - pos.delta) >= 0.5 ? 'var(--green)' : 'var(--amber)' }}>
+              {pos.delta != null ? Math.round((1 - pos.delta) * 100) : '—'}%
             </div>
-            <div className="mt-2 leading-snug" style={{ color: 'var(--muted)' }}>
-              SPY needs to stay below ${breakEvenPrice?.toFixed(0)} through expiry for holding to be the better financial choice.
+            <div className="mt-0.5 text-[11px]" style={{ color: 'var(--muted)' }}>
+              chance SPY stays below ${breakEvenPrice?.toFixed(0)} by expiry
             </div>
           </div>
 
@@ -378,8 +283,7 @@ function TaxAwareActionCard({ pos, action }) {
             )}
           </div>
 
-        </div>
-      )}
+      </div>
 
       {/* ── Feedback row (always visible at card bottom) ─────────────────── */}
       {!feedbackOpen ? (
@@ -401,53 +305,9 @@ function TaxAwareActionCard({ pos, action }) {
 
 // ── Portfolio Intelligence Panel ──────────────────────────────────────────────
 
-function PortfolioIntelligence({ portfolioId, openPos, holdings, signalData, onRefresh }) {
-  const [collapsed, setCollapsed]           = useState(false)
-  const [opportunities, setOpportunities]   = useState([])
-  const [screenerLoading, setScreenerLoading] = useState(false)
-  const [screenerError, setScreenerError]   = useState(null)
-  const [openingKey, setOpeningKey]         = useState(null)
+// ── Action logic (module-level so PositionRow can use it) ────────────────────
 
-  // ── Health metrics ────────────────────────────────────────────────────────
-  const totalShares    = holdings.reduce((s, h) => s + (h.shares || 0), 0)
-  const coveredShares  = openPos.reduce((s, p) => s + (p.contracts || 0) * 100, 0)
-  const callCoveragePct = totalShares > 0 ? Math.round(coveredShares / totalShares * 100) : null
-
-  const totalContracts = openPos.reduce((s, p) => s + (p.contracts || 0), 0)
-
-  const weightedAvgDte = totalContracts > 0
-    ? Math.round(openPos.reduce((s, p) => s + (p.dte || 0) * (p.contracts || 0), 0) / totalContracts)
-    : null
-
-  const posWithDelta  = openPos.filter(p => p.delta != null)
-  const weightedAvgDelta = posWithDelta.length > 0
-    ? posWithDelta.reduce((s, p) => s + p.delta * p.contracts, 0) /
-      posWithDelta.reduce((s, p) => s + p.contracts, 0)
-    : null
-
-  const premiumAtRisk = openPos.reduce((s, p) => s + (p.current_price || 0) * (p.contracts || 0) * 100, 0)
-
-  // Concentration base = total available contracts (shares / 100), matching backend rule
-  const availableContracts = Math.floor(totalShares / 100)
-
-  const concentrationWarnings = []
-  if (availableContracts > 0) {
-    const byStrike = {}, byExpiry = {}
-    for (const p of openPos) {
-      const s = String(p.strike)
-      byStrike[s] = (byStrike[s] || 0) + (p.contracts || 0)
-      byExpiry[p.expiry] = (byExpiry[p.expiry] || 0) + (p.contracts || 0)
-    }
-    for (const [k, cts] of Object.entries(byStrike))
-      if (cts / availableContracts > 0.30)
-        concentrationWarnings.push({ label: `$${k} strike`, pct: Math.round(cts / availableContracts * 100) })
-    for (const [k, cts] of Object.entries(byExpiry))
-      if (cts / availableContracts > 0.30)
-        concentrationWarnings.push({ label: k, pct: Math.round(cts / availableContracts * 100) })
-  }
-
-  // ── Action items ──────────────────────────────────────────────────────────
-  function getAction(pos) {
+function getAction(pos) {
     // Rule softening: if closing would give back > 40% of original premium, downgrade urgency
     const closeLossRatio = pos.loss_as_pct_of_premium != null ? pos.loss_as_pct_of_premium / 100 : 0
     const closingCostly = closeLossRatio > 0.40
@@ -519,256 +379,6 @@ function PortfolioIntelligence({ portfolioId, openPos, holdings, signalData, onR
         instruction: `${pos.oi_signal_label || 'Open interest declining at this strike'} — positions being closed here. No immediate action needed.`,
         closingCostly }
     return null
-  }
-  const urgencyOrder = { URGENT: 0, HIGH: 1, RECOMMENDED: 2, WATCH: 3 }
-  const actionItems = openPos
-    .map(pos => ({ pos, action: getAction(pos) }))
-    .filter(({ action }) => action !== null)
-    .sort((a, b) => (urgencyOrder[a.action.urgency] ?? 4) - (urgencyOrder[b.action.urgency] ?? 4))
-
-  // ── Screener fetch ────────────────────────────────────────────────────────
-  const regime = signalData?.regime
-  useEffect(() => {
-    if (!portfolioId) return
-    if (regime === 'AVOID') { setOpportunities([]); return }
-    let cancelled = false
-    setScreenerLoading(true)
-    setScreenerError(null)
-    fetch(`/api/screener?portfolio_id=${portfolioId}&limit=5&min_dte=21&max_dte=45&min_delta=0.10&max_delta=0.30`)
-      .then(r => r.json())
-      .then(data => {
-        if (!cancelled) setOpportunities(
-          (data.candidates || []).filter(c => !c.has_position && c.contracts_suggested > 0).slice(0, 3)
-        )
-      })
-      .catch(() => { if (!cancelled) setScreenerError('Could not load opportunities.') })
-      .finally(() => { if (!cancelled) setScreenerLoading(false) })
-    return () => { cancelled = true }
-  }, [portfolioId, regime])
-
-  async function handleOpen(c) {
-    const key = `${c.strike}-${c.expiry}`
-    setOpeningKey(key)
-    const cts = c.contracts_suggested > 0 ? c.contracts_suggested : 1
-    try {
-      const res = await fetch('/api/positions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ticker: 'SPY', type: 'short_call',
-          strike: c.strike, expiry: c.expiry,
-          contracts: cts, sell_price: c.mid,
-          premium_collected: Math.round(c.mid * cts * 100 * 100) / 100,
-          portfolio_id: portfolioId,
-        }),
-      })
-      if (res.ok) {
-        onRefresh()
-        setOpportunities(prev => prev.filter(o => !(o.strike === c.strike && o.expiry === c.expiry)))
-      }
-    } finally { setOpeningKey(null) }
-  }
-
-  // ── Regime config ─────────────────────────────────────────────────────────
-  const RC = {
-    'SELL PREMIUM': { label: 'Good Time to Open',          color: 'var(--green)',  bg: 'rgba(16,185,129,0.08)', headline: 'Conditions support adding new positions.' },
-    'HOLD':         { label: 'Hold — Pause New Positions', color: 'var(--amber)',  bg: 'rgba(255,176,32,0.06)', headline: 'Hold existing positions and pause new entries until signals improve.' },
-    'CAUTION':      { label: 'Be Careful',                 color: 'var(--orange)', bg: 'rgba(249,115,22,0.06)', headline: 'Multiple warning signs — review positions carefully before adding.' },
-    'AVOID':        { label: 'Not a Good Time',            color: 'var(--red)',    bg: 'rgba(255,61,90,0.06)',  headline: 'Unfavorable conditions. No new positions until signals improve.' },
-  }
-  const rc = RC[regime] || RC['HOLD']
-  const cellStyle = { backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }
-
-  return (
-    <div className="border" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}>
-
-      {/* Header */}
-      <button
-        onClick={() => setCollapsed(c => !c)}
-        className="w-full flex items-center justify-between px-5 py-3 border-b"
-        style={{ borderColor: 'var(--border)' }}
-      >
-        <span className="text-xs uppercase tracking-wider font-mono font-semibold" style={{ color: 'var(--muted)' }}>
-          Portfolio Intelligence
-        </span>
-        <span className="text-xs" style={{ color: 'var(--muted)' }}>{collapsed ? '▶ show' : '▼ hide'}</span>
-      </button>
-
-      {!collapsed && (
-        <div>
-
-          {/* 1 — Regime Banner */}
-          <div className="px-5 py-2.5 flex items-center gap-3 border-b" style={{ backgroundColor: rc.bg, borderColor: 'var(--border)' }}>
-            <span className="text-xs font-semibold uppercase tracking-wider font-mono" style={{ color: rc.color }}>
-              {rc.label || regime || '—'}
-            </span>
-            <span className="text-xs" style={{ color: 'var(--muted)' }}>{rc.headline}</span>
-            {signalData?.total_score != null && (
-              <span className="ml-auto text-xs font-mono shrink-0" style={{ color: 'var(--muted)' }}>
-                <Term id="SignalScore">Signal</Term> {signalData.total_score}/{signalData.max_score ?? 14}
-              </span>
-            )}
-          </div>
-
-          {/* 2 — Portfolio Health */}
-          <div className="px-5 py-3 border-b flex flex-wrap gap-6 items-center" style={{ borderColor: 'var(--border)' }}>
-            <span className="text-xs uppercase tracking-wider font-mono shrink-0" style={{ color: 'var(--muted)' }}>Health</span>
-
-            {/* Call Coverage */}
-            <div>
-              <div className="text-xs mb-0.5" style={{ color: 'var(--muted)' }}>Call Coverage</div>
-              {callCoveragePct === null ? (
-                <div className="text-sm font-mono font-semibold" style={{ color: 'var(--muted)' }}>No holdings</div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <div className="w-16 h-1.5" style={{ backgroundColor: 'var(--border)' }}>
-                    <div className="h-full" style={{
-                      width: `${Math.min(callCoveragePct, 100)}%`,
-                      backgroundColor: callCoveragePct >= 100 ? 'var(--amber)' : callCoveragePct >= 50 ? 'var(--green)' : 'var(--blue)',
-                    }} />
-                  </div>
-                  <span className="text-sm font-mono font-semibold" style={{ color: 'var(--text)' }}>{callCoveragePct}%</span>
-                </div>
-              )}
-            </div>
-
-            {/* Avg DTE */}
-            {weightedAvgDte !== null && (
-              <div>
-                <div className="text-xs mb-0.5" style={{ color: 'var(--muted)' }}>
-                  <Term id="DTE">Avg Days Until Expiry</Term>
-                </div>
-                <div className="text-sm font-mono font-semibold" style={{
-                  color: weightedAvgDte <= 7 ? 'var(--red)' : weightedAvgDte <= 21 ? 'var(--amber)' : 'var(--text)',
-                }}>{weightedAvgDte}d</div>
-              </div>
-            )}
-
-            {/* Avg Delta */}
-            {weightedAvgDelta !== null && (
-              <div>
-                <div className="text-xs mb-0.5" style={{ color: 'var(--muted)' }}>
-                  <Term id="Delta">Avg Assignment Risk</Term>
-                </div>
-                <div className="text-sm font-mono font-semibold" style={{
-                  color: weightedAvgDelta > 0.35 ? 'var(--red)' : weightedAvgDelta > 0.25 ? 'var(--amber)' : 'var(--text)',
-                }}>{weightedAvgDelta.toFixed(2)}</div>
-              </div>
-            )}
-
-            {/* Cost to Close All */}
-            {openPos.length > 0 && (
-              <div>
-                <div className="text-xs mb-0.5" style={{ color: 'var(--muted)' }}>Cost to Close All</div>
-                <div className="text-sm font-mono font-semibold" style={{ color: 'var(--text)' }}>
-                  ${premiumAtRisk.toLocaleString(undefined, { maximumFractionDigits: 0 })}
-                </div>
-              </div>
-            )}
-
-            {/* Concentration Warnings */}
-            {concentrationWarnings.length > 0 && (
-              <div className="flex flex-wrap gap-1 items-center">
-                <span className="text-xs" style={{ color: 'var(--amber)' }}>Concentration:</span>
-                {concentrationWarnings.map((w, i) => (
-                  <span key={i} className="text-xs px-2 py-0.5 font-mono" style={{
-                    backgroundColor: 'rgba(255,176,32,0.12)', color: 'var(--amber)', border: '1px solid rgba(255,176,32,0.3)',
-                  }}>{w.label} {w.pct}%</span>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* 3 — Action Items */}
-          {actionItems.length > 0 && (
-            <div className="px-5 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-              <div className="text-xs uppercase tracking-wider font-mono mb-2" style={{ color: 'var(--muted)' }}>
-                Action Items ({actionItems.length})
-              </div>
-              <div className="space-y-3">
-                {actionItems.map(({ pos, action }) => (
-                  <TaxAwareActionCard key={pos.id} pos={pos} action={action} />
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 4 — Top Opportunities */}
-          <div className="px-5 py-3">
-            <div className="text-xs uppercase tracking-wider font-mono mb-2" style={{ color: 'var(--muted)' }}>
-              Top Opportunities
-            </div>
-
-            {regime === 'AVOID' ? (
-              <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                No strong candidates right now. The market signal is Not a Good Time — conditions aren't ideal for new positions. Check back after the next market session.
-              </p>
-            ) : screenerLoading ? (
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 border border-t-transparent rounded-full animate-spin"
-                  style={{ borderColor: 'var(--green)', borderTopColor: 'transparent' }} />
-                <span className="text-xs" style={{ color: 'var(--muted)' }}>Scanning options chain…</span>
-              </div>
-            ) : screenerError ? (
-              <p className="text-xs" style={{ color: 'var(--red)' }}>{screenerError}</p>
-            ) : opportunities.length === 0 ? (
-              <p className="text-xs" style={{ color: 'var(--muted)' }}>
-                No strong candidates right now in the 21–45 DTE · 0.10–0.30 delta range. Check back after the next market session.
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-3">
-                {opportunities.map(c => {
-                  const oppKey = `${c.strike}-${c.expiry}`
-                  const isOpening = openingKey === oppKey
-                  return (
-                    <div key={oppKey} className="border px-3 py-2.5 text-xs min-w-[200px]"
-                      style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}>
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-semibold font-mono" style={{ color: 'var(--text)' }}>${c.strike}C</span>
-                        <span style={{ color: 'var(--muted)' }}>{c.expiry}</span>
-                      </div>
-                      <div className="flex gap-3 mb-2 font-mono">
-                        <div>
-                          <div style={{ color: 'var(--muted)' }}><Term id="CompositeScore">Score</Term></div>
-                          <div className="font-semibold" style={{ color: 'var(--green)' }}>{c.composite_score}</div>
-                        </div>
-                        <div>
-                          <div style={{ color: 'var(--muted)' }}><Term id="Delta">Δ Risk</Term></div>
-                          <div className="font-semibold" style={{ color: 'var(--text)' }}>{c.delta?.toFixed(2)}</div>
-                        </div>
-                        <div>
-                          <div style={{ color: 'var(--muted)' }}><Term id="DTE">DTE</Term></div>
-                          <div className="font-semibold" style={{ color: 'var(--text)' }}>{c.dte}d</div>
-                        </div>
-                        <div>
-                          <div style={{ color: 'var(--muted)' }}>Yield%</div>
-                          <div className="font-semibold" style={{ color: 'var(--green)' }}>{(c.raw_yield_pct ?? 0).toFixed(2)}%</div>
-                        </div>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span style={{ color: 'var(--muted)' }}>
-                          ${c.mid} mid · {c.contracts_suggested > 0 ? `${c.contracts_suggested} cts` : 'full'}
-                        </span>
-                        <button
-                          onClick={() => handleOpen(c)}
-                          disabled={isOpening || c.contracts_suggested <= 0}
-                          className="px-2 py-1 border text-xs font-semibold disabled:opacity-40"
-                          style={{ borderColor: 'var(--green)', color: 'var(--green)', backgroundColor: 'rgba(16,185,129,0.08)', borderRadius: 'var(--radius-sm)' }}
-                        >
-                          {isOpening ? '…' : '+ Open'}
-                        </button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-
-        </div>
-      )}
-    </div>
-  )
 }
 
 // ── All Portfolios aggregate view ─────────────────────────────────────────────
@@ -1197,11 +807,11 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
   const [notesOpen, setNotesOpen] = useState(false)
   const [notesDraft, setNotesDraft] = useState(pos.notes || '')
   const [notesSaving, setNotesSaving] = useState(false)
-  const alerts = alertTypes(pos)
+  const action = getAction(pos)
   const pnlPos = (pos.pnl || 0) >= 0
   const otherPortfolios = portfolios.filter(p => p.id !== currentPortfolioId && !p.archived)
   const status = statusFromPos(pos)
-  const dteColor = pos.dte <= 7 ? 'var(--red)' : pos.dte <= 21 ? 'var(--amber)' : 'var(--muted)'
+
   const rowBg = status.label === 'Urgent' ? 'rgba(255,61,90,0.04)'
     : status.label === 'Watch' ? 'rgba(255,176,32,0.03)'
     : 'transparent'
@@ -1261,17 +871,12 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
         style={{ borderColor: 'var(--border)', backgroundColor: expanded ? 'rgba(255,255,255,0.02)' : rowBg }}
         onClick={() => setExpanded(e => !e)}
       >
-        <td className="px-4 py-3 font-mono font-semibold text-xs" style={{ color: 'var(--blue)' }}>
-          {pos.ticker}
-        </td>
-        <td className="px-4 py-3 font-mono text-xs font-semibold" style={{ color: 'var(--text)' }}>
-          ${pos.strike}
+        <td className="px-4 py-3 font-mono font-semibold text-xs">
+          <span style={{ color: 'var(--blue)' }}>{pos.ticker}</span>
+          <span className="ml-1.5" style={{ color: 'var(--text)' }}>${pos.strike}</span>
         </td>
         <td className="px-4 py-3 text-xs font-mono" style={{ color: 'var(--muted)' }}>
           {pos.expiry}
-        </td>
-        <td className="px-4 py-3">
-          <span className="text-xs font-mono font-semibold" style={{ color: dteColor }}>{pos.dte}d</span>
         </td>
         <td className="px-4 py-3">
           <span className="text-xs font-mono font-semibold" style={{ color: pnlPos ? 'var(--green)' : 'var(--red)' }}>
@@ -1294,7 +899,7 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
       {/* ── Inline drawer ── */}
       {expanded && (
         <tr>
-          <td colSpan={7} className="border-b" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)' }}>
+          <td colSpan={5} className="border-b" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)' }}>
             <div className="px-5 py-4 space-y-4">
 
               {/* Detail stats */}
@@ -1319,12 +924,8 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
                 ))}
               </div>
 
-              {/* Alerts */}
-              {alerts.length > 0 && (
-                <div className="space-y-1 max-w-lg">
-                  {alerts.map(type => <AlertCard key={type} type={type} />)}
-                </div>
-              )}
+              {/* Action card (close / wait / roll) */}
+              {action && <TaxAwareActionCard pos={pos} action={action} />}
 
               {/* Notes */}
               <div>
@@ -1543,7 +1144,7 @@ function ScorecardView() {
 
 // ── Main Portfolios component ─────────────────────────────────────────────────
 
-export default function Portfolios({ positions, portfolios, holdings, dashData, signalData, onRefresh }) {
+export default function Portfolios({ positions, portfolios, holdings, dashData, signalData, onRefresh, userTier, onUpgrade }) {
   const active = portfolios.filter(p => !p.archived)
   const archived = portfolios.filter(p => p.archived)
 
@@ -1578,6 +1179,26 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
   const totalPremium = openPos.reduce((s, p) => s + (p.premium_collected || 0), 0)
   const totalPnl     = openPos.reduce((s, p) => s + (p.pnl || 0), 0)
   const avgCapture   = openPos.length ? openPos.reduce((s, p) => s + (p.profit_capture_pct || 0), 0) / openPos.length : 0
+
+  // Open positions summary stats (for header strip)
+  const _totalShares   = myHoldings.reduce((s, h) => s + (h.shares || 0), 0)
+
+  const _costToClose   = openPos.reduce((s, p) => s + (p.current_price || 0) * (p.contracts || 0) * 100, 0)
+  const _availCts      = Math.floor(_totalShares / 100)
+  const _concBase      = _availCts > 0 ? _availCts : openPos.reduce((s, p) => s + (p.contracts || 0), 0)
+  const _concWarns     = []
+  if (_concBase > 0 && openPos.length > 0) {
+    const bySk = {}, byEx = {}
+    for (const p of openPos) {
+      const sk = String(p.strike)
+      bySk[sk] = (bySk[sk] || 0) + (p.contracts || 0)
+      byEx[p.expiry] = (byEx[p.expiry] || 0) + (p.contracts || 0)
+    }
+    for (const [k, c] of Object.entries(bySk))
+      if (c / _concBase >= 0.30) _concWarns.push(`$${k} ${Math.round(c / _concBase * 100)}%`)
+    for (const [k, c] of Object.entries(byEx))
+      if (c / _concBase >= 0.30) _concWarns.push(`${k} ${Math.round(c / _concBase * 100)}%`)
+  }
 
   async function createPortfolio() {
     const name = newName.trim()
@@ -1784,15 +1405,6 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
               </div>
             )}
 
-            {/* ── Portfolio Intelligence ─────────────────────────── */}
-            <PortfolioIntelligence
-              portfolioId={selectedId}
-              openPos={openPos}
-              holdings={myHoldings}
-              signalData={signalData}
-              onRefresh={onRefresh}
-            />
-
             {/* Stats */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
@@ -1844,13 +1456,20 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
               )}
             </div>
 
+            {/* ── Free tier limit banner ──────────────────────────── */}
+            {userTier === 'free' && positions.length >= 3 && (
+              <PositionLimitBanner onUpgrade={() => onUpgrade?.('You\'ve hit the 3-position limit on the free tier.')} />
+            )}
+
             {/* ── Open Positions ────────────────────────────────── */}
             <div className="border" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}>
-              <div className="px-5 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-                <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Open Positions</h2>
-                <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-                  You profit when the option loses value. Positive P&L means the call has declined since you sold it.
-                </p>
+              <div className="px-5 py-3 border-b flex items-center justify-between gap-4" style={{ borderColor: 'var(--border)' }}>
+                <h2 className="text-sm font-semibold shrink-0" style={{ color: 'var(--text)' }}>Open Positions</h2>
+                <div className="flex items-center gap-x-4 text-xs font-mono" style={{ color: 'var(--muted)' }}>
+                  {_costToClose > 0 && (
+                    <span>${_costToClose.toLocaleString(undefined, { maximumFractionDigits: 0 })} to close</span>
+                  )}
+                </div>
               </div>
               {openPos.length === 0 ? (
                 <div className="px-5 py-10 text-center space-y-3">
@@ -1870,7 +1489,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                   <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
                     <thead>
                       <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
-                        {['Ticker', 'Strike', 'Expiry', 'DTE', 'P&L', 'Status', ''].map(h => (
+                        {['Position', 'Expiry', 'P&L', 'Status', ''].map(h => (
                           <th key={h} className="px-4 py-2.5 text-left font-normal text-[11px] uppercase tracking-wider"
                             style={{ color: 'var(--muted)' }}>{h}</th>
                         ))}

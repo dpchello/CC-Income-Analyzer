@@ -1,10 +1,11 @@
 import json
 import uuid
-from datetime import datetime, date
+from collections import defaultdict
+from datetime import datetime, date, timedelta
 from pathlib import Path
 from typing import Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -17,8 +18,19 @@ import oi_tracker
 import rec_logger
 import macro_calendar
 import feedback_log
+from database import create_db_and_tables, User, UsageLog
+from database import engine as db_engine
+from sqlmodel import Session, select
+import auth as auth_module
 
 app = FastAPI(title="Covered Call Generator")
+
+
+@app.on_event("startup")
+def on_startup():
+    create_db_and_tables()
+
+app.include_router(auth_module.router)
 
 # ── CORS ─ wildcard for local network + cloud access ─────────────────────────
 app.add_middleware(
@@ -28,6 +40,38 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Freemium gate helpers ─────────────────────────────────────────────────────
+
+FREE_POSITION_LIMIT = 3
+FREE_SCREENER_DAILY_LIMIT = 1
+
+def require_pro(current_user: User = Depends(auth_module.get_current_user)):
+    if current_user.tier != "pro":
+        raise HTTPException(status_code=403, detail={"code": "UPGRADE_REQUIRED"})
+    return current_user
+
+def _screener_gate(user: User):
+    """Raise 403 if free user has already run screener today."""
+    if user.tier == "pro":
+        return
+    today = date.today().isoformat()
+    with Session(db_engine) as session:
+        log = session.exec(
+            select(UsageLog).where(
+                UsageLog.user_id == user.id,
+                UsageLog.action == "screener",
+                UsageLog.log_date == today,
+            )
+        ).first()
+        if log and log.count >= FREE_SCREENER_DAILY_LIMIT:
+            raise HTTPException(status_code=403, detail={"code": "DAILY_LIMIT_REACHED"})
+        if log:
+            log.count += 1
+            session.add(log)
+        else:
+            session.add(UsageLog(user_id=user.id, action="screener", log_date=today, count=1))
+        session.commit()
 
 # ── File paths ────────────────────────────────────────────────────────────────
 POSITIONS_FILE  = Path(__file__).parent / "positions.json"
@@ -287,7 +331,10 @@ def rename_portfolio(portfolio_id: str, body: PortfolioIn):
 # ── Position endpoints ────────────────────────────────────────────────────────
 
 @app.get("/api/positions")
-def get_positions(portfolio_id: Optional[str] = Query(None)):
+def get_positions(
+    portfolio_id: Optional[str] = Query(None),
+    current_user: User = Depends(auth_module.get_current_user),
+):
     positions = load_positions()
     if portfolio_id:
         positions = [p for p in positions if p.get("portfolio_id") == portfolio_id]
@@ -482,6 +529,8 @@ def get_positions(portfolio_id: Optional[str] = Query(None)):
                 p["macro_event"] = None
             p["macro_uncertainty"] = news_uncertainty.get("is_elevated", False)
         enriched.append(p)
+    if current_user.tier == "free":
+        enriched = enriched[:FREE_POSITION_LIMIT]
     return enriched
 
 def _capture_signal_snapshot() -> dict:
@@ -736,7 +785,9 @@ def screener(
     limit: int = Query(20),
     max_strike_alloc: float = Query(0.30),
     max_expiry_alloc: float = Query(0.30),
+    current_user: User = Depends(auth_module.get_current_user),
 ):
+    _screener_gate(current_user)
     # ── Holdings: derive total contracts and weighted avg cost ────────────────
     all_holdings = load_holdings()
     port_spy_holdings = [
@@ -1305,7 +1356,10 @@ def get_recommendation_log(limit: int = Query(100)):
 
 
 @app.get("/api/scorecard")
-def get_scorecard(portfolio_id: Optional[str] = Query(None)):
+def get_scorecard(
+    portfolio_id: Optional[str] = Query(None),
+    current_user: User = Depends(require_pro),
+):
     positions = load_positions()
     if portfolio_id:
         positions = [p for p in positions if p.get("portfolio_id") == portfolio_id]
@@ -1376,7 +1430,10 @@ def get_scorecard(portfolio_id: Optional[str] = Query(None)):
 
 
 @app.get("/api/oi/chain")
-def get_oi_chain(expiry: str = Query(...)):
+def get_oi_chain(
+    expiry: str = Query(...),
+    current_user: User = Depends(require_pro),
+):
     chain = fetcher.get_options_chain(expiry)
     oi_tracker.record_chain_snapshot(expiry, chain)
     strikes = oi_tracker.get_chain_oi_change(expiry)
@@ -1485,7 +1542,7 @@ def get_roll_targets(position_id: str):
                 "roll_score":    score,
             })
 
-    def _fmt(scenario_key: str, c: dict | None, label: str, description: str) -> dict:
+    def _fmt(scenario_key: str, c, label: str, description: str) -> dict:
         if c is None:
             return {"scenario": scenario_key, "viable": False,
                     "label": label, "description": description}
@@ -1574,6 +1631,121 @@ def get_roll_targets(position_id: str):
         "close_cost_total":  close_cost,
         "scenarios":         scenarios,
     }
+
+
+# ── Calculator (public, anonymous, rate-limited by IP) ───────────────────────
+
+WAITLIST_FILE = Path(__file__).parent / "waitlist.json"
+
+# In-memory IP rate limit: { ip: [timestamp, ...] }
+_calc_ip_calls: dict = defaultdict(list)
+CALC_LIMIT = 3
+CALC_WINDOW_HOURS = 24
+
+
+@app.get("/api/calculator")
+def public_calculator(
+    ticker: str,
+    shares: int,
+    request: Request,
+    current_user: Optional[User] = Depends(auth_module.get_optional_user),
+):
+    """Return estimated monthly covered call income for a given ticker + share count.
+
+    Logged-in users bypass the IP rate limit; anonymous users get CALC_LIMIT calls/24h.
+    """
+    if current_user is None:
+        client_ip = request.client.host if request.client else "unknown"
+        now = datetime.utcnow()
+        cutoff = now - timedelta(hours=CALC_WINDOW_HOURS)
+
+        _calc_ip_calls[client_ip] = [t for t in _calc_ip_calls[client_ip] if t > cutoff]
+        if len(_calc_ip_calls[client_ip]) >= CALC_LIMIT:
+            raise HTTPException(
+                status_code=429,
+                detail={"limit_reached": True, "message": "Daily limit reached. Sign up free to continue."},
+            )
+        _calc_ip_calls[client_ip].append(now)
+
+    if shares <= 0:
+        raise HTTPException(status_code=400, detail="shares must be positive")
+
+    ticker = ticker.upper().strip()
+    contracts = shares // 100
+    if contracts == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="Need at least 100 shares to write covered calls (1 contract = 100 shares).",
+        )
+
+    try:
+        data = fetcher.get_calculator_data(ticker)
+        spot = data["spot"]
+        target_expiry = data["expiry"]
+        dte = data["dte"]
+        chain = data["chain"]
+
+        # Find the 0.20-0.25 delta call — canonical income strike
+        best = None
+        for row in chain:
+            delta = row.get("delta")
+            mid = row.get("mid", 0)
+            if delta is None or mid <= 0:
+                continue
+            if 0.15 <= delta <= 0.30:
+                if best is None or abs(delta - 0.22) < abs((best.get("delta") or 1) - 0.22):
+                    best = row
+
+        if not best:
+            raise HTTPException(status_code=503, detail=f"No suitable strike found for {ticker} — needs liquid options market")
+
+        mid = best["mid"]
+        monthly_estimate = round(mid * contracts * 100, 2)
+        annualized_yield_pct = round((mid / spot) * (365 / dte) * 100, 2) if spot > 0 and dte > 0 else 0
+
+        return {
+            "ticker": ticker,
+            "shares": shares,
+            "contracts": contracts,
+            "monthly_estimate": monthly_estimate,
+            "annualized_yield_pct": annualized_yield_pct,
+            "strike": best.get("strike"),
+            "expiry": target_expiry,
+            "dte": dte,
+            "mid": mid,
+        }
+
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"Market data error: {str(exc)}")
+
+
+class WaitlistEntry(BaseModel):
+    email: str
+
+
+@app.post("/api/waitlist")
+def join_waitlist(entry: WaitlistEntry):
+    """Capture email from anonymous calculator users."""
+    email = entry.email.strip().lower()
+    if "@" not in email or "." not in email.split("@")[-1]:
+        raise HTTPException(status_code=400, detail="Invalid email address")
+
+    records: list = []
+    if WAITLIST_FILE.exists():
+        with open(WAITLIST_FILE) as f:
+            records = json.load(f)
+
+    # Deduplicate
+    if not any(r.get("email") == email for r in records):
+        records.append({"email": email, "joined_at": datetime.utcnow().isoformat()})
+        with open(WAITLIST_FILE, "w") as f:
+            json.dump(records, f, indent=2)
+
+    return {"ok": True}
 
 
 # ── Static frontend (production build) ───────────────────────────────────────
