@@ -3,3 +3,8 @@ frontend/.vite/
 __pycache__/
 *.pyc
 .env
+
+# Options data — large files, not committed to git
+backend/data/*.duckdb
+backend/data/*.parquet
+backend/data/watchlist.json
