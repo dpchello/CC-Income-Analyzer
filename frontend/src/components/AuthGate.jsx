@@ -26,9 +26,9 @@ export default function AuthGate() {
   const inputStyle = {
     width: '100%',
     padding: '10px 12px',
-    borderRadius: 'var(--radius-sm)',
-    border: '1px solid var(--border)',
-    background: 'var(--bg)',
+    borderRadius: 'var(--radius-md)',
+    border: '1px solid var(--border-input)',
+    background: 'var(--surface-2)',
     color: 'var(--text)',
     fontSize: '14px',
     outline: 'none',
@@ -38,11 +38,11 @@ export default function AuthGate() {
   const btnStyle = {
     width: '100%',
     padding: '11px',
-    borderRadius: 'var(--radius-sm)',
+    borderRadius: 'var(--radius-md)',
     border: 'none',
-    background: 'var(--green)',
-    color: '#000',
-    fontWeight: 600,
+    background: 'var(--gold)',
+    color: '#1a1208',
+    fontWeight: 700,
     fontSize: '14px',
     cursor: loading ? 'not-allowed' : 'pointer',
     opacity: loading ? 0.7 : 1,
@@ -58,11 +58,11 @@ export default function AuthGate() {
         style={{
           width: '100%',
           maxWidth: 380,
-          padding: '36px 32px',
+          padding: '40px 36px',
           borderRadius: 'var(--radius-lg)',
           border: '1px solid var(--border)',
           backgroundColor: 'var(--surface)',
-          boxShadow: 'var(--shadow-md)',
+          boxShadow: 'var(--shadow-lg)',
         }}
       >
         {/* Logo */}
@@ -140,7 +140,7 @@ export default function AuthGate() {
             style={{
               background: 'none',
               border: 'none',
-              color: 'var(--green)',
+              color: 'var(--gold)',
               cursor: 'pointer',
               fontWeight: 600,
               fontSize: '12px',

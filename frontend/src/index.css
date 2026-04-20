@@ -5,39 +5,75 @@
 /* ── CSS Token System ──────────────────────────────────────────────────────── */
 
 :root {
-  --bg:        #080c18;
-  --surface:   #111827;
-  --border:    #243044;
-  --text:      #e8f0f8;
-  --muted:     #8ba3be;
-  --green:     #10b981;
-  --red:       #ff3d5a;
-  --amber:     #ffb020;
-  --blue:      #4a9eff;
-  --orange:    #f97316;
+  /* Backgrounds — 3 depth levels */
+  --bg:          #080d1a;
+  --surface:     #0d1526;
+  --surface-2:   #131e33;
 
-  --radius-sm: 6px;
-  --radius-md: 10px;
-  --radius-lg: 16px;
+  /* Borders — near-invisible for cards; shadows handle depth */
+  --border:        rgba(255,255,255,0.08);
+  --border-strong: rgba(255,255,255,0.14);
+  --border-input:  rgba(255,255,255,0.18);  /* form inputs need visibility */
 
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.25), 0 1px 2px rgba(0,0,0,0.15);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.35), 0 2px 4px rgba(0,0,0,0.20);
+  /* Text */
+  --text:        #dce8f5;
+  --muted:       #5e7a96;
+  --label:       #8fa8c4;
+
+  /* Brand accent — gold replaces green for UI chrome */
+  --gold:        #c9a84c;
+  --gold-dim:    rgba(201,168,76,0.12);
+
+  /* Financial status */
+  --green:       #3ecf8e;
+  --green-dim:   rgba(62,207,142,0.12);
+  --red:         #f87171;
+  --red-dim:     rgba(248,113,113,0.12);
+  --amber:       #f59e0b;
+  --amber-dim:   rgba(245,158,11,0.12);
+  --blue:        #60a5fa;
+  --orange:      #f97316;
+
+  /* Glows (key metrics only) */
+  --glow-green:  0 0 24px rgba(62,207,142,0.15);
+  --glow-gold:   0 0 24px rgba(201,168,76,0.12);
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Shadows — elevation system */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.6), 0 2px 4px rgba(0,0,0,0.4);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.7), 0 4px 8px rgba(0,0,0,0.5);
 }
 
 html.light {
-  --bg:        #f0f4f8;
-  --surface:   #ffffff;
-  --border:    #d1dce8;
-  --text:      #1a2332;
-  --muted:     #64748b;
-  --green:     #10b981;
-  --red:       #dc2626;
-  --amber:     #d97706;
-  --blue:      #2563eb;
-  --orange:    #f97316;
+  --bg:          #f0f4f8;
+  --surface:     #ffffff;
+  --surface-2:   #f5f8fb;
+  --border:        rgba(0,0,0,0.08);
+  --border-strong: rgba(0,0,0,0.14);
+  --border-input:  rgba(0,0,0,0.20);
+  --text:        #1a2332;
+  --muted:       #64748b;
+  --label:       #8096b0;
+  --gold:        #a8802a;
+  --gold-dim:    rgba(168,128,42,0.10);
+  --green:       #059669;
+  --green-dim:   rgba(5,150,105,0.10);
+  --red:         #dc2626;
+  --red-dim:     rgba(220,38,38,0.10);
+  --amber:       #d97706;
+  --amber-dim:   rgba(217,119,6,0.10);
+  --blue:        #2563eb;
+  --orange:      #f97316;
 
   --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
   --shadow-md: 0 4px 12px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.07);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12), 0 4px 8px rgba(0,0,0,0.08);
 }
 
 /* ── Base Styles ───────────────────────────────────────────────────────────── */
@@ -60,14 +96,28 @@ html, body {
 .th-border   { border-color: var(--border); }
 .th-text     { color: var(--text); }
 .th-muted    { color: var(--muted); }
+.th-label    { color: var(--label); }
 .th-green    { color: var(--green); }
 .th-red      { color: var(--red); }
 .th-amber    { color: var(--amber); }
+.th-gold     { color: var(--gold); }
 .th-blue     { color: var(--blue); }
 
 .th-surface-border {
   background-color: var(--surface);
   border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── Form elements — need stronger border than cards ─────────────────────── */
+
+input, select, textarea {
+  border-color: var(--border-input);
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--gold) !important;
+  outline: none;
 }
 
 /* ── Animations ────────────────────────────────────────────────────────────── */
@@ -99,10 +149,13 @@ html, body {
   background-color: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
 }
 
-html.light .th-card {
-  box-shadow: var(--shadow-sm);
+/* Tabular numbers for all financial data */
+.font-tabular {
+  font-family: 'IBM Plex Mono', monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Alert Badge (nav count bubble) ───────────────────────────────────────── */

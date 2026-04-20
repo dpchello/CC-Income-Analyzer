@@ -124,14 +124,14 @@ export default function AddPosition({ onAdded }) {
 
       {msg && (
         <div className="text-xs font-mono px-3 py-2"
-          style={{ color: msg.type === 'success' ? 'var(--green)' : 'var(--red)', backgroundColor: msg.type === 'success' ? 'rgba(0,255,136,0.08)' : 'rgba(255,61,90,0.08)' }}>
+          style={{ color: msg.type === 'success' ? 'var(--green)' : 'var(--red)', backgroundColor: msg.type === 'success' ? 'rgba(62,207,142,0.10)' : 'rgba(248,113,113,0.10)' }}>
           {msg.text}
         </div>
       )}
 
       <button type="submit" disabled={loading}
         className="w-full py-2.5 text-sm font-semibold border disabled:opacity-50 transition-colors"
-        style={{ borderColor: 'var(--green)', color: 'var(--green)', backgroundColor: 'rgba(0,255,136,0.08)' }}>
+        style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: 'var(--gold-dim)', borderRadius: 'var(--radius-md)' }}>
         {loading ? 'Adding…' : '+ Add Position'}
       </button>
     </form>

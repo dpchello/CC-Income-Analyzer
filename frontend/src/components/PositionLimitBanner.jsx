@@ -22,10 +22,10 @@ export default function PositionLimitBanner({ onUpgrade }) {
           onClick={onUpgrade}
           className="flex-shrink-0 text-xs px-3 py-1.5 font-semibold"
           style={{
-            background: 'var(--green)',
-            color: '#000',
+            background: 'var(--gold)',
+            color: '#1a1208',
             border: 'none',
-            borderRadius: 'var(--radius-sm)',
+            borderRadius: 'var(--radius-md)',
             cursor: 'pointer',
             whiteSpace: 'nowrap',
           }}

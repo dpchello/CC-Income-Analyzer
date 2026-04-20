@@ -43,13 +43,13 @@ function ThemePicker() {
               onClick={() => setTheme(opt.id)}
               className="p-4 text-left border transition-all"
               style={{
-                backgroundColor: active ? 'var(--green)15' : 'var(--bg)',
-                borderColor: active ? 'var(--green)' : 'var(--border)',
+                backgroundColor: active ? 'var(--gold-dim)' : 'var(--bg)',
+                borderColor: active ? 'var(--gold)' : 'var(--border)',
                 borderRadius: 'var(--radius-md)',
               }}
             >
               <div className="text-xl mb-2">{opt.icon}</div>
-              <div className="text-sm font-semibold" style={{ color: active ? 'var(--green)' : 'var(--text)' }}>
+              <div className="text-sm font-semibold" style={{ color: active ? 'var(--gold)' : 'var(--text)' }}>
                 {opt.label}
                 {active && <span className="ml-2 text-xs font-normal">✓ Active</span>}
               </div>
@@ -229,7 +229,7 @@ function UpcomingEventsPanel() {
               onClick={handleAdd}
               disabled={saving || !newDate || !newDesc.trim()}
               className="text-xs px-3 py-1.5 border disabled:opacity-40"
-              style={{ borderColor: 'var(--green)', color: 'var(--green)', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(16,185,129,0.08)' }}
+              style={{ borderColor: 'var(--gold)', color: 'var(--gold)', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--gold-dim)' }}
             >
               {saving ? 'Saving…' : 'Save Event'}
             </button>
@@ -505,11 +505,11 @@ function FeedbackNotificationsPanel() {
               onClick={handleSave}
               disabled={saving}
               className="text-xs px-3 py-1.5 border disabled:opacity-40"
-              style={{ borderColor: 'var(--green)', color: 'var(--green)', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(16,185,129,0.08)' }}
+              style={{ borderColor: 'var(--gold)', color: 'var(--gold)', borderRadius: 'var(--radius-md)', backgroundColor: 'var(--gold-dim)' }}
             >
               {saving ? 'Saving…' : 'Save Notification Settings'}
             </button>
-            {saved && <span className="text-xs" style={{ color: 'var(--green)' }}>✓ Saved</span>}
+            {saved && <span className="text-xs" style={{ color: 'var(--gold)' }}>✓ Saved</span>}
             {error && <span className="text-xs" style={{ color: 'var(--red)' }}>{error}</span>}
           </div>
 
@@ -557,7 +557,7 @@ export default function Settings({ onRefresh, alphaUsage }) {
           <button
             onClick={() => setShowAdd(s => !s)}
             className="text-xs px-3 py-1.5 border transition-colors"
-            style={{ borderColor: 'var(--green)', color: 'var(--green)', backgroundColor: showAdd ? 'var(--green)15' : 'transparent' }}
+            style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: showAdd ? 'var(--gold-dim)' : 'transparent' }}
           >
             {showAdd ? 'Cancel' : '+ Add Position'}
           </button>

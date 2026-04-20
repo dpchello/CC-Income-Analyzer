@@ -659,6 +659,68 @@ Your options:
 
 ---
 
+### PIPE-030 · Multi-tenancy + Auth Hardening (Security Sprint)
+**Status:** `pending`
+**Description:** Fix data isolation and auth hardening before real users can sign up. Three sub-tasks must ship together in one PR.
+
+**Sub-task A — Multi-tenancy (CRITICAL):**
+- Move position/portfolio/holdings storage to per-user directories: `backend/data/{user_id}/positions.json`
+- Update all `load_*/save_*` helpers to accept `user_id` param
+- Add `os.makedirs(dir, exist_ok=True)` in every load function (first-time user directory creation)
+- Add `Depends(get_current_user)` to ALL endpoints — reads AND writes: `GET /api/positions`, `GET /api/portfolios`, `GET /api/holdings`, all `POST`/`PUT`/`DELETE` position/portfolio/holding endpoints
+- Migration: on startup, move existing root `positions.json`/`portfolios.json`/`holdings.json` to `data/{existing_user_id}/` (one-time, idempotent)
+
+**Sub-task B — Frontend apiFetch sweep:**
+- Replace all 27 raw `fetch()` calls in components with `apiFetch` from `useAuth()`: `Portfolios.jsx` (20+ calls), `AddPosition.jsx`, `AddHolding.jsx`, `SignalTracker.jsx`, `Settings.jsx`
+
+**Sub-task C — Test suite (minimum viable):**
+- Setup: `backend/tests/conftest.py` with in-memory SQLite TestClient
+- `test_auth.py`: signup, login, me, invalid token
+- `test_isolation.py`: User A adds position, User B GET /positions returns empty ← **CRITICAL regression**
+- `test_tiers.py`: free user gets 3 positions max; screener returns 403 on 2nd call same day
+- `test_score.py`: `_composite_score()` deterministic output test
+
+**Sub-task D — Code quality (bundle in same PR):**
+- Extract `_composite_score()` helper (removes 40-line copy-paste in screener)
+- Fix `_portfolio_stats()` to accept `holdings` param (removes N disk reads)
+
+**Known tradeoff:** Per-user JSON files have a race condition on concurrent writes. PIPE-031 migrates to SQLite to fix this. For MVP (low concurrency), the risk is acceptable.
+
+**Scope:** `backend/main.py`, `backend/tests/` (new), `frontend/src/components/Portfolios.jsx`, `AddPosition.jsx`, `AddHolding.jsx`, `SignalTracker.jsx`, `Settings.jsx`
+**Rationale:** The auth gate is wired but the data layer is not isolated. Any two real users will see each other's financial data. This must be fixed before the r/dividends post goes up.
+
+---
+
+### PIPE-031 · Migrate Data Layer to SQLite (Post-MVP)
+**Status:** `pending`
+**Description:** Replace per-user JSON files with SQLite tables. Adds Position, Portfolio, Holding SQLModel tables with `user_id` FK. One-time migration on startup reads existing JSON files and inserts rows.
+**Why:** Per-user JSON files (from PIPE-030) have a race condition on concurrent writes from two browser tabs. SQLite serializes writes correctly.
+**Depends on:** PIPE-030 (provides the user_id concept and per-user data structure)
+**Rationale:** Known tradeoff from PIPE-030. Address before first paid user.
+
+---
+
+### PIPE-032 · Security Hardening (Pre-Paid-User)
+**Status:** `pending`
+**Description:** Three security items to address before first paying user:
+1. **JWT startup validation:** `raise RuntimeError` if `JWT_SECRET_KEY` env var is missing — prevents silent fallback to dev key in production
+2. **JWT revocation / short expiry:** Either a token denylist table in SQLite, or reduce expiry to 1h + add `POST /api/auth/refresh` endpoint
+3. **CORS lockdown:** Change `allow_origins=["*"]` to specific origin list once production URLs are stable
+**Depends on:** Stable production URLs (Vercel + Railway)
+**Rationale:** Currently deferred for MVP speed. Must be addressed before charging money.
+
+---
+
+### PIPE-033 · Marketing Deploy + Keepalive
+**Status:** `pending`
+**Description:** Deploy `marketing/` to Vercel and add a keepalive ping.
+1. Deploy: `cd marketing && vercel --prod` with `NEXT_PUBLIC_API_URL=<railway-backend-url>`
+2. Keepalive: Add a `useEffect` on the marketing site's index page that calls `/api/health` (GET, no auth) on mount to pre-warm the Railway backend. Prevents the 20-30s cold start on the first calculator use.
+3. **Gate on PIPE-030 QA:** Do not deploy until multi-tenancy is confirmed working.
+**Rationale:** Marketing site is built and vercel.json exists. Blocked only on PIPE-030 passing QA.
+
+---
+
 ### PIPE-023 · Alert Persistence + Nav Badges
 **Status:** `done`
 **Implementation notes:** `computeAlertCount()` in `App.jsx` counts positions with DTE ≤7 or distance_to_strike_pct ≤1.5. Passed as prop to `Sidebar.jsx` which shows a red badge on "My Positions". `prevAlertCountRef` auto-un-dismisses the header strip when count rises. Strip renders when alertCount > 0 and user is not on Portfolios tab, with sessionStorage-backed dismiss.

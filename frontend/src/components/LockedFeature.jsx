@@ -32,10 +32,10 @@ export default function LockedFeature({ children, reason = 'pro', onUpgrade }) {
             onClick={onUpgrade}
             className="text-xs px-3 py-1.5 font-semibold mt-1"
             style={{
-              background: 'var(--green)',
-              color: '#000',
+              background: 'var(--gold)',
+              color: '#1a1208',
               border: 'none',
-              borderRadius: 'var(--radius-sm)',
+              borderRadius: 'var(--radius-md)',
               cursor: 'pointer',
             }}
           >
