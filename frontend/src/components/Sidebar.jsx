@@ -90,8 +90,8 @@ export default function Sidebar({ activeTab, onNavigate, alertCount }) {
                 className="flex items-center gap-3 px-3 py-2 text-sm font-medium transition-colors relative"
                 style={{
                   borderRadius: 'var(--radius-sm)',
-                  backgroundColor: isActive ? 'rgba(16,185,129,0.12)' : 'transparent',
-                  color: isActive ? 'var(--green)' : 'var(--muted)',
+                  backgroundColor: isActive ? 'var(--gold-dim)' : 'transparent',
+                  color: isActive ? 'var(--gold)' : 'var(--muted)',
                   justifyContent: collapsed ? 'center' : 'flex-start',
                 }}
               >
@@ -160,8 +160,8 @@ export default function Sidebar({ activeTab, onNavigate, alertCount }) {
                     className="flex items-center gap-3 px-3 py-2.5 text-sm font-medium transition-colors"
                     style={{
                       borderRadius: 'var(--radius-sm)',
-                      backgroundColor: isActive ? 'rgba(16,185,129,0.12)' : 'transparent',
-                      color: isActive ? 'var(--green)' : 'var(--muted)',
+                      backgroundColor: isActive ? 'var(--gold-dim)' : 'transparent',
+                      color: isActive ? 'var(--gold)' : 'var(--muted)',
                     }}
                   >
                     <span style={{ fontSize: 18, flexShrink: 0 }}>{item.icon}</span>

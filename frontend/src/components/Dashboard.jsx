@@ -319,8 +319,8 @@ function StatusBand({ positions, signalData }) {
   const nextExp = open.filter(p => p.dte > 0).sort((a, b) => a.dte - b.dte)[0]
 
   const bandColor  = isAllClear ? 'var(--green)' : urgentCount > 0 ? 'var(--red)' : 'var(--amber)'
-  const bandBg     = isAllClear ? 'rgba(16,185,129,0.08)' : urgentCount > 0 ? 'rgba(255,61,90,0.08)' : 'rgba(255,176,32,0.08)'
-  const bandBorder = isAllClear ? 'rgba(16,185,129,0.2)'  : urgentCount > 0 ? 'rgba(255,61,90,0.2)'  : 'rgba(255,176,32,0.2)'
+  const bandBg     = isAllClear ? 'rgba(62,207,142,0.08)'  : urgentCount > 0 ? 'rgba(248,113,113,0.08)' : 'rgba(245,158,11,0.08)'
+  const bandBorder = isAllClear ? 'rgba(62,207,142,0.20)'  : urgentCount > 0 ? 'rgba(248,113,113,0.20)' : 'rgba(245,158,11,0.20)'
 
   const statusText = isAllClear
     ? '✓ All Clear'
@@ -376,7 +376,7 @@ function PositionsTable({ positions, onNavigate }) {
         <button
           onClick={() => onNavigate('Screener')}
           className="text-xs px-3 py-1.5 border transition-colors"
-          style={{ borderColor: 'var(--green)', color: 'var(--green)', backgroundColor: 'rgba(16,185,129,0.08)', borderRadius: 'var(--radius-sm)' }}
+          style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: 'var(--gold-dim)', borderRadius: 'var(--radius-md)' }}
         >
           Find opportunities in the Screener →
         </button>
@@ -437,7 +437,7 @@ function PositionsTable({ positions, onNavigate }) {
                   style={{
                     borderBottom: i < open.length - 1 ? '1px solid var(--border)' : 'none',
                     backgroundColor: isUrgent
-                      ? 'rgba(255,61,90,0.04)'
+                      ? 'rgba(248,113,113,0.06)'
                       : isHigh ? 'rgba(255,176,32,0.03)' : 'transparent',
                   }}
                 >
@@ -487,7 +487,7 @@ function PositionsTable({ positions, onNavigate }) {
         <button
           onClick={() => onNavigate('Portfolios')}
           className="text-xs px-3 py-1.5 border transition-colors"
-          style={{ borderColor: 'var(--green)', color: 'var(--green)', backgroundColor: 'transparent', borderRadius: 'var(--radius-sm)' }}
+          style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: 'transparent', borderRadius: 'var(--radius-md)' }}
         >
           + Add Position
         </button>

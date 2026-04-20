@@ -133,10 +133,10 @@ export default function UpgradeModal({ onClose, triggerReason }) {
             ))}
           </div>
           <div>
-            <p className="text-xs font-semibold mb-2" style={{ color: 'var(--green)' }}>PRO</p>
+            <p className="text-xs font-semibold mb-2" style={{ color: 'var(--gold)' }}>PRO</p>
             {PRO_FEATURES.map(f => (
               <div key={f} className="flex items-start gap-2 mb-1.5">
-                <span className="text-xs mt-0.5" style={{ color: 'var(--green)' }}>✓</span>
+                <span className="text-xs mt-0.5" style={{ color: 'var(--gold)' }}>✓</span>
                 <span className="text-xs" style={{ color: 'var(--text)' }}>{f}</span>
               </div>
             ))}
@@ -147,14 +147,15 @@ export default function UpgradeModal({ onClose, triggerReason }) {
         <button
           style={{
             width: '100%',
-            padding: '12px',
-            background: 'var(--green)',
-            color: '#000',
+            padding: '13px',
+            background: 'var(--gold)',
+            color: '#1a1208',
             fontWeight: 700,
             fontSize: 14,
             border: 'none',
-            borderRadius: 'var(--radius-sm)',
+            borderRadius: 'var(--radius-md)',
             cursor: 'pointer',
+            letterSpacing: '0.01em',
           }}
         >
           Start Pro — {price}

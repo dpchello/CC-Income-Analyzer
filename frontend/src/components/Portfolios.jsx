@@ -664,8 +664,8 @@ function PortfolioTab({ portfolio, active, onClick }) {
       onClick={onClick}
       className="w-full text-left px-4 py-3 border-l-2 transition-colors"
       style={{
-        borderColor: active ? 'var(--green)' : 'transparent',
-        backgroundColor: active ? 'var(--green)08' : 'transparent',
+        borderColor: active ? 'var(--gold)' : 'transparent',
+        backgroundColor: active ? 'var(--gold-dim)' : 'transparent',
       }}
     >
       <div className="flex items-center justify-between">
@@ -774,7 +774,7 @@ function EditHoldingModal({ holding, onSave, onClose }) {
           <input type="number" step="0.01" className={field} style={fStyle} value={avgCost} onChange={e => setAvgCost(e.target.value)} />
         </div>
         <div className="flex gap-3">
-          <button onClick={save} disabled={saving} className="px-4 py-2 text-sm border" style={{ borderColor: 'var(--green)', color: 'var(--green)' }}>
+          <button onClick={save} disabled={saving} className="px-4 py-2 text-sm border" style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}>
             {saving ? 'Saving…' : 'Save'}
           </button>
           <button onClick={onClose} className="px-4 py-2 text-sm" style={{ color: 'var(--muted)' }}>Cancel</button>
@@ -812,7 +812,7 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
   const otherPortfolios = portfolios.filter(p => p.id !== currentPortfolioId && !p.archived)
   const status = statusFromPos(pos)
 
-  const rowBg = status.label === 'Urgent' ? 'rgba(255,61,90,0.04)'
+  const rowBg = status.label === 'Urgent' ? 'rgba(248,113,113,0.06)'
     : status.label === 'Watch' ? 'rgba(255,176,32,0.03)'
     : 'transparent'
 
@@ -939,7 +939,7 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
                     />
                     <div className="flex gap-2">
                       <button onClick={doSaveNotes} disabled={notesSaving}
-                        className="text-xs px-2 py-0.5 border" style={{ borderColor: 'var(--green)', color: 'var(--green)' }}>
+                        className="text-xs px-2 py-0.5 border" style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}>
                         {notesSaving ? 'Saving…' : 'Save'}
                       </button>
                       <button onClick={() => { setNotesOpen(false); setNotesDraft(pos.notes || '') }}
@@ -987,7 +987,7 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
                       onChange={e => setEditSellPrice(e.target.value)}
                       className="w-20 px-2 py-1 text-xs font-mono border focus:outline-none" placeholder="sold at"
                       style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }} />
-                    <button onClick={doEdit} className="text-xs px-2 py-0.5 border" style={{ borderColor: 'var(--green)', color: 'var(--green)' }}>Save</button>
+                    <button onClick={doEdit} className="text-xs px-2 py-0.5 border" style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}>Save</button>
                     <button onClick={() => { setIsEditing(false); setEditContracts(String(pos.contracts)); setEditSellPrice(String(pos.sell_price ?? '')) }}
                       className="text-xs" style={{ color: 'var(--muted)' }}>Cancel</button>
                   </div>
@@ -1262,7 +1262,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs uppercase tracking-wider font-mono" style={{ color: 'var(--muted)' }}>Portfolios</span>
           <button onClick={() => setShowNewForm(s => !s)}
-            className="text-xs px-2 py-1 border" style={{ borderColor: 'var(--green)', color: 'var(--green)' }}>
+            className="text-xs px-2 py-1 border" style={{ borderColor: 'var(--gold)', color: 'var(--gold)' }}>
             + New
           </button>
         </div>
@@ -1278,7 +1278,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
               style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
             />
             <button onClick={createPortfolio} disabled={creating}
-              className="text-xs px-2" style={{ color: 'var(--green)' }}>
+              className="text-xs px-2" style={{ color: 'var(--gold)' }}>
               {creating ? '…' : '✓'}
             </button>
             <button onClick={() => { setShowNewForm(false); setNewName('') }}
@@ -1291,9 +1291,9 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
           onClick={() => setSelectedId('__all__')}
           className="w-full text-left px-4 py-2.5 text-sm border-l-2"
           style={{
-            borderLeftColor: selectedId === '__all__' ? 'var(--green)' : 'transparent',
+            borderLeftColor: selectedId === '__all__' ? 'var(--gold)' : 'transparent',
             color: selectedId === '__all__' ? 'var(--text)' : 'var(--muted)',
-            backgroundColor: selectedId === '__all__' ? 'rgba(16,185,129,0.06)' : 'transparent',
+            backgroundColor: selectedId === '__all__' ? 'var(--gold-dim)' : 'transparent',
           }}
         >
           All Portfolios
@@ -1363,7 +1363,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
               <button
                 onClick={() => setShowNewForm(true)}
                 className="text-sm px-4 py-2 border transition-colors"
-                style={{ borderColor: 'var(--green)', color: 'var(--green)', backgroundColor: 'rgba(16,185,129,0.08)', borderRadius: 'var(--radius-md)' }}
+                style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: 'var(--gold-dim)', borderRadius: 'var(--radius-md)' }}
               >
                 Create portfolio →
               </button>
@@ -1385,7 +1385,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                 </button>
                 <button onClick={() => setShowAddPosition(s => !s)}
                   className="px-3 py-1.5 text-xs border transition-colors"
-                  style={{ borderColor: 'var(--green)', color: 'var(--green)', backgroundColor: showAddPosition ? 'rgba(16,185,129,0.1)' : 'transparent' }}>
+                  style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: showAddPosition ? 'var(--gold-dim)' : 'transparent' }}>
                   {showAddPosition ? '✕ Cancel' : '+ Add Position'}
                 </button>
               </div>
@@ -1478,7 +1478,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                   </p>
                   <button
                     className="text-xs px-3 py-1.5 border transition-colors inline-block"
-                    style={{ borderColor: 'var(--green)', color: 'var(--green)', backgroundColor: 'rgba(16,185,129,0.08)', borderRadius: 'var(--radius-sm)' }}
+                    style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: 'var(--gold-dim)', borderRadius: 'var(--radius-md)' }}
                     onClick={() => setShowAddPosition(true)}
                   >
                     + Add your first position →
@@ -1509,7 +1509,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                     </tbody>
                   </table>
                   <div className="px-4 py-2.5 border-t" style={{ borderColor: 'var(--border)' }}>
-                    <button onClick={() => setShowAddPosition(true)} className="text-xs" style={{ color: 'var(--green)' }}>
+                    <button onClick={() => setShowAddPosition(true)} className="text-xs" style={{ color: 'var(--gold)' }}>
                       + Add Position
                     </button>
                   </div>

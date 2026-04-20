@@ -113,7 +113,7 @@ export default function App() {
   if (!ready) return (
     <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
       <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin"
-        style={{ borderColor: 'var(--green)', borderTopColor: 'transparent' }} />
+        style={{ borderColor: 'var(--gold)', borderTopColor: 'transparent' }} />
     </div>
   )
 
@@ -175,12 +175,13 @@ export default function App() {
               <span
                 className="text-xs px-1.5 py-0.5 font-semibold"
                 style={{
-                  background: 'rgba(255,176,32,0.15)',
-                  color: 'var(--amber, #ffb020)',
+                  background: 'var(--gold-dim)',
+                  color: 'var(--gold)',
                   borderRadius: 'var(--radius-sm)',
+                  letterSpacing: '0.04em',
                 }}
               >
-                Pro
+                PRO
               </span>
             )}
             <button

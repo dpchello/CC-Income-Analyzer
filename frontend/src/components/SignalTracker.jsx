@@ -69,7 +69,7 @@ function FactorCard({ fkey, data, marketInputs, asOf }) {
   const def = FACTOR_DEFS[fkey] || { name: fkey, question: '', explain: '' }
   const score = data.score
   const scoreColor = score > 0 ? 'var(--green)' : score < 0 ? 'var(--red)' : 'var(--muted)'
-  const borderColor = score > 0 ? 'rgba(16,185,129,0.2)' : score < 0 ? 'rgba(255,61,90,0.2)' : 'var(--border)'
+  const borderColor = score > 0 ? 'rgba(62,207,142,0.25)' : score < 0 ? 'rgba(248,113,113,0.25)' : 'var(--border)'
   const rawValue = FACTOR_RAW_VALUE[fkey]?.(marketInputs)
   const asOfStr = asOf ? new Date(asOf).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : null
   const [calcOpen, setCalcOpen] = useState(false)
@@ -439,7 +439,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
           <button
             onClick={runScreener} disabled={loading}
             className="px-5 py-2 text-sm font-medium border disabled:opacity-50"
-            style={{ borderColor: 'var(--green)', color: 'var(--green)', backgroundColor: 'rgba(16,185,129,0.08)', borderRadius: 'var(--radius-sm)' }}
+            style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: 'var(--gold-dim)', borderRadius: 'var(--radius-md)' }}
           >
             {loading ? 'Scanning…' : 'Run Screener'}
           </button>
@@ -566,7 +566,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
             <button
               onClick={() => onUpgrade('You\'ve used your 1 free screener run for today.')}
               className="text-xs px-3 py-1.5 font-semibold"
-              style={{ background: 'var(--green)', color: '#000', border: 'none', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}
+              style={{ background: 'var(--gold)', color: '#1a1208', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}
             >
               Upgrade to Pro →
             </button>
@@ -574,7 +574,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
         </div>
       )}
       {error && error !== 'DAILY_LIMIT_REACHED' && error !== 'UPGRADE_REQUIRED' && (
-        <div className="px-5 py-3 text-xs font-mono" style={{ color: 'var(--red)', backgroundColor: 'rgba(255,61,90,0.06)' }}>{error}</div>
+        <div className="px-5 py-3 text-xs font-mono" style={{ color: 'var(--red)', backgroundColor: 'rgba(248,113,113,0.08)' }}>{error}</div>
       )}
 
       {!loading && results === null && !error && (
@@ -887,7 +887,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
                               onClick={() => addPosition(c)}
                               disabled={isAdding || c.at_strike_limit || c.at_expiry_limit || c.contracts_suggested === 0}
                               className="px-3 py-1 text-xs border disabled:opacity-40"
-                              style={{ borderColor: 'var(--green)', color: 'var(--green)', backgroundColor: 'rgba(16,185,129,0.08)', borderRadius: 'var(--radius-sm)' }}
+                              style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: 'var(--gold-dim)', borderRadius: 'var(--radius-md)' }}
                             >
                               {isAdding ? '…' : '+ Add'}
                             </button>
