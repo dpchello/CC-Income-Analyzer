@@ -10,3 +10,4 @@ sqlmodel
 python-jose[cryptography]
 passlib[bcrypt]
 bcrypt
+duckdb
