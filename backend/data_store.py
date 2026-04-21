@@ -1,6 +1,7 @@
 import duckdb
 from pathlib import Path
 from datetime import date
+from typing import Optional
 import pandas as pd
 
 DB_PATH = Path(__file__).parent / "data" / "options.duckdb"
@@ -113,7 +114,7 @@ def get_coverage_summary() -> pd.DataFrame:
         """).fetchdf()
 
 
-def get_last_collected(symbol: str) -> date | None:
+def get_last_collected(symbol: str) -> Optional[date]:
     with get_connection(read_only=True) as conn:
         row = conn.execute(
             "SELECT last_collected FROM collection_log WHERE symbol = ?",
@@ -141,6 +142,13 @@ def insert_options_rows(df: pd.DataFrame, source: str) -> int:
     df["data_source"] = source
     with get_connection() as conn:
         conn.register("_insert_df", df)
+        count = conn.execute("""
+            SELECT COUNT(*) FROM _insert_df
+            WHERE (quote_date, symbol, option_type, expiration, strike) NOT IN (
+                SELECT quote_date, symbol, option_type, expiration, strike
+                FROM options_chains
+            )
+        """).fetchone()[0]
         conn.execute("""
             INSERT INTO options_chains
             SELECT quote_date, symbol, option_type, expiration, strike,
@@ -152,7 +160,6 @@ def insert_options_rows(df: pd.DataFrame, source: str) -> int:
                 FROM options_chains
             )
         """)
-        count = conn.execute("SELECT changes()").fetchone()[0]
     return count
 
 
