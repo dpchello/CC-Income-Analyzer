@@ -89,8 +89,8 @@ Every free-tier interaction should end with a dollar amount the user can't yet a
 | Backend API | FastAPI + Python 3.9 | Done |
 | Market data | yfinance (free) | Done |
 | Financial data | AlphaVantage (25 calls/day free) | Done, key in env var |
-| Auth | python-jose JWT + bcrypt + SQLite | Backend done, frontend pending |
-| Database | SQLite via SQLModel | Done |
+| Auth | python-jose JWT + bcrypt | Backend done, frontend pending |
+| Database | Supabase (Postgres) + RLS | Replacing SQLite — migration pending |
 | Hosting — app | Railway | Not yet deployed publicly |
 | Hosting — marketing | Vercel | Not yet deployed |
 | Payments | Stripe Checkout + Customer Portal | Not yet built |
@@ -163,6 +163,8 @@ Every shipped feature, what it does, and why it exists.
 | PIPE-028 | Frontend auth gate | AuthProvider + AuthGate + apiFetch — app requires login, token in localStorage |
 | PIPE-029 | Freemium gates + upgrade UI | Backend: 3-position slice, 1 screener/day (UsageLog), Pro-only scorecard + OI chain; Frontend: UpgradeModal, LockedFeature, PositionLimitBanner |
 | MKTG | Marketing site | Next.js, 15 static pages, JSON-LD SEO, calculator widget, pricing, /learn/[slug] — deployed to Vercel |
+| PIPE-034 | SnapTrade Brokerage Import | Full SnapTrade integration: register user, connect portal, account selection, holdings import with dedup (upsert by snaptrade_account_id), category mapping (long_stock/covered_call/options), avg_cost from average_purchase_price |
+| PIPE-035 | Brokerage Portfolio Folders | Auto-creates one portfolio per SnapTrade account on sync, grouped into collapsible brokerage folders in sidebar; starred portfolios float to top; any portfolio renameable inline; dedup fixed with unique index on (user_id, snaptrade_account_id) |
 
 ---
 
@@ -189,7 +191,7 @@ These are not up for re-discussion without an explicit strategy conversation:
 - **Name:** Harvest (no farming metaphors)
 - **Tagline:** "Find, Track, and Capture Every Covered Call Opportunity."
 - **Pricing:** $29/mo or $240/yr — not lower
-- **Auth stack:** JWT + bcrypt + SQLite — not Supabase, not Firebase
+- **Auth stack:** JWT + bcrypt — auth layer stays custom. Database is Supabase (Postgres) with RLS for data isolation. No Supabase Auth.
 - **Free tier primary gate:** 3 positions (hard limit)
 - **Free tier secondary gate:** 1 screener run/day (soft, with upgrade prompt)
 - **Calculator gate:** 3 anonymous uses (localStorage), then email — no login required

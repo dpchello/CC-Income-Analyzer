@@ -3,6 +3,8 @@ import AddPosition from './AddPosition.jsx'
 import AddHolding from './AddHolding.jsx'
 import { Term } from './Tooltip.jsx'
 import PositionLimitBanner from './PositionLimitBanner.jsx'
+import { useAuth } from '../auth.jsx'
+import ConnectBrokerage from './ConnectBrokerage.jsx'
 
 // ── Tax & P&L Aware Action Card (PIPE-019 + PIPE-020) ───────────────────────
 
@@ -16,6 +18,7 @@ const FEEDBACK_OPTIONS = [
 ]
 
 function FeedbackForm({ pos, action, onClose }) {
+  const { apiFetch } = useAuth()
   const [chosen, setChosen] = useState(null)
   const [freeText, setFreeText] = useState('')
   const [saving, setSaving] = useState(false)
@@ -27,12 +30,12 @@ function FeedbackForm({ pos, action, onClose }) {
     setSaving(true)
     setError(null)
     try {
-      const res = await fetch('/api/feedback', {
+      const res = await apiFetch('/api/feedback', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           position_context: {
-            ticker:      pos.ticker || 'SPY',
+            ticker:      pos.ticker || '',
             strike:      pos.strike,
             expiry:      pos.expiry,
             action_type: action.key,
@@ -237,7 +240,7 @@ function TaxAwareActionCard({ pos, action }) {
               </div>
             </div>
             <div className="mt-2 leading-snug" style={{ color: 'var(--muted)' }}>
-              Choose this if you believe SPY will keep rising above ${breakEvenPrice?.toFixed(0)}.
+              Choose this if you believe {pos.ticker} will keep rising above ${breakEvenPrice?.toFixed(0)}.
             </div>
           </div>
 
@@ -248,7 +251,7 @@ function TaxAwareActionCard({ pos, action }) {
               {pos.delta != null ? Math.round((1 - pos.delta) * 100) : '—'}%
             </div>
             <div className="mt-0.5 text-[11px]" style={{ color: 'var(--muted)' }}>
-              chance SPY stays below ${breakEvenPrice?.toFixed(0)} by expiry
+              chance {pos.ticker} stays below ${breakEvenPrice?.toFixed(0)} by expiry
             </div>
           </div>
 
@@ -331,7 +334,7 @@ function getAction(pos) {
       return { key: 'EARLY_EXERCISE',
         label: `Shares May Be Called Early${divLabel}`,
         color: 'var(--red)', urgency,
-        instruction: `Your call has almost no time value left ($${(pos.time_premium ?? 0).toFixed(2)}) and expires after the upcoming SPY dividend ($${(pos.upcoming_dividend ?? 0).toFixed(2)}). The buyer is very likely to exercise early to collect that dividend — taking your shares before expiry.`,
+        instruction: `Your call has almost no time value left ($${(pos.time_premium ?? 0).toFixed(2)}) and expires after the upcoming ${pos.ticker} dividend ($${(pos.upcoming_dividend ?? 0).toFixed(2)}). The buyer is very likely to exercise early to collect that dividend — taking your shares before expiry.`,
         closingCostly }
     }
     if (pos.early_exercise_risk === 'HIGH') {
@@ -657,84 +660,200 @@ function AllPortfoliosView({ positions, portfolios, holdings }) {
 
 // ── Portfolio sidebar item ────────────────────────────────────────────────────
 
-function PortfolioTab({ portfolio, active, onClick }) {
+function PortfolioTab({ portfolio, active, indent, onClick, onStar, onRename, onArchive, onDelete }) {
   const stats = portfolio.stats || {}
+  const [renaming, setRenaming] = useState(false)
+  const [renameVal, setRenameVal] = useState(portfolio.name)
+
+  function startRename(e) {
+    e.stopPropagation()
+    setRenameVal(portfolio.name)
+    setRenaming(true)
+  }
+
+  function commitRename(e) {
+    e.stopPropagation()
+    const trimmed = renameVal.trim()
+    if (trimmed && trimmed !== portfolio.name) onRename(trimmed)
+    setRenaming(false)
+  }
+
+  function cancelRename(e) {
+    e.stopPropagation()
+    setRenaming(false)
+  }
+
+  const isDefault = portfolio.name === 'Default' && !portfolio.brokerage_connection_id
+
   return (
-    <button
-      onClick={onClick}
-      className="w-full text-left px-4 py-3 border-l-2 transition-colors"
-      style={{
-        borderColor: active ? 'var(--gold)' : 'transparent',
-        backgroundColor: active ? 'var(--gold-dim)' : 'transparent',
-      }}
+    <div
+      className="group relative"
+      style={{ paddingLeft: indent ? 12 : 0 }}
     >
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium" style={{ color: active ? 'var(--text)' : 'var(--muted)' }}>
-          {portfolio.name}
-        </span>
-        {stats.open_count > 0 && (
-          <span className="text-xs px-1.5 py-0.5 font-mono" style={{ backgroundColor: 'var(--border)', color: 'var(--muted)' }}>
-            {stats.open_count}
-          </span>
-        )}
-      </div>
-      {stats.total_premium_collected > 0 && (
-        <div className="text-xs mt-0.5 font-mono" style={{ color: 'var(--green)' }}>
-          ${stats.total_premium_collected.toLocaleString()} premium
+      {renaming ? (
+        <div className="flex items-center gap-1 px-2 py-2 border-l-2" style={{ borderColor: 'var(--gold)' }}>
+          <input
+            autoFocus
+            value={renameVal}
+            onChange={e => setRenameVal(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') commitRename(e); if (e.key === 'Escape') cancelRename(e) }}
+            className="flex-1 px-1.5 py-0.5 text-xs border focus:outline-none"
+            style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }}
+            onClick={e => e.stopPropagation()}
+          />
+          <button onClick={commitRename} className="text-xs" style={{ color: 'var(--gold)' }}>✓</button>
+          <button onClick={cancelRename} className="text-xs" style={{ color: 'var(--muted)' }}>✗</button>
+        </div>
+      ) : (
+        <button
+          onClick={onClick}
+          className="w-full text-left px-4 py-2.5 border-l-2 transition-colors"
+          style={{
+            borderColor: active ? 'var(--gold)' : 'transparent',
+            backgroundColor: active ? 'var(--gold-dim)' : 'transparent',
+          }}
+        >
+          <div className="flex items-center gap-1.5">
+            {/* Star indicator */}
+            {portfolio.starred && (
+              <span style={{ fontSize: 10, color: 'var(--gold)', lineHeight: 1 }}>★</span>
+            )}
+            <span className="flex-1 text-sm font-medium truncate" style={{ color: active ? 'var(--text)' : 'var(--muted)' }}>
+              {portfolio.name}
+            </span>
+            {stats.open_count > 0 && (
+              <span className="text-xs px-1 py-0.5 font-mono shrink-0" style={{ backgroundColor: 'var(--border)', color: 'var(--muted)' }}>
+                {stats.open_count}
+              </span>
+            )}
+          </div>
+          {stats.total_premium_collected > 0 && (
+            <div className="text-xs mt-0.5 font-mono" style={{ color: 'var(--green)', paddingLeft: portfolio.starred ? 14 : 0 }}>
+              ${stats.total_premium_collected.toLocaleString()} premium
+            </div>
+          )}
+        </button>
+      )}
+
+      {/* Hover actions */}
+      {!renaming && (
+        <div className="absolute right-1 top-1/2 -translate-y-1/2 hidden group-hover:flex items-center gap-0.5">
+          <button
+            onClick={e => { e.stopPropagation(); onStar(!portfolio.starred) }}
+            title={portfolio.starred ? 'Unstar' : 'Star'}
+            className="text-xs px-1 py-0.5 rounded"
+            style={{ color: portfolio.starred ? 'var(--gold)' : 'var(--muted)', background: 'var(--bg-card)' }}
+          >
+            {portfolio.starred ? '★' : '☆'}
+          </button>
+          <button
+            onClick={startRename}
+            title="Rename"
+            className="text-xs px-1 py-0.5 rounded"
+            style={{ color: 'var(--muted)', background: 'var(--bg-card)' }}
+          >
+            ✎
+          </button>
+          {!isDefault && (
+            <>
+              <button onClick={e => { e.stopPropagation(); onArchive() }} title="Archive"
+                className="text-xs px-1 py-0.5 rounded" style={{ color: 'var(--muted)', background: 'var(--bg-card)' }}>▾</button>
+              <button onClick={e => { e.stopPropagation(); onDelete() }} title="Delete"
+                className="text-xs px-1 py-0.5 rounded" style={{ color: 'var(--muted)', background: 'var(--bg-card)' }}>✕</button>
+            </>
+          )}
         </div>
       )}
-    </button>
+    </div>
   )
 }
 
 // ── Holdings row ──────────────────────────────────────────────────────────────
 
 function HoldingRow({ holding, coveredShares, onDelete, onEdit }) {
-  const pnlPos = (holding.unrealized_pnl || 0) >= 0
-  const totalShares = holding.shares
-  const covered = Math.min(coveredShares, totalShares)
-  const coveragePct = totalShares > 0 ? Math.round(covered / totalShares * 100) : 0
+  const shares     = holding.shares ?? 0
+  const covered    = Math.min(coveredShares, shares)
+  const coveragePct = shares > 0 ? Math.round(covered / shares * 100) : 0
+  const pnl        = holding.unrealized_pnl
+  const pnlPct     = holding.unrealized_pnl_pct
+  const pnlPos     = (pnl ?? 0) >= 0
+
+  const fmt = (n, dec = 2) => n != null ? `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec })}` : '—'
+  const fmtShares = n => n != null ? Number(n).toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—'
 
   return (
-    <div className="flex flex-wrap items-center gap-4 py-3 border-b text-sm" style={{ borderColor: 'var(--border)' }}>
-      <div
-        className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold shrink-0"
-        style={{ backgroundColor: 'var(--border)', color: 'var(--blue)' }}
-      >
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '44px 1fr 1fr 1fr 1fr 1fr 140px 64px',
+      alignItems: 'center',
+      gap: '0 20px',
+      padding: '10px 0',
+      borderBottom: '1px solid var(--border)',
+    }}>
+      {/* Avatar */}
+      <div style={{
+        width: 36, height: 36, borderRadius: 4,
+        background: 'var(--bg-card)', border: '1px solid var(--line)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 9, fontWeight: 700, fontFamily: 'var(--mono)',
+        color: 'var(--blue)', letterSpacing: '0.04em',
+      }}>
         {holding.ticker}
       </div>
 
-      <div className="flex flex-wrap gap-5 flex-1 text-sm">
-        {[
-          { label: 'Shares', value: holding.shares.toLocaleString(), color: 'var(--text)' },
-          { label: 'Avg Cost', value: `$${holding.avg_cost.toFixed(2)}`, color: 'var(--text)' },
-          { label: 'Current', value: `$${holding.current_price?.toFixed(2) ?? '—'}`, color: 'var(--text)' },
-          { label: 'Market Value', value: `$${(holding.market_value || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })}`, color: 'var(--text)' },
-          { label: 'Unrealized P&L', value: `${pnlPos ? '+' : ''}$${(holding.unrealized_pnl || 0).toLocaleString(undefined, { maximumFractionDigits: 0 })} (${holding.unrealized_pnl_pct?.toFixed(1)}%)`, color: pnlPos ? 'var(--green)' : 'var(--red)' },
-        ].map(f => (
-          <div key={f.label}>
-            <div className="text-xs mb-0.5" style={{ color: 'var(--muted)' }}>{f.label}</div>
-            <div className="font-mono font-semibold" style={{ color: f.color }}>{f.value}</div>
-          </div>
-        ))}
+      {/* Shares */}
+      <div>
+        <div style={{ fontSize: 10, color: 'var(--fg-faint)', marginBottom: 2 }}>Shares</div>
+        <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--fg)' }}>{fmtShares(shares)}</div>
+      </div>
 
-        {/* Coverage bar */}
-        <div className="min-w-[120px]">
-          <div className="text-xs mb-0.5" style={{ color: 'var(--muted)' }}>Call Coverage</div>
-          <div className="flex items-center gap-2">
-            <div className="w-20 h-1.5" style={{ backgroundColor: 'var(--border)' }}>
-              <div className="h-full" style={{ width: `${coveragePct}%`, backgroundColor: 'var(--green)' }} />
-            </div>
-            <span className="text-xs font-mono" style={{ color: coveragePct === 100 ? 'var(--green)' : 'var(--amber)' }}>
-              {covered}/{totalShares} ({coveragePct}%)
-            </span>
-          </div>
+      {/* Avg Cost */}
+      <div>
+        <div style={{ fontSize: 10, color: 'var(--fg-faint)', marginBottom: 2 }}>Avg Cost</div>
+        <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--fg)' }}>{fmt(holding.avg_cost)}</div>
+      </div>
+
+      {/* Current */}
+      <div>
+        <div style={{ fontSize: 10, color: 'var(--fg-faint)', marginBottom: 2 }}>Current</div>
+        <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--fg)' }}>{fmt(holding.current_price)}</div>
+      </div>
+
+      {/* Market Value */}
+      <div>
+        <div style={{ fontSize: 10, color: 'var(--fg-faint)', marginBottom: 2 }}>Mkt Value</div>
+        <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--fg)' }}>
+          {holding.market_value != null ? `$${Math.round(holding.market_value).toLocaleString()}` : '—'}
         </div>
       </div>
 
-      <div className="flex gap-3 shrink-0 text-xs">
-        <button onClick={onEdit} style={{ color: 'var(--amber)' }} className="hover:underline">Edit</button>
-        <button onClick={onDelete} style={{ color: 'var(--muted)' }} className="hover:underline">Remove</button>
+      {/* Unrealized P&L */}
+      <div>
+        <div style={{ fontSize: 10, color: 'var(--fg-faint)', marginBottom: 2 }}>Unreal. P&L</div>
+        <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: pnl != null ? (pnlPos ? 'var(--acid)' : 'var(--red)') : 'var(--fg-mute)' }}>
+          {pnl != null
+            ? `${pnlPos ? '+' : ''}$${Math.abs(Math.round(pnl)).toLocaleString()}${pnlPct != null ? ` (${pnlPct.toFixed(1)}%)` : ''}`
+            : '—'}
+        </div>
+      </div>
+
+      {/* Call Coverage */}
+      <div>
+        <div style={{ fontSize: 10, color: 'var(--fg-faint)', marginBottom: 4 }}>Call Coverage</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ flex: 1, height: 4, background: 'var(--line)', borderRadius: 2, minWidth: 48 }}>
+            <div style={{ height: '100%', width: `${coveragePct}%`, background: coveragePct === 100 ? 'var(--acid)' : 'var(--fg-mute)', borderRadius: 2 }} />
+          </div>
+          <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: coveragePct === 100 ? 'var(--acid)' : 'var(--fg-mute)', whiteSpace: 'nowrap' }}>
+            {coveragePct}%
+          </span>
+        </div>
+      </div>
+
+      {/* Actions */}
+      <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+        <button onClick={onEdit} style={{ fontSize: 11, color: 'var(--fg-mute)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Edit</button>
+        <button onClick={onDelete} style={{ fontSize: 11, color: 'var(--fg-faint)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>✕</button>
       </div>
     </div>
   )
@@ -743,8 +862,8 @@ function HoldingRow({ holding, coveredShares, onDelete, onEdit }) {
 // ── Edit holding modal ────────────────────────────────────────────────────────
 
 function EditHoldingModal({ holding, onSave, onClose }) {
-  const [shares, setShares] = useState(String(holding.shares))
-  const [avgCost, setAvgCost] = useState(String(holding.avg_cost))
+  const [shares, setShares] = useState(holding.shares != null ? String(holding.shares) : '')
+  const [avgCost, setAvgCost] = useState(holding.avg_cost != null ? String(holding.avg_cost) : '')
   const [saving, setSaving] = useState(false)
 
   async function save() {
@@ -800,6 +919,7 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
   const [expanded, setExpanded] = useState(false)
   const [isClosing, setIsClosing] = useState(false)
   const [closePrice, setClosePrice] = useState('')
+  const [contractsToClose, setContractsToClose] = useState(String(pos.contracts))
   const [moving, setMoving] = useState(false)
   const [isEditing, setIsEditing] = useState(false)
   const [editContracts, setEditContracts] = useState(String(pos.contracts))
@@ -830,13 +950,25 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
 
   async function doClose() {
     const price = parseFloat(closePrice)
-    if (isNaN(price)) return
-    await fetch(`/api/positions/${pos.id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status: 'closed', close_price: price }),
-    })
+    const n = parseInt(contractsToClose, 10)
+    if (isNaN(price) || price < 0) return
+    if (isNaN(n) || n <= 0 || n > pos.contracts) return
+    if (n < pos.contracts) {
+      await fetch(`/api/positions/${pos.id}/partial-close`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contracts_to_close: n, close_price: price }),
+      })
+    } else {
+      await fetch(`/api/positions/${pos.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'closed', close_price: price }),
+      })
+    }
     setIsClosing(false)
+    setClosePrice('')
+    setContractsToClose(String(pos.contracts))
     onClose()
   }
 
@@ -960,15 +1092,25 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
               {/* Action row */}
               <div className="flex flex-wrap items-center gap-4 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
                 {isClosing ? (
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <input
-                      type="number" step="0.01" placeholder="buy-back price" value={closePrice}
+                      type="number" min="1" max={pos.contracts} step="1"
+                      value={contractsToClose}
+                      onChange={e => setContractsToClose(e.target.value)}
+                      className="w-20 px-2 py-1 text-xs font-mono border focus:outline-none"
+                      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}
+                      title={`Contracts to close (max ${pos.contracts})`}
+                    />
+                    <span className="text-xs" style={{ color: 'var(--muted)' }}>of {pos.contracts} @ buy-back</span>
+                    <input
+                      type="number" step="0.01" min="0" placeholder="price" value={closePrice}
                       onChange={e => setClosePrice(e.target.value)}
-                      className="w-28 px-2 py-1 text-xs font-mono border focus:outline-none"
+                      className="w-24 px-2 py-1 text-xs font-mono border focus:outline-none"
                       style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}
                     />
                     <button onClick={doClose} className="text-xs" style={{ color: 'var(--green)' }}>✓ Confirm</button>
-                    <button onClick={() => setIsClosing(false)} className="text-xs" style={{ color: 'var(--muted)' }}>Cancel</button>
+                    <button onClick={() => { setIsClosing(false); setContractsToClose(String(pos.contracts)); setClosePrice('') }}
+                      className="text-xs" style={{ color: 'var(--muted)' }}>Cancel</button>
                   </div>
                 ) : (
                   <button onClick={e => { e.stopPropagation(); setIsClosing(true) }}
@@ -1029,16 +1171,17 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
 // ── Scorecard ─────────────────────────────────────────────────────────────────
 
 function ScorecardView() {
+  const { apiFetch } = useAuth()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    fetch('/api/scorecard')
+    apiFetch('/api/scorecard')
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false) })
       .catch(() => { setError('Could not load scorecard.'); setLoading(false) })
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return <div className="py-12 text-center text-sm" style={{ color: 'var(--muted)' }}>Loading scorecard…</div>
   if (error)   return <div className="py-12 text-center text-sm" style={{ color: 'var(--red)' }}>{error}</div>
@@ -1145,6 +1288,7 @@ function ScorecardView() {
 // ── Main Portfolios component ─────────────────────────────────────────────────
 
 export default function Portfolios({ positions, portfolios, holdings, dashData, signalData, onRefresh, userTier, onUpgrade }) {
+  const { apiFetch } = useAuth()
   const active = portfolios.filter(p => !p.archived)
   const archived = portfolios.filter(p => p.archived)
 
@@ -1156,6 +1300,9 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
   const [showAddHolding, setShowAddHolding] = useState(false)
   const [editingHolding, setEditingHolding] = useState(null)
   const [creating, setCreating] = useState(false)
+  const [showConnectBrokerage, setShowConnectBrokerage] = useState(false)
+  const [brokerageSyncOnly, setBrokerageSyncOnly] = useState(false)
+  const [collapsedBrokers, setCollapsedBrokers] = useState({})
 
   // Auto-select first portfolio on load
   useEffect(() => {
@@ -1204,7 +1351,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
     const name = newName.trim()
     if (!name) return
     setCreating(true)
-    const res = await fetch('/api/portfolios', {
+    const res = await apiFetch('/api/portfolios', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
@@ -1221,7 +1368,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
 
   async function deletePortfolio(id) {
     if (!confirm('Delete this portfolio? Closed positions will move to Default.')) return
-    const res = await fetch(`/api/portfolios/${id}`, { method: 'DELETE' })
+    const res = await apiFetch(`/api/portfolios/${id}`, { method: 'DELETE' })
     if (!res.ok) {
       const err = await res.json()
       alert(err.detail)
@@ -1232,25 +1379,44 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
   }
 
   async function archivePortfolio(id) {
-    const res = await fetch(`/api/portfolios/${id}/archive`, { method: 'PUT' })
+    const res = await apiFetch(`/api/portfolios/${id}/archive`, { method: 'PUT' })
     if (!res.ok) { const err = await res.json(); alert(err.detail); return }
     if (selectedId === id) setSelectedId(active.find(p => p.id !== id)?.id || null)
     onRefresh()
   }
 
   async function unarchivePortfolio(id) {
-    await fetch(`/api/portfolios/${id}/unarchive`, { method: 'PUT' })
+    await apiFetch(`/api/portfolios/${id}/unarchive`, { method: 'PUT' })
+    onRefresh()
+  }
+
+  async function toggleStar(id, starred) {
+    await apiFetch(`/api/portfolios/${id}/star`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ starred }),
+    })
+    onRefresh()
+  }
+
+  async function renamePortfolio(id, name) {
+    const res = await apiFetch(`/api/portfolios/${id}/rename`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    if (!res.ok) { const err = await res.json(); alert(err.detail); return }
     onRefresh()
   }
 
   async function deletePosition(id) {
-    await fetch(`/api/positions/${id}`, { method: 'DELETE' })
+    await apiFetch(`/api/positions/${id}`, { method: 'DELETE' })
     onRefresh()
   }
 
   async function deleteHolding(id) {
     if (!confirm('Remove this holding?')) return
-    await fetch(`/api/holdings/${id}`, { method: 'DELETE' })
+    await apiFetch(`/api/holdings/${id}`, { method: 'DELETE' })
     onRefresh()
   }
 
@@ -1258,7 +1424,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
     <div className="flex gap-6 min-h-[70vh]">
 
       {/* ── Left sidebar: portfolio list ─────────────────────── */}
-      <div className="w-56 shrink-0 space-y-1">
+      <div className="w-60 shrink-0">
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs uppercase tracking-wider font-mono" style={{ color: 'var(--muted)' }}>Portfolios</span>
           <button onClick={() => setShowNewForm(s => !s)}
@@ -1312,20 +1478,90 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
           Scorecard
         </button>
 
-        {/* Active portfolios */}
-        {active.map(p => (
-          <div key={p.id} className="group relative">
-            <PortfolioTab portfolio={p} active={selectedId === p.id} onClick={() => setSelectedId(p.id)} />
-            {p.id !== 'default' && (
-              <div className="absolute right-2 top-2 hidden group-hover:flex gap-1">
-                <button onClick={() => archivePortfolio(p.id)} title="Archive"
-                  className="text-xs px-1" style={{ color: 'var(--muted)' }}>▾</button>
-                <button onClick={() => deletePortfolio(p.id)} title="Delete"
-                  className="text-xs px-1" style={{ color: 'var(--muted)' }}>✕</button>
-              </div>
-            )}
-          </div>
-        ))}
+        {/* ── Starred ──────────────────────────────────────────── */}
+        {(() => {
+          const starred = active.filter(p => p.starred)
+          if (!starred.length) return null
+          return (
+            <div className="mb-1">
+              <div className="px-4 pt-1 pb-0.5 text-xs uppercase tracking-wider font-mono" style={{ color: 'var(--gold)' }}>★ Starred</div>
+              {starred.map(p => (
+                <PortfolioTab key={p.id} portfolio={p} active={selectedId === p.id}
+                  onClick={() => setSelectedId(p.id)}
+                  onStar={s => toggleStar(p.id, s)}
+                  onRename={name => renamePortfolio(p.id, name)}
+                  onArchive={() => archivePortfolio(p.id)}
+                  onDelete={() => deletePortfolio(p.id)}
+                />
+              ))}
+            </div>
+          )
+        })()}
+
+        {/* ── Custom (non-brokerage) portfolios ────────────────── */}
+        {(() => {
+          const custom = active.filter(p => !p.brokerage_connection_id && !p.starred)
+          if (!custom.length) return null
+          return (
+            <div className="mb-1">
+              <div className="px-4 pt-1 pb-0.5 text-xs uppercase tracking-wider font-mono" style={{ color: 'var(--muted)' }}>My Portfolios</div>
+              {custom.map(p => (
+                <PortfolioTab key={p.id} portfolio={p} active={selectedId === p.id}
+                  onClick={() => setSelectedId(p.id)}
+                  onStar={s => toggleStar(p.id, s)}
+                  onRename={name => renamePortfolio(p.id, name)}
+                  onArchive={() => archivePortfolio(p.id)}
+                  onDelete={() => deletePortfolio(p.id)}
+                />
+              ))}
+            </div>
+          )
+        })()}
+
+        {/* ── Brokerage folders ─────────────────────────────────── */}
+        {(() => {
+          const brokerageItems = active.filter(p => p.brokerage_connection_id)
+          if (!brokerageItems.length) return null
+          // Group by brokerage_name
+          const groups = {}
+          for (const p of brokerageItems) {
+            const key = p.brokerage_name || 'Connected Brokerage'
+            if (!groups[key]) groups[key] = []
+            groups[key].push(p)
+          }
+          return (
+            <div className="mb-1">
+              <div className="px-4 pt-1 pb-0.5 text-xs uppercase tracking-wider font-mono" style={{ color: 'var(--muted)' }}>Brokerages</div>
+              {Object.entries(groups).map(([brokerageName, items]) => {
+                const collapsed = collapsedBrokers[brokerageName]
+                return (
+                  <div key={brokerageName}>
+                    {/* Folder header */}
+                    <button
+                      onClick={() => setCollapsedBrokers(prev => ({ ...prev, [brokerageName]: !prev[brokerageName] }))}
+                      className="w-full text-left px-4 py-2 flex items-center gap-1.5"
+                      style={{ color: 'var(--text)' }}
+                    >
+                      <span style={{ fontSize: 9, color: 'var(--muted)' }}>{collapsed ? '▶' : '▼'}</span>
+                      <span style={{ fontSize: 11, fontWeight: 600 }}>{brokerageName}</span>
+                      <span className="text-xs ml-auto" style={{ color: 'var(--muted)' }}>{items.length}</span>
+                    </button>
+                    {/* Sub-portfolios */}
+                    {!collapsed && items.map(p => (
+                      <PortfolioTab key={p.id} portfolio={p} active={selectedId === p.id} indent
+                        onClick={() => setSelectedId(p.id)}
+                        onStar={s => toggleStar(p.id, s)}
+                        onRename={name => renamePortfolio(p.id, name)}
+                        onArchive={() => archivePortfolio(p.id)}
+                        onDelete={() => deletePortfolio(p.id)}
+                      />
+                    ))}
+                  </div>
+                )
+              })}
+            </div>
+          )
+        })()}
 
         {/* Archived toggle */}
         {archived.length > 0 && (
@@ -1336,9 +1572,16 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
             </button>
             {showArchived && archived.map(p => (
               <div key={p.id} className="group relative opacity-50 hover:opacity-80">
-                <PortfolioTab portfolio={p} active={selectedId === p.id} onClick={() => setSelectedId(p.id)} />
-                <div className="absolute right-2 top-2 hidden group-hover:flex">
-                  <button onClick={() => unarchivePortfolio(p.id)} title="Restore" className="text-xs px-1" style={{ color: 'var(--muted)' }}>↑</button>
+                <PortfolioTab portfolio={p} active={selectedId === p.id}
+                  onClick={() => setSelectedId(p.id)}
+                  onStar={s => toggleStar(p.id, s)}
+                  onRename={name => renamePortfolio(p.id, name)}
+                  onArchive={() => {}}
+                  onDelete={() => deletePortfolio(p.id)}
+                />
+                <div className="absolute right-1 top-1.5 hidden group-hover:flex">
+                  <button onClick={() => unarchivePortfolio(p.id)} title="Restore"
+                    className="text-xs px-1.5 py-0.5 rounded" style={{ color: 'var(--muted)', background: 'var(--bg-card)' }}>↑</button>
                 </div>
               </div>
             ))}
@@ -1358,7 +1601,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
               <div className="text-2xl">🌾</div>
               <div className="text-base font-semibold" style={{ color: 'var(--text)' }}>Let's set up your first portfolio</div>
               <p className="text-sm leading-relaxed" style={{ color: 'var(--muted)' }}>
-                You'll need: your SPY share count and the options you've already sold (if any).
+                You'll need: your share count and any options you've already sold (if any).
               </p>
               <button
                 onClick={() => setShowNewForm(true)}
@@ -1378,6 +1621,18 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                 <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>Created {selected.created_date}</p>
               </div>
               <div className="flex gap-2">
+                <button
+                  onClick={() => { setBrokerageSyncOnly(true); setShowConnectBrokerage(true) }}
+                  className="px-3 py-1.5 text-xs border transition-colors"
+                  style={{ borderColor: 'var(--blue)', color: 'var(--blue)' }}>
+                  ↻ Refresh holdings
+                </button>
+                <button
+                  onClick={() => { setBrokerageSyncOnly(false); setShowConnectBrokerage(true) }}
+                  className="px-3 py-1.5 text-xs border transition-colors"
+                  style={{ borderColor: 'var(--border)', color: 'var(--fg-mute)' }}>
+                  + Connect Brokerage
+                </button>
                 <button onClick={() => setShowAddHolding(s => !s)}
                   className="px-3 py-1.5 text-xs border transition-colors"
                   style={{ borderColor: 'var(--blue)', color: 'var(--blue)', backgroundColor: showAddHolding ? 'rgba(74,158,255,0.1)' : 'transparent' }}>
@@ -1401,7 +1656,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
             {showAddPosition && (
               <div className="p-5 border" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}>
                 <div className="text-xs uppercase tracking-wider mb-3 font-mono" style={{ color: 'var(--muted)' }}>Add Position</div>
-                <AddPosition portfolioId={selectedId} onAdded={() => { setShowAddPosition(false); onRefresh() }} />
+                <AddPosition portfolioId={selectedId} holdings={myHoldings} onAdded={() => { setShowAddPosition(false); onRefresh() }} />
               </div>
             )}
 
@@ -1431,7 +1686,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
               {myHoldings.length === 0 ? (
                 <div className="px-5 py-8 text-center space-y-2">
                   <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                    No holdings recorded yet. Add your SPY shares to unlock call coverage tracking and position sizing.
+                    No holdings recorded yet. Add your shares to unlock call coverage tracking and position sizing.
                   </p>
                   <button
                     onClick={() => setShowAddHolding(true)}
@@ -1442,7 +1697,21 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                   </button>
                 </div>
               ) : (
-                <div className="px-5">
+                <div style={{ padding: '0 20px' }}>
+                  {/* Column headers */}
+                  <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '44px 1fr 1fr 1fr 1fr 1fr 140px 64px',
+                    gap: '0 20px',
+                    padding: '8px 0 4px',
+                    borderBottom: '1px solid var(--line)',
+                  }}>
+                    {['', 'Shares', 'Avg Cost', 'Current', 'Mkt Value', 'Unreal. P&L', 'Call Coverage', ''].map((label, i) => (
+                      <div key={i} style={{ fontSize: 10, color: 'var(--fg-faint)', letterSpacing: '0.06em', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>
+                        {label}
+                      </div>
+                    ))}
+                  </div>
                   {myHoldings.map(h => (
                     <HoldingRow
                       key={h.id}
@@ -1472,17 +1741,26 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                 </div>
               </div>
               {openPos.length === 0 ? (
-                <div className="px-5 py-10 text-center space-y-3">
+                <div className="px-5 py-10 text-center space-y-4">
                   <p className="text-sm" style={{ color: 'var(--muted)' }}>
-                    You don't have any open positions yet. Check the Market Conditions tab to see if now is a good time to start.
+                    You don't have any open positions yet.
                   </p>
-                  <button
-                    className="text-xs px-3 py-1.5 border transition-colors inline-block"
-                    style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: 'var(--gold-dim)', borderRadius: 'var(--radius-md)' }}
-                    onClick={() => setShowAddPosition(true)}
-                  >
-                    + Add your first position →
-                  </button>
+                  <div className="flex justify-center gap-3 flex-wrap">
+                    <button
+                      className="text-xs px-4 py-2 border transition-colors"
+                      style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: 'var(--gold-dim)', borderRadius: 'var(--radius-md)' }}
+                      onClick={() => setShowAddPosition(true)}
+                    >
+                      + Add position manually
+                    </button>
+                    <button
+                      className="text-xs px-4 py-2 border transition-colors"
+                      style={{ borderColor: 'var(--border)', color: 'var(--fg-mute)', borderRadius: 'var(--radius-md)' }}
+                      onClick={() => setShowConnectBrokerage(true)}
+                    >
+                      ↓ Import from brokerage
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <div className="overflow-x-auto">
@@ -1527,23 +1805,35 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                   <table className="w-full text-xs font-mono">
                     <thead>
                       <tr className="border-b" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
-                        {['Strike','Expiry','Contracts','Sold At','Closed At','Final P&L','Date'].map(h => (
+                        {['Strike','Expiry','Contracts','Sold At','Closed At','Final P&L','Date',''].map(h => (
                           <th key={h} className="px-4 py-2 text-left font-normal">{h}</th>
                         ))}
                       </tr>
                     </thead>
                     <tbody>
-                      {closedPos.map(pos => (
-                        <tr key={pos.id} className="border-b opacity-50" style={{ borderColor: 'var(--border)' }}>
-                          <td className="px-4 py-2" style={{ color: 'var(--text)' }}>${pos.strike}</td>
-                          <td className="px-4 py-2" style={{ color: 'var(--text)' }}>{pos.expiry}</td>
-                          <td className="px-4 py-2" style={{ color: 'var(--text)' }}>{pos.contracts}</td>
-                          <td className="px-4 py-2" style={{ color: 'var(--text)' }}>${pos.sell_price?.toFixed(2)}</td>
-                          <td className="px-4 py-2" style={{ color: 'var(--text)' }}>${pos.close_price?.toFixed(2) ?? '—'}</td>
-                          <td className="px-4 py-2 font-semibold" style={{ color: (pos.final_pnl||0) >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                            {(pos.final_pnl||0) >= 0 ? '+' : ''}${pos.final_pnl?.toFixed(2) ?? '—'}
+                      {closedPos.map(p => (
+                        <tr key={p.id} className="border-b opacity-60 hover:opacity-100 transition-opacity" style={{ borderColor: 'var(--border)' }}>
+                          <td className="px-4 py-2" style={{ color: 'var(--text)' }}>${p.strike}</td>
+                          <td className="px-4 py-2" style={{ color: 'var(--text)' }}>{p.expiry}</td>
+                          <td className="px-4 py-2" style={{ color: 'var(--text)' }}>{p.contracts}</td>
+                          <td className="px-4 py-2" style={{ color: 'var(--text)' }}>${p.sell_price?.toFixed(2)}</td>
+                          <td className="px-4 py-2" style={{ color: 'var(--text)' }}>${p.close_price?.toFixed(2) ?? '—'}</td>
+                          <td className="px-4 py-2 font-semibold" style={{ color: (p.final_pnl||0) >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                            {(p.final_pnl||0) >= 0 ? '+' : ''}${p.final_pnl?.toFixed(2) ?? '—'}
                           </td>
-                          <td className="px-4 py-2" style={{ color: 'var(--muted)' }}>{pos.close_date ?? '—'}</td>
+                          <td className="px-4 py-2" style={{ color: 'var(--muted)' }}>{p.close_date ?? '—'}</td>
+                          <td className="px-4 py-2">
+                            <button
+                              onClick={async () => {
+                                await fetch(`/api/positions/${p.id}/reopen`, { method: 'PUT' })
+                                onRefresh()
+                              }}
+                              className="text-xs hover:underline"
+                              style={{ color: 'var(--muted)' }}
+                            >
+                              Reopen
+                            </button>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -1561,6 +1851,14 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
           holding={editingHolding}
           onSave={() => { setEditingHolding(null); onRefresh() }}
           onClose={() => setEditingHolding(null)}
+        />
+      )}
+
+      {showConnectBrokerage && (
+        <ConnectBrokerage
+          syncOnly={brokerageSyncOnly}
+          onClose={() => setShowConnectBrokerage(false)}
+          onImported={() => { setShowConnectBrokerage(false); onRefresh() }}
         />
       )}
     </div>

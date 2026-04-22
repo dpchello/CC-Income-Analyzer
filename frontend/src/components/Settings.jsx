@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react'
 import { useTheme } from '../theme.jsx'
 import AddPosition from './AddPosition.jsx'
+import ConnectBrokerage from './ConnectBrokerage.jsx'
+import { useAuth } from '../auth.jsx'
 
 const THEME_OPTIONS = [
   {
@@ -122,6 +124,7 @@ function AlphaUsagePanel({ alphaUsage }) {
 }
 
 function UpcomingEventsPanel() {
+  const { apiFetch } = useAuth()
   const [events, setEvents] = useState(null)       // null = loading
   const [adding, setAdding] = useState(false)
   const [newDate, setNewDate] = useState('')
@@ -131,7 +134,7 @@ function UpcomingEventsPanel() {
 
   async function loadEvents() {
     try {
-      const res = await fetch('/api/macro')
+      const res = await apiFetch('/api/macro')
       const data = await res.json()
       setEvents(data.user_events || [])
     } catch {
@@ -146,7 +149,7 @@ function UpcomingEventsPanel() {
     setSaving(true)
     setError(null)
     try {
-      const res = await fetch('/api/macro/events', {
+      const res = await apiFetch('/api/macro/events', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ date: newDate, description: newDesc.trim() }),
@@ -171,7 +174,7 @@ function UpcomingEventsPanel() {
   async function handleRemove(evDate, evDesc) {
     try {
       const params = new URLSearchParams({ event_date: evDate, description: evDesc })
-      const res = await fetch(`/api/macro/events?${params}`, { method: 'DELETE' })
+      const res = await apiFetch(`/api/macro/events?${params}`, { method: 'DELETE' })
       if (res.ok) {
         const d = await res.json()
         setEvents(d.user_events || [])
@@ -264,6 +267,7 @@ function UpcomingEventsPanel() {
 }
 
 function OISnapshotPanel() {
+  const { apiFetch } = useAuth()
   const [status, setStatus] = useState(null)  // null | 'loading' | {ok, expiries_processed, strikes_recorded, errors, timestamp}
   const [error, setError] = useState(null)
 
@@ -271,7 +275,7 @@ function OISnapshotPanel() {
     setStatus('loading')
     setError(null)
     try {
-      const res = await fetch('/api/oi/snapshot', { method: 'POST' })
+      const res = await apiFetch('/api/oi/snapshot', { method: 'POST' })
       const data = await res.json()
       setStatus(data)
     } catch {
@@ -314,6 +318,7 @@ function OISnapshotPanel() {
 }
 
 function FeedbackNotificationsPanel() {
+  const { apiFetch } = useAuth()
   const [cfg, setCfg] = useState(null)       // null = loading
   const [saving, setSaving] = useState(false)
   const [saved, setSaved]   = useState(false)
@@ -330,7 +335,7 @@ function FeedbackNotificationsPanel() {
   const [immediate, setImmediate] = useState(true)
 
   useEffect(() => {
-    fetch('/api/feedback/config')
+    apiFetch('/api/feedback/config')
       .then(r => r.json())
       .then(d => {
         setCfg(d)
@@ -360,7 +365,7 @@ function FeedbackNotificationsPanel() {
     }
     if (smtpPass.trim()) body.smtp_pass = smtpPass.trim()
     try {
-      const res = await fetch('/api/feedback/config', {
+      const res = await apiFetch('/api/feedback/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -519,6 +524,176 @@ function FeedbackNotificationsPanel() {
   )
 }
 
+function BrokerageConnectionsPanel({ onImported }) {
+  const { apiFetch } = useAuth()
+  const [connections, setConnections] = useState(null)  // null = loading
+  const [health, setHealth]           = useState(null)
+  const [showModal, setShowModal]     = useState(false)
+  const [syncOnly, setSyncOnly]       = useState(false)
+  const [disconnecting, setDisconnecting] = useState(null)
+
+  async function load() {
+    try {
+      const [cRes, hRes] = await Promise.all([
+        apiFetch('/api/snaptrade/connections'),
+        apiFetch('/api/snaptrade/health'),
+      ])
+      setConnections(cRes.ok ? await cRes.json() : [])
+      setHealth(hRes.ok ? await hRes.json() : null)
+    } catch {
+      setConnections([])
+    }
+  }
+
+  useEffect(() => { load() }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function disconnect(connectionId) {
+    setDisconnecting(connectionId)
+    try {
+      await apiFetch(`/api/snaptrade/connections/${connectionId}`, { method: 'DELETE' })
+      await load()
+    } finally {
+      setDisconnecting(null)
+    }
+  }
+
+  function openConnect() {
+    setSyncOnly(false)
+    setShowModal(true)
+  }
+
+  function openSync() {
+    setSyncOnly(true)
+    setShowModal(true)
+  }
+
+  function handleImported() {
+    setShowModal(false)
+    load()
+    onImported?.()
+  }
+
+  const hasConnections = Array.isArray(connections) && connections.length > 0
+  const needsReconnect = health?.needs_reconnect
+
+  return (
+    <>
+      <div className="p-5 border space-y-4" style={{ backgroundColor: 'var(--surface)', borderColor: needsReconnect ? 'var(--amber)' : 'var(--border)', borderRadius: 'var(--radius-md)' }}>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Brokerage Connections</div>
+            <div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+              Connect your brokerage to automatically import positions and holdings. Read-only — 50+ brokerages supported.
+            </div>
+          </div>
+          <div className="flex gap-2 shrink-0">
+            {hasConnections && (
+              <button
+                onClick={openSync}
+                className="text-xs px-3 py-1.5 border transition-colors"
+                style={{
+                  borderColor: 'var(--blue)',
+                  color: 'var(--blue)',
+                  borderRadius: 'var(--radius-md)',
+                  backgroundColor: 'transparent',
+                }}
+              >
+                ↓ Sync positions
+              </button>
+            )}
+            <button
+              onClick={openConnect}
+              className="text-xs px-3 py-1.5 border transition-colors"
+              style={{
+                borderColor: 'var(--gold)',
+                color: 'var(--gold)',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--gold-dim)',
+                fontWeight: 600,
+              }}
+            >
+              + Connect brokerage
+            </button>
+          </div>
+        </div>
+
+        {needsReconnect && (
+          <div className="flex items-center gap-2 text-xs px-3 py-2 border" style={{ borderColor: 'var(--amber)', color: 'var(--amber)', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(245,158,11,0.08)' }}>
+            ⚠ One or more brokerage connections need to be re-authorized. Click a connection below to reconnect.
+          </div>
+        )}
+
+        {connections === null ? (
+          <div className="text-xs" style={{ color: 'var(--muted)' }}>Loading…</div>
+        ) : !hasConnections ? (
+          <div className="text-xs py-4 text-center border border-dashed" style={{ color: 'var(--muted)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}>
+            No brokerages connected yet.<br />
+            <button
+              onClick={openConnect}
+              className="mt-2 text-xs"
+              style={{ color: 'var(--gold)', cursor: 'pointer', background: 'none', border: 'none', padding: 0, textDecoration: 'underline' }}
+            >
+              Connect your first brokerage →
+            </button>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {connections.map(conn => (
+              <div
+                key={conn.connection_id || conn.id}
+                className="flex items-center justify-between gap-3 px-3 py-2.5 border"
+                style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)', borderRadius: 'var(--radius-sm)' }}
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div style={{
+                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                    backgroundColor: conn.status === 'connected' ? 'var(--green)' : 'var(--amber)',
+                  }} />
+                  <div className="min-w-0">
+                    <div className="text-xs font-medium truncate" style={{ color: 'var(--text)' }}>
+                      {conn.brokerage_name || conn.connection_id || 'Brokerage'}
+                    </div>
+                    {conn.account_name && (
+                      <div className="text-[10px] truncate" style={{ color: 'var(--muted)' }}>{conn.account_name}</div>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {conn.status !== 'connected' && (
+                    <button
+                      onClick={openConnect}
+                      className="text-[10px] px-2 py-1 border"
+                      style={{ borderColor: 'var(--amber)', color: 'var(--amber)', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}
+                    >
+                      Reconnect
+                    </button>
+                  )}
+                  <button
+                    onClick={() => disconnect(conn.connection_id || conn.id)}
+                    disabled={disconnecting === (conn.connection_id || conn.id)}
+                    className="text-[10px] px-2 py-1 border opacity-60 hover:opacity-100 transition-opacity"
+                    style={{ borderColor: 'var(--border)', color: 'var(--muted)', borderRadius: 'var(--radius-sm)', cursor: 'pointer' }}
+                  >
+                    {disconnecting === (conn.connection_id || conn.id) ? '…' : 'Disconnect'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {showModal && (
+        <ConnectBrokerage
+          syncOnly={syncOnly}
+          onClose={() => setShowModal(false)}
+          onImported={handleImported}
+        />
+      )}
+    </>
+  )
+}
+
 export default function Settings({ onRefresh, alphaUsage }) {
   const [showAdd, setShowAdd] = useState(false)
 
@@ -531,6 +706,9 @@ export default function Settings({ onRefresh, alphaUsage }) {
         <h1 className="text-lg font-semibold" style={{ color: 'var(--text)' }}>Settings</h1>
         <p className="text-sm mt-0.5" style={{ color: 'var(--muted)' }}>Manage positions and app configuration</p>
       </div>
+
+      {/* Brokerage Connections */}
+      <BrokerageConnectionsPanel onImported={onRefresh} />
 
       {/* Theme Picker */}
       <ThemePicker />

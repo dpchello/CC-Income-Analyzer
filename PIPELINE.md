@@ -659,44 +659,66 @@ Your options:
 
 ---
 
-### PIPE-030 · Multi-tenancy + Auth Hardening (Security Sprint)
+### PIPE-030 · Supabase Migration + Auth Hardening (Security Sprint)
 **Status:** `pending`
-**Description:** Fix data isolation and auth hardening before real users can sign up. Three sub-tasks must ship together in one PR.
+**Description:** Replace the JSON file data layer with Supabase (Postgres + RLS) for proper multi-tenant data isolation. Auth stays JWT + bcrypt — no Supabase Auth. All four sub-tasks ship together.
 
-**Sub-task A — Multi-tenancy (CRITICAL):**
-- Move position/portfolio/holdings storage to per-user directories: `backend/data/{user_id}/positions.json`
-- Update all `load_*/save_*` helpers to accept `user_id` param
-- Add `os.makedirs(dir, exist_ok=True)` in every load function (first-time user directory creation)
-- Add `Depends(get_current_user)` to ALL endpoints — reads AND writes: `GET /api/positions`, `GET /api/portfolios`, `GET /api/holdings`, all `POST`/`PUT`/`DELETE` position/portfolio/holding endpoints
-- Migration: on startup, move existing root `positions.json`/`portfolios.json`/`holdings.json` to `data/{existing_user_id}/` (one-time, idempotent)
+**Sub-task A — Supabase schema + RLS:**
+- Create tables: `users`, `portfolios`, `positions`, `holdings`, `usage_logs`, `snaptrade_credentials`
+- Every table has a `user_id uuid` FK referencing `users.id`
+- RLS policies on every table: `USING (user_id = current_setting('app.current_user_id')::uuid)`
+- Backend sets the session variable via `SET LOCAL app.current_user_id = '{user_id}'` inside a transaction on every request
+- Migration script: reads existing `positions.json` / `portfolios.json` / `holdings.json` and inserts into Supabase (one-time, idempotent)
+- New env vars: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY` (backend only — service role key bypasses RLS for the SET LOCAL pattern; never expose to frontend)
 
-**Sub-task B — Frontend apiFetch sweep:**
-- Replace all 27 raw `fetch()` calls in components with `apiFetch` from `useAuth()`: `Portfolios.jsx` (20+ calls), `AddPosition.jsx`, `AddHolding.jsx`, `SignalTracker.jsx`, `Settings.jsx`
+**Sub-task B — Backend data layer rewrite:**
+- Replace all `load_positions()` / `save_positions()` JSON helpers with Supabase queries using `supabase-py`
+- Replace `auth.py` SQLite User/Subscription/UsageLog tables with Supabase equivalents
+- All endpoints already have `Depends(get_current_user)` — wire `user_id` into every query's RLS context
+- `pip install supabase` → add to `requirements.txt`
 
-**Sub-task C — Test suite (minimum viable):**
-- Setup: `backend/tests/conftest.py` with in-memory SQLite TestClient
+**Sub-task C — Frontend apiFetch sweep:**
+- Replace all remaining raw `fetch()` calls in components with `apiFetch` from `useAuth()`: `Portfolios.jsx` (20+ calls), `AddPosition.jsx`, `AddHolding.jsx`, `SignalTracker.jsx`, `Settings.jsx`
+
+**Sub-task D — Test suite (minimum viable):**
+- Setup: `backend/tests/conftest.py` with Supabase test project (or local Supabase CLI)
 - `test_auth.py`: signup, login, me, invalid token
-- `test_isolation.py`: User A adds position, User B GET /positions returns empty ← **CRITICAL regression**
+- `test_isolation.py`: User A adds position, User B `GET /positions` returns empty ← **CRITICAL regression**
 - `test_tiers.py`: free user gets 3 positions max; screener returns 403 on 2nd call same day
 - `test_score.py`: `_composite_score()` deterministic output test
 
-**Sub-task D — Code quality (bundle in same PR):**
+**Sub-task E — Code quality (bundle in same PR):**
 - Extract `_composite_score()` helper (removes 40-line copy-paste in screener)
 - Fix `_portfolio_stats()` to accept `holdings` param (removes N disk reads)
 
-**Known tradeoff:** Per-user JSON files have a race condition on concurrent writes. PIPE-031 migrates to SQLite to fix this. For MVP (low concurrency), the risk is acceptable.
-
-**Scope:** `backend/main.py`, `backend/tests/` (new), `frontend/src/components/Portfolios.jsx`, `AddPosition.jsx`, `AddHolding.jsx`, `SignalTracker.jsx`, `Settings.jsx`
-**Rationale:** The auth gate is wired but the data layer is not isolated. Any two real users will see each other's financial data. This must be fixed before the r/dividends post goes up.
+**Scope:** `backend/main.py`, `backend/auth.py`, `backend/db.py` (new Supabase client), `backend/tests/` (new), `frontend/src/components/Portfolios.jsx`, `AddPosition.jsx`, `AddHolding.jsx`, `SignalTracker.jsx`, `Settings.jsx`
+**Rationale:** JSON files have no data isolation, no concurrent write safety, and no query capability. Supabase Postgres + RLS enforces isolation at the database layer — stronger than application-level file routing and production-ready. Must ship before the r/dividends post goes up.
 
 ---
 
-### PIPE-031 · Migrate Data Layer to SQLite (Post-MVP)
-**Status:** `pending`
-**Description:** Replace per-user JSON files with SQLite tables. Adds Position, Portfolio, Holding SQLModel tables with `user_id` FK. One-time migration on startup reads existing JSON files and inserts rows.
-**Why:** Per-user JSON files (from PIPE-030) have a race condition on concurrent writes from two browser tabs. SQLite serializes writes correctly.
-**Depends on:** PIPE-030 (provides the user_id concept and per-user data structure)
-**Rationale:** Known tradeoff from PIPE-030. Address before first paid user.
+### PIPE-034 · SnapTrade Brokerage Import
+**Status:** `done`
+**Description:** Full SnapTrade integration — register user with SnapTrade, open connection portal in modal, account selection step, holdings import pipeline with dedup (upsert by `snaptrade_account_id`), category mapping (long_stock/covered_call/CSP/protective_put/long_call/crypto/fixed_income), `avg_cost` populated from `average_purchase_price`, `shares` from fractional_units. Brokerage connection discoverable via Settings panel (always-visible + Connect Brokerage button). "Done" button in portal broadened to catch all SnapTrade postMessage variants (SUCCESS/CLOSE/DONE/COMPLETE/CONNECTED) with manual Continue fallback.
+**Implementation notes:** `backend/snaptrade.py` — `_unwrap_symbol()` helper navigates SnapTrade's nested symbol structure (`raw["symbol"]["symbol"]["symbol"]` for equities); rewrote `_extract_ticker()`, `categorize_position()`, `map_to_harvest()` to use correct nesting. `backend/db.py` — `upsert_holding()` deduplicates by `(snaptrade_id, snaptrade_account_id)`. `backend/main.py` — `GET /api/snaptrade/accounts`, `POST /api/snaptrade/import` with per-account error handling and `parse_errors` list. `frontend/src/components/ConnectBrokerage.jsx` — 6-phase modal (prompt→portal→accounts→importing→success|conflict|error), `syncOnly` prop skips portal. `frontend/src/components/Settings.jsx` — `BrokerageConnectionsPanel` always visible at top of Settings.
+
+---
+
+### PIPE-035 · Brokerage Portfolio Folders
+**Status:** `done`
+**Description:** Auto-creates one Harvest portfolio per SnapTrade account on every sync, grouped under collapsible brokerage folders in the Portfolios sidebar. Starred portfolios float to top of the list. All portfolios (including brokerage sub-portfolios) are renameable inline. Dedup enforced by unique index on `(user_id, snaptrade_account_id)`.
+**Implementation notes:** `backend/migrations/002_brokerage_portfolios.sql` — adds `starred`, `brokerage_connection_id`, `snaptrade_account_id`, `brokerage_name` columns + unique index to `portfolios` table. `backend/db.py` — `ensure_brokerage_portfolio()` find-or-create by `snaptrade_account_id`; `star_portfolio()`. `backend/main.py` — import pipeline calls `ensure_brokerage_portfolio()` per account using `brokerage_authorization` and `institution_name` fields (correct SnapTrade field names); `PUT /api/portfolios/{id}/star`. `frontend/src/components/Portfolios.jsx` — sidebar has three sections: ★ Starred (gold, floats to top), My Portfolios (custom), Brokerages (collapsible folder per `brokerage_name`, account sub-portfolios indented); `PortfolioTab` component handles star toggle, inline rename, archive, delete on hover.
+
+---
+
+### PIPE-031 · SnapTrade Credentials + snaptrade_raw Table (Supabase follow-on)
+**Status:** `done`
+**Description:** After PIPE-030 ships, add the SnapTrade-specific Supabase tables required by PIPE-034.
+- `snaptrade_credentials` table: `user_id`, `snaptrade_user_id`, `user_secret` (encrypted at rest via Supabase Vault)
+- `snaptrade_connections` table: `user_id`, `connection_id`, `brokerage_name`, `status`, `last_synced`
+- `snaptrade_raw_imports` table: `user_id`, `account_id`, `fetched_at`, `raw_json` (jsonb)
+- RLS on all three tables (same `app.current_user_id` pattern)
+**Depends on:** PIPE-030
+**Rationale:** Keeps SnapTrade state in Supabase alongside all other user data. Replaces the `backend/users/{user_id}/snaptrade.json` interim approach described in PIPE-034.
 
 ---
 
