@@ -1,15 +1,17 @@
-import { useEffect, useRef } from 'react'
-import { prepare, layout } from '@chenglou/pretext'
+import { useState, useEffect, useCallback } from 'react'
 import { AreaClosed, LinePath } from '@visx/shape'
-import { scaleLinear, scaleBand } from '@visx/scale'
-import { AxisBottom } from '@visx/axis'
+import { scaleLinear } from '@visx/scale'
+import { AxisBottom, AxisRight } from '@visx/axis'
 import { LinearGradient } from '@visx/gradient'
 import { curveMonotoneX } from '@visx/curve'
 import { ParentSize } from '@visx/responsive'
-import { useTooltip, TooltipWithBounds, defaultStyles as tooltipDefaultStyles } from '@visx/tooltip'
+import { useTooltip, TooltipWithBounds, defaultStyles as ttDefaults } from '@visx/tooltip'
+import { ChevronRight } from 'lucide-react'
+import { Eyebrow, Button } from './ui/primitives.jsx'
 import { Term } from './Tooltip.jsx'
+import { useAuth } from '../auth.jsx'
 
-// ── Urgency logic ─────────────────────────────────────────────────────────────
+// ── Urgency helpers ───────────────────────────────────────────────────────────
 
 function getAction(pos) {
   const closeLossRatio = pos.loss_as_pct_of_premium != null ? pos.loss_as_pct_of_premium / 100 : 0
@@ -17,579 +19,883 @@ function getAction(pos) {
 
   if (pos.early_exercise_risk === 'CRITICAL' || pos.early_exercise_risk === 'HIGH') {
     const urgency = pos.early_exercise_risk === 'CRITICAL' ? 'URGENT' : 'HIGH'
-    return { key: 'EARLY_EXERCISE', label: 'Shares May Be Called Early', color: 'var(--red)', urgency,
-      instruction: `Time value is $${(pos.time_premium ?? 0).toFixed(2)} — early assignment is likely.`, closingCostly }
+    return { key: 'EARLY_EXERCISE', label: 'Shares May Be Called Early', urgency, closingCostly }
   }
   if (pos.dte <= 7) {
-    const urgency = closingCostly ? 'HIGH' : 'URGENT'
-    const label   = closingCostly ? 'Watch — Closing Expensive' : 'Expiring Soon'
-    return { key: 'GAMMA_DANGER', label, color: 'var(--red)', urgency,
-      instruction: 'Expires in 7 days or fewer — close or renew immediately.', closingCostly }
+    return {
+      key: 'GAMMA_DANGER',
+      label: closingCostly ? 'Watch — Closing Expensive' : 'Expiring Soon',
+      urgency: closingCostly ? 'HIGH' : 'URGENT',
+      closingCostly,
+    }
   }
   if (pos.distance_to_strike_pct != null && pos.distance_to_strike_pct > 0 && pos.distance_to_strike_pct <= 1.5) {
-    const urgency = closingCostly ? 'HIGH' : 'URGENT'
-    const label   = closingCostly ? 'Watch — Strike Nearby' : 'Strike Price at Risk'
-    return { key: 'BREACH_RISK', label, color: 'var(--red)', urgency,
-      instruction: 'Stock is within 1.5% of your strike. Roll to a higher strike or close now.', closingCostly }
+    return {
+      key: 'BREACH_RISK',
+      label: closingCostly ? 'Watch — Strike Nearby' : 'Strike Price at Risk',
+      urgency: closingCostly ? 'HIGH' : 'URGENT',
+      closingCostly,
+    }
   }
   if (pos.delta != null && pos.delta > 0.35)
-    return { key: 'CLOSE', label: 'High Assignment Risk', color: 'var(--red)', urgency: 'HIGH',
-      instruction: `Delta (${pos.delta.toFixed(2)}) is too high — this call is moving toward the money. Close now.`, closingCostly }
+    return { key: 'CLOSE', label: 'High Assignment Risk', urgency: 'HIGH', closingCostly }
   return null
 }
 
-const urgencyOrder = { URGENT: 0, HIGH: 1, RECOMMENDED: 2, WATCH: 3 }
+function fmt$(n) {
+  if (n == null) return '—'
+  return '$' + Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })
+}
 
-// ── Monthly income trend (last 6 months from position open dates) ─────────────
+function fmtPct(n, decimals = 2) {
+  if (n == null) return '—'
+  return (n >= 0 ? '+' : '') + n.toFixed(decimals) + '%'
+}
 
-function buildMonthlyTrend(positions) {
-  const now = new Date()
-  return Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1)
-    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    const income = positions
-      .filter(p => (p.open_date || '').startsWith(key))
-      .reduce((s, p) => s + (p.premium_collected || 0), 0)
-    return { month: d.toLocaleString('en-US', { month: 'short' }), income }
+const RANGES = ['1M', '3M', 'YTD', '1Y', 'All']
+
+// ── Equity header row ─────────────────────────────────────────────────────────
+
+function EquityHeader({ holdings, positions, signalData }) {
+  const totalValue = holdings.reduce((s, h) => s + (h.market_value || 0), 0)
+  const totalUnrealized = holdings.reduce((s, h) => s + (h.unrealized_pnl || 0), 0)
+  const unrealizedPct = totalValue > 0 ? (totalUnrealized / (totalValue - totalUnrealized)) * 100 : 0
+
+  // "Past 90 days" income = premiums from positions opened in that window
+  const cutoff90 = new Date()
+  cutoff90.setDate(cutoff90.getDate() - 90)
+  const income90 = positions
+    .filter(p => p.open_date && new Date(p.open_date) >= cutoff90)
+    .reduce((s, p) => s + (p.premium_collected || 0), 0)
+
+  // Opportunities = distinct tickers in holdings not currently fully covered
+  const openByTicker = {}
+  positions.filter(p => p.status === 'open').forEach(p => {
+    openByTicker[p.ticker] = (openByTicker[p.ticker] || 0) + (p.contracts || 0) * 100
   })
-}
+  const eligible = holdings.filter(h => (openByTicker[h.ticker] || 0) < h.shares)
+  const oppCount = eligible.length
 
-// ── Pretext hook: resize-aware height for a text element ─────────────────────
+  // Next expiry
+  const openPos = positions.filter(p => p.status === 'open' && p.dte > 0)
+  const nextExp = openPos.sort((a, b) => a.dte - b.dte)[0]
 
-function usePretextHeight(text, lineHeightPx) {
-  const ref = useRef()
-  useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    let ro
-    document.fonts.ready.then(() => {
-      if (!el) return
-      const font = getComputedStyle(el).font
-      const handle = prepare(text, font)
-      const relayout = () => {
-        if (!el) return
-        const w = el.clientWidth || 240
-        const { height } = layout(handle, w, lineHeightPx)
-        el.style.height = `${Math.max(height, lineHeightPx)}px`
-      }
-      ro = new ResizeObserver(relayout)
-      ro.observe(el)
-      relayout()
-    })
-    return () => ro?.disconnect()
-  }, [text, lineHeightPx])
-  return ref
-}
-
-// ── Income Hero (left side of hero split) ─────────────────────────────────────
-
-function IncomeHero({ positions }) {
-  const now = new Date()
-  const monthKey     = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
-  const lastMonthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
-  const lastMonthKey = `${lastMonthDate.getFullYear()}-${String(lastMonthDate.getMonth() + 1).padStart(2, '0')}`
-
-  const thisMonthIncome = positions
-    .filter(p => (p.open_date || '').startsWith(monthKey))
-    .reduce((s, p) => s + (p.premium_collected || 0), 0)
-  const lastMonthIncome = positions
-    .filter(p => (p.open_date || '').startsWith(lastMonthKey))
-    .reduce((s, p) => s + (p.premium_collected || 0), 0)
-  const vsLastMonth = thisMonthIncome - lastMonthIncome
-
-  // Premium capture: how much of open premiums are locked in
-  const open = positions.filter(p => p.status === 'open')
-  const avgCapture = open.length
-    ? open.reduce((s, p) => s + (p.profit_capture_pct || 0), 0) / open.length
-    : 0
-  const capturePct = Math.max(0, Math.min(100, avgCapture))
-
-  const incomeText = `$${thisMonthIncome.toLocaleString()}`
-  const numberRef  = usePretextHeight(incomeText, 56)
+  const isUp = totalUnrealized >= 0
 
   return (
-    <div className="flex flex-col justify-between h-full gap-4">
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '1.4fr 1fr 1fr 1fr',
+      gap: 24,
+      padding: '28px 32px',
+      borderBottom: '1px solid var(--line)',
+    }}>
+      {/* Big equity display */}
       <div>
-        <div
-          className="text-xs uppercase tracking-widest mb-3"
-          style={{ color: 'var(--muted)', letterSpacing: '0.1em' }}
-        >
-          <Term id="PremiumCollected">Income This Month</Term>
+        <Eyebrow>Portfolio Value</Eyebrow>
+        <div style={{
+          fontFamily: 'var(--serif)',
+          fontSize: 52,
+          fontStyle: 'italic',
+          letterSpacing: '-0.02em',
+          lineHeight: 1,
+          marginTop: 6,
+          color: 'var(--fg)',
+        }}>
+          {fmt$(totalValue)}
         </div>
-
-        {/* Hero number — Pretext handles resize-aware height */}
-        <div
-          ref={numberRef}
-          className="font-mono font-bold leading-none"
-          style={{ color: 'var(--green)', fontSize: 'clamp(36px, 4vw, 52px)', lineHeight: 1.1 }}
-        >
-          {incomeText}
+        <div style={{
+          display: 'flex',
+          gap: 8,
+          marginTop: 8,
+          fontFamily: 'var(--mono)',
+          fontSize: 12,
+        }}>
+          <span style={{ color: isUp ? 'var(--acid)' : 'var(--down)' }}>
+            {isUp ? '+' : '−'}{fmt$(Math.abs(totalUnrealized))} · {fmtPct(unrealizedPct)}
+          </span>
+          <span style={{ color: 'var(--fg-faint)' }}>unrealized</span>
         </div>
-
-        {lastMonthIncome > 0 && (
-          <div className="text-sm mt-2" style={{ color: vsLastMonth >= 0 ? 'var(--green)' : 'var(--red)' }}>
-            {vsLastMonth >= 0 ? '▲' : '▼'} ${Math.abs(vsLastMonth).toLocaleString()} vs {lastMonthDate.toLocaleString('en-US', { month: 'long' })}
-          </div>
-        )}
       </div>
 
-      {open.length > 0 && (
-        <div>
-          <div
-            className="w-full overflow-hidden mb-1.5"
-            style={{ height: 6, backgroundColor: 'var(--border)', borderRadius: 3 }}
-          >
-            <div
-              style={{
-                width: `${capturePct}%`,
-                height: '100%',
-                backgroundColor: 'var(--green)',
-                borderRadius: 3,
-                transition: 'width 0.6s ease',
-              }}
-            />
-          </div>
-          <div className="text-xs" style={{ color: 'var(--muted)' }}>
-            <Term id="ProfitCapturePct">{capturePct.toFixed(0)}% of open premiums captured</Term>
-            {' · '}{open.length} position{open.length !== 1 ? 's' : ''} open
-          </div>
-        </div>
+      {/* Stat: past 90 days */}
+      <StatCell
+        label="Past 90 Days"
+        value={fmt$(income90)}
+        sub="premium collected"
+      />
+
+      {/* Stat: eligible opportunities */}
+      <StatCell
+        label="Eligible This Cycle"
+        value={`${oppCount} position${oppCount !== 1 ? 's' : ''}`}
+        sub={
+          signalData?.regime === 'SELL PREMIUM' ? 'good time to open'
+          : signalData?.regime === 'AVOID' ? 'regime says wait'
+          : signalData?.regime ?? 'checking signals'
+        }
+        valueStyle={oppCount > 0 ? { color: 'var(--acid)' } : {}}
+      />
+
+      {/* Stat: next expiry */}
+      <StatCell
+        label="Next Expiry"
+        value={nextExp ? `${nextExp.ticker} ${nextExp.expiry}` : '—'}
+        sub={nextExp ? `${nextExp.dte} days` : 'no open calls'}
+        valueStyle={nextExp && nextExp.dte <= 7 ? { color: 'var(--warn)', fontSize: 16 } : { fontSize: 16 }}
+      />
+    </div>
+  )
+}
+
+function StatCell({ label, value, sub, valueStyle }) {
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <Eyebrow>{label}</Eyebrow>
+      <span style={{
+        fontFamily: 'var(--sans)',
+        fontWeight: 600,
+        fontSize: 22,
+        letterSpacing: '-0.02em',
+        lineHeight: 1.1,
+        color: 'var(--fg)',
+        marginTop: 4,
+        ...valueStyle,
+      }}>
+        {value}
+      </span>
+      {sub && (
+        <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg-mute)' }}>
+          {sub}
+        </span>
       )}
     </div>
   )
 }
 
-// ── Compact Income Trend chart (right side of hero split) ─────────────────────
+// ── Equity + income chart ─────────────────────────────────────────────────────
 
-function IncomeTrendChart({ positions }) {
-  const data = buildMonthlyTrend(positions)
-  const hasData = data.some(d => d.income > 0)
+function EquityChart({ range, onRangeChange, apiFetch }) {
+  const [data, setData] = useState(null)   // { dates, equity, income }
+  const [loading, setLoading] = useState(true)
 
-  if (!hasData) {
-    return (
-      <div className="flex flex-col h-full">
-        <div
-          className="text-xs uppercase tracking-widest mb-3"
-          style={{ color: 'var(--muted)', letterSpacing: '0.1em' }}
-        >
-          Income Trend
-        </div>
-        <div className="flex-1 flex items-center justify-center">
-          <p className="text-sm" style={{ color: 'var(--muted)' }}>No income history yet</p>
-        </div>
-      </div>
-    )
-  }
+  useEffect(() => {
+    setLoading(true)
+    setData(null)
+    apiFetch(`/api/equity-curve?range=${range}`)
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [range, apiFetch])
+
+  const points = data && data.dates.length > 0
+    ? data.dates.map((date, i) => ({ date, equity: data.equity[i], income: data.income[i] }))
+    : null
 
   return (
-    <div className="flex flex-col h-full">
-      <div
-        className="text-xs uppercase tracking-widest mb-3"
-        style={{ color: 'var(--muted)', letterSpacing: '0.1em' }}
-      >
-        Income Trend
+    <div style={{ padding: '20px 32px 16px', borderBottom: '1px solid var(--line)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <Eyebrow>Portfolio equity</Eyebrow>
+          {/* Legend */}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg-mute)', letterSpacing: '0.06em' }}>
+              <span style={{ width: 16, height: 1.5, background: 'var(--acid)', display: 'inline-block' }} />
+              EQUITY
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg-mute)', letterSpacing: '0.06em' }}>
+              <span style={{ width: 16, height: 1.5, background: 'var(--olive)', display: 'inline-block', opacity: 0.7 }} />
+              INCOME
+            </span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 3 }}>
+          {RANGES.map(r => (
+            <button
+              key={r}
+              onClick={() => onRangeChange(r)}
+              className={`h-chip${r === range ? ' active' : ''}`}
+              style={{ cursor: 'pointer', height: 20, fontSize: 10, border: 'none', background: 'none', padding: '0 8px' }}
+            >
+              {r}
+            </button>
+          ))}
+        </div>
       </div>
-      <div style={{ flex: 1, minHeight: 100 }}>
-        <ParentSize>
-          {({ width, height }) => (
-            <IncomeTrendInner data={data} width={width} height={height} />
-          )}
-        </ParentSize>
+
+      <div style={{ height: 140, position: 'relative' }}>
+        {loading && (
+          <div style={{
+            position: 'absolute', inset: 0,
+            display: 'flex', alignItems: 'center',
+          }}>
+            <div style={{
+              width: '100%', height: 1.5,
+              background: 'var(--line-soft)',
+              borderTop: '1px dashed var(--line)',
+            }} />
+          </div>
+        )}
+        {!loading && !points && (
+          <div style={{ display: 'flex', alignItems: 'center', height: '100%' }}>
+            <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg-faint)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              No holdings data yet
+            </span>
+          </div>
+        )}
+        {!loading && points && (
+          <ParentSize>
+            {({ width, height }) => (
+              <EquityChartInner points={points} width={width} height={height} />
+            )}
+          </ParentSize>
+        )}
       </div>
     </div>
   )
 }
 
-function IncomeTrendInner({ data, width, height }) {
+function EquityChartInner({ points, width, height }) {
   const { showTooltip, hideTooltip, tooltipData, tooltipLeft, tooltipTop, tooltipOpen } = useTooltip()
-  const MARGIN = { top: 4, right: 4, left: 0, bottom: 20 }
-  const innerW = Math.max(0, width - MARGIN.left - MARGIN.right)
-  const innerH = Math.max(0, height - MARGIN.top - MARGIN.bottom)
 
-  const xScale = scaleBand({ domain: data.map(d => d.month), range: [0, innerW], padding: 0.2 })
-  const maxIncome = Math.max(...data.map(d => d.income), 1)
-  const yScale = scaleLinear({ domain: [0, maxIncome * 1.1], range: [innerH, 0] })
+  const M = { top: 8, right: 52, bottom: 22, left: 0 }
+  const iW = Math.max(0, width - M.left - M.right)
+  const iH = Math.max(0, height - M.top - M.bottom)
 
-  const getX = d => (xScale(d.month) ?? 0) + xScale.bandwidth() / 2
-  const getY = d => yScale(d.income)
+  const minE  = Math.min(...points.map(d => d.equity))
+  const maxE  = Math.max(...points.map(d => d.equity), minE + 1)
+  const pad   = (maxE - minE) * 0.12
+  const maxInc = Math.max(...points.map(d => d.income), 1)
 
-  const handleMouseMove = (e) => {
-    const svgRect = e.currentTarget.getBoundingClientRect()
-    const mouseX = e.clientX - svgRect.left - MARGIN.left
-    const closest = data.reduce((best, d) => {
-      return Math.abs(getX(d) - mouseX) < Math.abs(getX(best) - mouseX) ? d : best
-    }, data[0])
+  const xScale = scaleLinear({ domain: [0, points.length - 1], range: [0, iW] })
+  const yEq    = scaleLinear({ domain: [minE - pad, maxE + pad], range: [iH, 0] })
+  const yInc   = scaleLinear({ domain: [0, maxInc * 1.25], range: [iH, 0] })
+
+  const getX     = (_, i) => xScale(i)
+  const getYEq   = d => yEq(d.equity)
+  const getYInc  = d => yInc(d.income)
+
+  // Sparse x-axis dates
+  const step = Math.max(1, Math.floor(points.length / 5))
+  const xLabels = points.filter((_, i) => i % step === 0 || i === points.length - 1)
+
+  function handleMouseMove(e) {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const mx   = e.clientX - rect.left - M.left
+    const idx  = Math.round(xScale.invert(mx))
+    const i    = Math.max(0, Math.min(idx, points.length - 1))
+    const pt   = points[i]
     showTooltip({
-      tooltipData: closest,
-      tooltipLeft: getX(closest) + MARGIN.left,
-      tooltipTop: getY(closest) + MARGIN.top,
+      tooltipData: pt,
+      tooltipLeft: xScale(i) + M.left,
+      tooltipTop:  getYEq(pt) + M.top,
     })
   }
 
   return (
     <div style={{ position: 'relative' }}>
       <svg width={width} height={height}>
-        <LinearGradient id="trendGrad" from="var(--green)" fromOpacity={0.3} to="var(--green)" toOpacity={0.03} vertical />
-        <g transform={`translate(${MARGIN.left},${MARGIN.top})`}>
+        <LinearGradient id="eqGrad" from="var(--acid)" fromOpacity={0.12} to="var(--acid)" toOpacity={0} vertical />
+        <g transform={`translate(${M.left},${M.top})`}>
+          {/* Subtle gridlines */}
+          {[0.25, 0.5, 0.75, 1].map(f => (
+            <line key={f}
+              x1={0} x2={iW}
+              y1={yEq(minE - pad + (maxE + pad - (minE - pad)) * f)}
+              y2={yEq(minE - pad + (maxE + pad - (minE - pad)) * f)}
+              stroke="var(--line-soft)" strokeWidth={1} />
+          ))}
+
+          {/* Equity area + line */}
           <AreaClosed
-            data={data}
-            x={getX}
-            y={getY}
-            yScale={yScale}
-            curve={curveMonotoneX}
-            fill="url(#trendGrad)"
-          />
+            data={points} x={getX} y={getYEq} yScale={yEq}
+            curve={curveMonotoneX} fill="url(#eqGrad)" />
           <LinePath
-            data={data}
-            x={getX}
-            y={getY}
+            data={points} x={getX} y={getYEq}
             curve={curveMonotoneX}
-            stroke="var(--green)"
-            strokeWidth={2}
+            stroke="var(--acid)" strokeWidth={1.5} />
+
+          {/* Income line (right axis scale) — dashed olive */}
+          <LinePath
+            data={points} x={getX} y={getYInc}
+            curve={curveMonotoneX}
+            stroke="var(--olive)" strokeWidth={1.5}
+            strokeDasharray="4 3"
+            strokeOpacity={0.7} />
+
+          {/* Right axis — income */}
+          <AxisRight
+            scale={yInc} left={iW}
+            numTicks={4}
+            stroke="transparent" tickStroke="transparent"
+            tickLabelProps={() => ({
+              fill: 'var(--fg-faint)',
+              fontSize: 9,
+              fontFamily: 'var(--mono)',
+              textAnchor: 'start',
+              dx: 4,
+              letterSpacing: '0.04em',
+            })}
+            tickFormat={v => v === 0 ? '' : `$${(v / 1000).toFixed(0)}k`}
           />
-          <AxisBottom
-            scale={xScale}
-            top={innerH}
-            stroke="transparent"
-            tickStroke="transparent"
-            tickLabelProps={() => ({ fill: 'var(--muted)', fontSize: 10, textAnchor: 'middle' })}
+
+          {/* X-axis date labels */}
+          {xLabels.map((pt, i) => {
+            const xi = points.indexOf(pt)
+            return (
+              <text key={i}
+                x={xScale(xi)} y={iH + 16}
+                textAnchor="middle"
+                fill="var(--fg-faint)" fontSize={9} fontFamily="var(--mono)"
+              >
+                {fmtDate(pt.date)}
+              </text>
+            )
+          })}
+
+          {/* Invisible hover capture */}
+          <rect width={iW} height={iH} fill="transparent"
+            onMouseMove={handleMouseMove}
+            onMouseLeave={hideTooltip}
           />
-          {/* invisible overlay for hover */}
-          <rect
-            width={innerW} height={innerH} fill="transparent"
-            onMouseMove={handleMouseMove} onMouseLeave={hideTooltip}
-          />
-          {tooltipOpen && tooltipData && (
-            <circle
-              cx={getX(tooltipData)} cy={getY(tooltipData)} r={3}
-              fill="var(--green)" stroke="var(--surface)" strokeWidth={1}
-            />
-          )}
+
+          {/* Tooltip dots */}
+          {tooltipOpen && tooltipData && (() => {
+            const i = points.indexOf(tooltipData)
+            return (
+              <>
+                <line x1={xScale(i)} x2={xScale(i)} y1={0} y2={iH}
+                  stroke="var(--line)" strokeWidth={1} strokeDasharray="3 2" />
+                <circle cx={xScale(i)} cy={getYEq(tooltipData)} r={3}
+                  fill="var(--acid)" stroke="var(--bg-card)" strokeWidth={1.5} />
+                {tooltipData.income > 0 && (
+                  <circle cx={xScale(i)} cy={getYInc(tooltipData)} r={3}
+                    fill="var(--olive)" stroke="var(--bg-card)" strokeWidth={1.5} />
+                )}
+              </>
+            )
+          })()}
         </g>
       </svg>
+
       {tooltipOpen && tooltipData && (
-        <TooltipWithBounds
-          top={tooltipTop} left={tooltipLeft}
+        <TooltipWithBounds top={tooltipTop} left={tooltipLeft + 12}
           style={{
-            ...tooltipDefaultStyles,
-            background: 'var(--surface)',
-            border: '1px solid var(--border)',
-            borderRadius: 6,
+            ...ttDefaults,
+            background: 'var(--bg-card)',
+            border: '1px solid var(--line-strong)',
+            borderRadius: 2,
             fontSize: 12,
-            color: 'var(--text)',
-          }}
-        >
-          <div style={{ color: 'var(--muted)', marginBottom: 2 }}>{tooltipData.month}</div>
-          <div style={{ fontWeight: 600 }}>${tooltipData.income.toLocaleString()}</div>
+            color: 'var(--fg)',
+            boxShadow: 'var(--shadow-card)',
+            padding: '8px 10px',
+            minWidth: 140,
+          }}>
+          <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg-mute)', marginBottom: 6, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            {fmtDate(tooltipData.date)}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+              <span style={{ color: 'var(--fg-mute)', fontFamily: 'var(--mono)', fontSize: 11 }}>Equity</span>
+              <span style={{ fontFamily: 'var(--mono)', fontWeight: 500, color: 'var(--acid)' }}>
+                {fmt$(tooltipData.equity)}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}>
+              <span style={{ color: 'var(--fg-mute)', fontFamily: 'var(--mono)', fontSize: 11 }}>Income (cumul.)</span>
+              <span style={{ fontFamily: 'var(--mono)', fontWeight: 500, color: 'var(--olive)' }}>
+                {fmt$(tooltipData.income)}
+              </span>
+            </div>
+          </div>
         </TooltipWithBounds>
       )}
     </div>
   )
 }
 
-// ── Status Band ────────────────────────────────────────────────────────────────
+function fmtDate(s) {
+  const d = new Date(s)
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+}
 
-function StatusBand({ positions, signalData }) {
+// ── Open contracts strip ──────────────────────────────────────────────────────
+
+function OpenContractsStrip({ positions, onNavigate }) {
   const open = positions.filter(p => p.status === 'open')
-  const urgentActions = open
-    .map(pos => ({ pos, action: getAction(pos) }))
-    .filter(({ action }) => action !== null)
-    .sort((a, b) => (urgencyOrder[a.action.urgency] ?? 4) - (urgencyOrder[b.action.urgency] ?? 4))
-
-  const urgentCount = urgentActions.filter(({ action }) => action.urgency === 'URGENT').length
-  const highCount   = urgentActions.filter(({ action }) => action.urgency === 'HIGH').length
-  const needsCount  = urgentCount + highCount
-  const isAllClear  = needsCount === 0
-
-  const regime = signalData?.regime
-  const marketLabel = {
-    'SELL PREMIUM': 'Good time to open',
-    'HOLD': 'Hold new positions',
-    'CAUTION': 'Use caution',
-    'AVOID': 'Avoid new positions',
-  }[regime] ?? (regime ? regime : 'Loading…')
-  const marketColor = regime === 'SELL PREMIUM' ? 'var(--green)'
-    : regime === 'HOLD' ? 'var(--amber)'
-    : regime === 'CAUTION' ? 'var(--orange)'
-    : regime === 'AVOID' ? 'var(--red)'
-    : 'var(--muted)'
-  const score = signalData?.total_score ?? 0
-  const max   = signalData?.max_score ?? 14
-
-  const nextExp = open.filter(p => p.dte > 0).sort((a, b) => a.dte - b.dte)[0]
-
-  const bandColor  = isAllClear ? 'var(--green)' : urgentCount > 0 ? 'var(--red)' : 'var(--amber)'
-  const bandBg     = isAllClear ? 'rgba(62,207,142,0.08)'  : urgentCount > 0 ? 'rgba(248,113,113,0.08)' : 'rgba(245,158,11,0.08)'
-  const bandBorder = isAllClear ? 'rgba(62,207,142,0.20)'  : urgentCount > 0 ? 'rgba(248,113,113,0.20)' : 'rgba(245,158,11,0.20)'
-
-  const statusText = isAllClear
-    ? '✓ All Clear'
-    : urgentCount > 0
-      ? `⚠ ${urgentCount} position${urgentCount > 1 ? 's' : ''} need attention now`
-      : `◦ ${highCount} position${highCount > 1 ? 's' : ''} worth reviewing`
+  if (!open.length) return null
 
   return (
-    <div
-      className="px-4 py-2.5 border flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
-      style={{ backgroundColor: bandBg, borderColor: bandBorder, borderRadius: 'var(--radius-md)' }}
-    >
-      <span className="font-medium" style={{ color: bandColor }}>{statusText}</span>
-
-      <span style={{ color: 'var(--border)' }}>·</span>
-
-      <span style={{ color: 'var(--muted)' }}>
-        Market:{' '}
-        <span style={{ color: marketColor }}>{marketLabel}</span>
-        {' '}
-        <span style={{ color: 'var(--border)' }}>
-          ({score}/{max} signals)
-        </span>
-      </span>
-
-      {nextExp && (
-        <>
-          <span style={{ color: 'var(--border)' }}>·</span>
-          <span style={{ color: 'var(--muted)' }}>
-            Next expiry:{' '}
-            <span style={{ color: nextExp.dte <= 7 ? 'var(--red)' : nextExp.dte <= 14 ? 'var(--amber)' : 'var(--text)' }}>
-              {nextExp.ticker || 'SPY'} ${nextExp.strike} in {nextExp.dte}d
-            </span>
-          </span>
-        </>
-      )}
+    <div style={{
+      padding: '12px 32px',
+      borderBottom: '1px solid var(--line)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8,
+      overflowX: 'auto',
+    }}>
+      <Eyebrow style={{ flexShrink: 0, marginRight: 4 }}>Open</Eyebrow>
+      {open.sort((a, b) => a.dte - b.dte).map(pos => {
+        const action = getAction(pos)
+        const urgent = action?.urgency === 'URGENT'
+        const pnl    = pos.pnl ?? 0
+        return (
+          <div
+            key={pos.id}
+            onClick={() => onNavigate('Portfolios')}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+              padding: '8px 12px',
+              border: `1px solid ${urgent ? 'var(--warn)' : 'var(--line)'}`,
+              borderRadius: 2,
+              background: urgent ? 'var(--warn-faint)' : 'var(--bg-card)',
+              cursor: 'pointer',
+              flexShrink: 0,
+              minWidth: 130,
+              transition: 'background var(--ui)',
+            }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 500, color: 'var(--fg)' }}>
+                {pos.ticker}
+              </span>
+              <span style={{
+                fontFamily: 'var(--mono)', fontSize: 10,
+                color: pnl >= 0 ? 'var(--acid)' : 'var(--down)',
+              }}>
+                {pnl >= 0 ? '+' : ''}{fmt$(pnl)}
+              </span>
+            </div>
+            <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg-mute)', letterSpacing: '0.04em' }}>
+              ${pos.strike} · {pos.expiry}
+            </div>
+            <div style={{
+              fontFamily: 'var(--mono)', fontSize: 10,
+              color: pos.dte <= 7 ? 'var(--warn)' : 'var(--fg-faint)',
+            }}>
+              {pos.dte}d
+              {action && <span style={{ marginLeft: 4, color: 'var(--warn)' }}>⚠</span>}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
 
-// ── Open Positions Table ───────────────────────────────────────────────────────
+// ── Holdings table + CC drawer ────────────────────────────────────────────────
 
-function PositionsTable({ positions, onNavigate }) {
-  const open = positions.filter(p => p.status === 'open')
+function HoldingsTable({ holdings, positions, onNavigate }) {
+  const [openTicker, setOpenTicker] = useState(null)
 
-  if (open.length === 0) {
+  // Index open CC positions by ticker
+  const ccByTicker = {}
+  positions.filter(p => p.status === 'open').forEach(p => {
+    if (!ccByTicker[p.ticker]) ccByTicker[p.ticker] = []
+    ccByTicker[p.ticker].push(p)
+  })
+
+  if (!holdings.length) {
     return (
-      <div
-        className="px-5 py-8 border text-center"
-        style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}
-      >
-        <p className="text-sm mb-3" style={{ color: 'var(--muted)' }}>No open positions yet.</p>
-        <button
-          onClick={() => onNavigate('Screener')}
-          className="text-xs px-3 py-1.5 border transition-colors"
-          style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: 'var(--gold-dim)', borderRadius: 'var(--radius-md)' }}
-        >
-          Find opportunities in the Screener →
-        </button>
+      <div style={{
+        padding: '48px 32px', textAlign: 'center',
+        borderTop: '1px solid var(--line)',
+      }}>
+        <p style={{ fontSize: 14, color: 'var(--fg-mute)', marginBottom: 12 }}>
+          No holdings added yet.
+        </p>
+        <Button variant="primary" size="sm" onClick={() => onNavigate('Portfolios')}>
+          Add your first position →
+        </Button>
       </div>
     )
   }
 
   return (
-    <div
-      className="border"
-      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}
-    >
-      {/* Section header */}
-      <div
-        className="px-5 py-3 border-b flex items-center justify-between"
-        style={{ borderColor: 'var(--border)' }}
-      >
-        <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Open Positions</h2>
-        <button
-          onClick={() => onNavigate('Portfolios')}
-          className="text-xs hover:underline"
-          style={{ color: 'var(--blue)' }}
-        >
-          View all →
-        </button>
+    <div>
+      {/* Table header */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '70px 1fr 80px 110px 100px 80px 90px 24px',
+        padding: '10px 32px',
+        gap: 12,
+        background: 'var(--bg-elev)',
+        borderTop: '1px solid var(--line)',
+        borderBottom: '1px solid var(--line)',
+      }}>
+        {['Symbol', 'Name', 'Shares', 'Avg cost', 'Last', 'Unreal.', 'Open calls', ''].map((col, i) => (
+          <span key={i} className="h-eyebrow" style={{ textAlign: i >= 2 && i <= 5 ? 'right' : 'left' }}>
+            {col}
+          </span>
+        ))}
       </div>
 
-      {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
-          <thead>
-            <tr style={{ borderBottom: '1px solid var(--border)' }}>
-              {['Ticker', 'Strike', 'Expiry', 'DTE', 'Time Value', 'P&L', 'Status'].map(col => (
-                <th
-                  key={col}
-                  className="px-5 py-2.5 text-left"
-                  style={{ color: 'var(--muted)', fontWeight: 500, fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase' }}
-                >
-                  {col}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {open.map((pos, i) => {
-              const action     = getAction(pos)
-              const isUrgent   = action?.urgency === 'URGENT'
-              const isHigh     = action?.urgency === 'HIGH'
-              const pnl        = pos.pnl ?? 0
-              const pnlColor   = pnl >= 0 ? 'var(--green)' : 'var(--red)'
-              const statusLabel = action ? action.label : 'All Clear'
-              const statusColor = action ? action.color : 'var(--green)'
-              const dteColor    = pos.dte <= 7 ? 'var(--red)' : pos.dte <= 14 ? 'var(--amber)' : 'var(--muted)'
+      {/* Rows */}
+      {holdings.map((h, i) => {
+        const isOpen    = openTicker === h.ticker
+        const openCalls = ccByTicker[h.ticker] || []
+        const callValue = openCalls.reduce((s, p) => s + (p.premium_collected || 0), 0)
+        const unrPct    = h.unrealized_pnl_pct ?? 0
+        const unrPnl    = h.unrealized_pnl ?? 0
+        const isUp      = unrPnl >= 0
 
-              return (
-                <tr
-                  key={pos.id}
-                  style={{
-                    borderBottom: i < open.length - 1 ? '1px solid var(--border)' : 'none',
-                    backgroundColor: isUrgent
-                      ? 'rgba(248,113,113,0.06)'
-                      : isHigh ? 'rgba(255,176,32,0.03)' : 'transparent',
-                  }}
-                >
-                  <td className="px-5 py-3 font-medium" style={{ color: 'var(--text)' }}>
-                    {pos.ticker || 'SPY'}
-                  </td>
-                  <td className="px-5 py-3 font-mono" style={{ color: 'var(--text)' }}>
-                    ${pos.strike} Call
-                  </td>
-                  <td className="px-5 py-3" style={{ color: 'var(--muted)' }}>
-                    {pos.expiry}
-                  </td>
-                  <td className="px-5 py-3 font-mono font-medium" style={{ color: dteColor }}>
-                    {pos.dte}d
-                  </td>
-                  <td className="px-5 py-3 font-mono" style={{ color: pos.intrinsic_value > 0 ? 'var(--red)' : 'var(--green)' }}>
-                    {pos.time_premium != null ? `$${pos.time_premium.toFixed(2)}` : '—'}
-                    {pos.intrinsic_value > 0 && (
-                      <span className="ml-1 text-[10px]" style={{ color: 'var(--red)' }}>+${pos.intrinsic_value.toFixed(2)} ITM</span>
-                    )}
-                  </td>
-                  <td className="px-5 py-3 font-mono font-semibold" style={{ color: pnlColor }}>
-                    {pnl >= 0 ? '+' : ''}${Math.abs(pnl).toFixed(0)}
-                  </td>
-                  <td className="px-5 py-3">
-                    <span
-                      className="px-2.5 py-1 font-medium whitespace-nowrap"
-                      style={{
-                        backgroundColor: statusColor + '1a',
-                        color: statusColor,
-                        borderRadius: 'var(--radius-sm)',
-                        fontSize: 11,
-                      }}
-                    >
-                      {statusLabel}
-                    </span>
-                  </td>
-                </tr>
-              )
-            })}
-          </tbody>
-        </table>
-      </div>
+        return (
+          <div key={h.id ?? h.ticker}>
+            {/* Main row */}
+            <div
+              onClick={() => setOpenTicker(isOpen ? null : h.ticker)}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: '70px 1fr 80px 110px 100px 80px 90px 24px',
+                padding: '14px 32px',
+                gap: 12,
+                borderBottom: '1px solid var(--line-soft)',
+                alignItems: 'center',
+                cursor: 'pointer',
+                background: isOpen ? 'var(--acid-faint)' : 'transparent',
+                borderLeft: isOpen ? '2px solid var(--acid)' : '2px solid transparent',
+                marginLeft: -2,
+                transition: 'background var(--ui)',
+                fontSize: 13,
+              }}
+            >
+              <span style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--fg)', fontWeight: 500 }}>
+                {h.ticker}
+              </span>
+              <span style={{ color: 'var(--fg-dim)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {h.name || h.ticker}
+              </span>
+              <span className="num" style={{ textAlign: 'right', color: 'var(--fg)' }}>
+                {(h.shares || 0).toLocaleString()}
+              </span>
+              <span className="num" style={{ textAlign: 'right', color: 'var(--fg-dim)' }}>
+                {h.avg_cost != null ? `$${h.avg_cost.toFixed(2)}` : '—'}
+              </span>
+              <span className="num" style={{ textAlign: 'right', color: 'var(--fg)' }}>
+                {h.current_price != null ? `$${h.current_price.toFixed(2)}` : '—'}
+              </span>
+              <span className="num" style={{
+                textAlign: 'right',
+                color: isUp ? 'var(--acid)' : 'var(--down)',
+              }}>
+                {isUp ? '+' : ''}{unrPct.toFixed(1)}%
+              </span>
+              <span className="num" style={{
+                textAlign: 'right',
+                color: callValue > 0 ? 'var(--acid)' : 'var(--fg-faint)',
+              }}>
+                {callValue > 0 ? fmt$(callValue) : openCalls.length > 0 ? '—' : '—'}
+              </span>
+              <span style={{
+                color: 'var(--fg-mute)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                transition: 'transform 0.15s',
+                transform: isOpen ? 'rotate(90deg)' : 'none',
+              }}>
+                <ChevronRight size={14} strokeWidth={1.5} />
+              </span>
+            </div>
+
+            {/* Expandable drawer */}
+            {isOpen && (
+              <CCDrawer
+                ticker={h.ticker}
+                holding={h}
+                openCalls={openCalls}
+                onNavigate={onNavigate}
+              />
+            )}
+          </div>
+        )
+      })}
 
       {/* Footer */}
-      <div className="px-5 py-3 border-t" style={{ borderColor: 'var(--border)' }}>
-        <button
-          onClick={() => onNavigate('Portfolios')}
-          className="text-xs px-3 py-1.5 border transition-colors"
-          style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: 'transparent', borderRadius: 'var(--radius-md)' }}
-        >
-          + Add Position
-        </button>
+      <div style={{ padding: '14px 32px', borderTop: '1px solid var(--line)' }}>
+        <Button variant="ghost" size="sm" onClick={() => onNavigate('Portfolios')}>
+          Manage positions →
+        </Button>
       </div>
     </div>
   )
 }
 
-// ── Sentiment badge (for news feed) ───────────────────────────────────────────
+// ── Covered call drawer ───────────────────────────────────────────────────────
 
-function SentimentBadge({ score }) {
-  if (score == null) return null
-  const n     = parseFloat(score)
-  const label = n >= 0.35 ? 'Bullish' : n >= 0.15 ? 'Somewhat Bullish' : n <= -0.35 ? 'Bearish' : n <= -0.15 ? 'Somewhat Bearish' : 'Neutral'
-  const color = n >= 0.15 ? 'var(--green)' : n <= -0.15 ? 'var(--red)' : 'var(--muted)'
-  return <span className="text-xs font-medium" style={{ color }}>{label}</span>
-}
-
-// ── News feed ─────────────────────────────────────────────────────────────────
-
-function NewsFeed({ news }) {
-  if (!news?.feed?.length) return null
-  const articles = news.feed.slice(0, 4)
+function CCDrawer({ ticker, holding, openCalls, onNavigate }) {
   return (
-    <div
-      className="border"
-      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}
-    >
-      <div
-        className="px-5 py-3 border-b flex items-center justify-between"
-        style={{ borderColor: 'var(--border)' }}
-      >
-        <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>SPY News &amp; Sentiment</h2>
-        <span className="text-xs" style={{ color: 'var(--muted)' }}>via AlphaVantage</span>
-      </div>
-      <div className="divide-y" style={{ borderColor: 'var(--border)' }}>
-        {articles.map((a, i) => {
-          const tickerSent = a.ticker_sentiment?.find(t => t.ticker === 'SPY')
-          const score      = tickerSent?.ticker_sentiment_score ?? a.overall_sentiment_score
-          return (
-            <div key={i} className="px-5 py-3 flex items-start gap-4">
-              <div className="flex-1 min-w-0">
-                <a
-                  href={a.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm font-medium hover:underline line-clamp-2 leading-snug"
-                  style={{ color: 'var(--text)' }}
-                >
-                  {a.title}
-                </a>
-                <div className="flex items-center gap-3 mt-1">
-                  <span className="text-xs" style={{ color: 'var(--muted)' }}>{a.source}</span>
-                  <span className="text-xs" style={{ color: 'var(--muted)' }}>
-                    {a.time_published ? a.time_published.slice(0, 13).replace('T', ' ') : ''}
-                  </span>
-                </div>
+    <div style={{
+      padding: '20px 32px',
+      background: 'var(--bg-elev)',
+      borderTop: '1px solid var(--line)',
+      borderBottom: '1px solid var(--line)',
+    }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: 24 }}>
+
+        {/* Left: position summary */}
+        <div style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--line)',
+          borderRadius: 2,
+          padding: 16,
+        }}>
+          <Eyebrow style={{ marginBottom: 12 }}>{ticker} · overview</Eyebrow>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {[
+              { k: 'Shares held',    v: (holding.shares || 0).toLocaleString() },
+              { k: 'Avg cost',       v: holding.avg_cost != null ? `$${holding.avg_cost.toFixed(2)}` : '—' },
+              { k: 'Current price',  v: holding.current_price != null ? `$${holding.current_price.toFixed(2)}` : '—' },
+              { k: 'Unrealized P&L', v: holding.unrealized_pnl != null
+                  ? `${holding.unrealized_pnl >= 0 ? '+' : ''}${fmt$(holding.unrealized_pnl)} (${holding.unrealized_pnl_pct?.toFixed(1)}%)`
+                  : '—', accent: (holding.unrealized_pnl ?? 0) >= 0 },
+              { k: 'Coverable lots', v: Math.floor((holding.shares || 0) / 100).toString() },
+            ].map(row => (
+              <div key={row.k} style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 8,
+                fontSize: 12,
+                paddingBottom: 6,
+                borderBottom: '1px solid var(--line-soft)',
+              }}>
+                <span style={{ color: 'var(--fg-mute)', fontFamily: 'var(--mono)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                  {row.k}
+                </span>
+                <span className="num" style={{ color: row.accent ? 'var(--acid)' : 'var(--fg)', fontSize: 12 }}>
+                  {row.v}
+                </span>
               </div>
-              <div className="shrink-0 text-right">
-                <SentimentBadge score={score} />
-                {score != null && (
-                  <div className="text-xs font-mono mt-0.5" style={{ color: 'var(--muted)' }}>
-                    {parseFloat(score) >= 0 ? '+' : ''}{parseFloat(score).toFixed(2)}
-                  </div>
-                )}
-              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 14 }}>
+            <Button size="sm" variant="primary" onClick={() => onNavigate('Screener')}>
+              Find calls →
+            </Button>
+          </div>
+        </div>
+
+        {/* Right: open CC positions or prompt */}
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 12 }}>
+            <Eyebrow>
+              {openCalls.length > 0
+                ? `${openCalls.length} open call${openCalls.length > 1 ? 's' : ''}`
+                : 'No open calls'}
+            </Eyebrow>
+          </div>
+
+          {openCalls.length === 0 ? (
+            <div style={{
+              padding: '24px 20px',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--line)',
+              borderRadius: 2,
+              textAlign: 'center',
+            }}>
+              <p style={{ fontSize: 13, color: 'var(--fg-mute)', marginBottom: 12 }}>
+                You own {(holding.shares || 0).toLocaleString()} shares of {ticker} with no covered calls written.
+              </p>
+              <Button size="sm" variant="primary" onClick={() => onNavigate('Screener')}>
+                Find a call to write →
+              </Button>
             </div>
-          )
-        })}
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {openCalls.map(pos => <OpenCallCard key={pos.id} pos={pos} />)}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
-// ── P&L Summary ───────────────────────────────────────────────────────────────
+function OpenCallCard({ pos }) {
+  const action  = getAction(pos)
+  const pnl     = pos.pnl ?? 0
+  const urgent  = action?.urgency === 'URGENT'
+  const high    = action?.urgency === 'HIGH'
 
-function PnlSummary({ pnlData }) {
+  const borderColor = urgent ? 'var(--warn)'
+    : high ? 'rgba(184,80,46,0.40)'
+    : 'var(--line)'
+
+  const capturePct = Math.max(0, Math.min(100, pos.profit_capture_pct || 0))
+
+  return (
+    <div style={{
+      background: 'var(--bg-card)',
+      border: `1px solid ${borderColor}`,
+      borderLeft: `2px solid ${urgent ? 'var(--warn)' : high ? 'var(--warn)' : 'var(--acid)'}`,
+      borderRadius: 2,
+      padding: '14px 16px',
+      display: 'grid',
+      gridTemplateColumns: '1.6fr 1fr 1fr 1fr 1fr',
+      gap: 16,
+      alignItems: 'center',
+    }}>
+      {/* Info */}
+      <div>
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--fg)', marginBottom: 4 }}>
+          ${pos.strike} Call · {pos.expiry}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+          <span style={{
+            fontFamily: 'var(--mono)', fontSize: 10, color: pos.dte <= 7 ? 'var(--warn)' : 'var(--fg-mute)',
+            letterSpacing: '0.06em', textTransform: 'uppercase',
+          }}>
+            {pos.dte}d to expiry
+          </span>
+          {action && (
+            <span className="h-chip warn" style={{ height: 18, fontSize: 10 }}>
+              {action.label}
+            </span>
+          )}
+        </div>
+        {/* Capture progress */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ flex: 1, height: 3, background: 'var(--line)', borderRadius: 2 }}>
+            <div style={{
+              width: `${capturePct}%`, height: '100%',
+              background: 'var(--acid)', borderRadius: 2,
+              transition: 'width 0.4s ease',
+            }} />
+          </div>
+          <span style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--fg-mute)' }}>
+            {capturePct.toFixed(0)}%
+          </span>
+        </div>
+      </div>
+
+      <MiniStat label="Premium" value={fmt$(pos.premium_collected)} accent />
+      <MiniStat label="P&L"
+        value={`${pnl >= 0 ? '+' : ''}${fmt$(pnl)}`}
+        accent={pnl >= 0}
+        down={pnl < 0}
+      />
+      <MiniStat label="Contracts" value={String(pos.contracts || 1)} />
+      <MiniStat label="Delta"
+        value={pos.delta != null ? pos.delta.toFixed(2) : '—'}
+        warn={pos.delta != null && pos.delta > 0.35}
+      />
+    </div>
+  )
+}
+
+function MiniStat({ label, value, accent, down, warn }) {
+  return (
+    <div>
+      <Eyebrow style={{ marginBottom: 4 }}>{label}</Eyebrow>
+      <span className="num" style={{
+        fontSize: 16,
+        color: accent ? 'var(--acid)' : down ? 'var(--down)' : warn ? 'var(--warn)' : 'var(--fg)',
+        letterSpacing: '-0.02em',
+      }}>
+        {value}
+      </span>
+    </div>
+  )
+}
+
+// ── Status banner ─────────────────────────────────────────────────────────────
+
+function StatusBanner({ positions, signalData }) {
+  const open = positions.filter(p => p.status === 'open')
+  const urgent = open.filter(p => {
+    const a = getAction(p)
+    return a?.urgency === 'URGENT'
+  })
+  const high = open.filter(p => {
+    const a = getAction(p)
+    return a?.urgency === 'HIGH'
+  })
+
+  const regime = signalData?.regime
+  const regimelabel = {
+    'SELL PREMIUM': '● Good time to open',
+    'HOLD': '◎ Hold new positions',
+    'CAUTION': '◐ Use caution',
+    'AVOID': '○ Avoid new positions',
+  }[regime] ?? (regime || 'Checking signals…')
+
+  const regimeColor = regime === 'SELL PREMIUM' ? 'var(--acid)'
+    : regime === 'HOLD' ? 'var(--fg-mute)'
+    : regime === 'CAUTION' ? 'var(--warn)'
+    : regime === 'AVOID' ? 'var(--down)'
+    : 'var(--fg-faint)'
+
+  const needsAttention = urgent.length + high.length
+
+  return (
+    <div style={{
+      padding: '10px 32px',
+      borderBottom: '1px solid var(--line)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 20,
+      background: needsAttention > 0 ? 'var(--warn-faint)' : 'transparent',
+    }}>
+      {needsAttention === 0 ? (
+        <span style={{ fontSize: 12, color: 'var(--acid)', fontFamily: 'var(--mono)', letterSpacing: '0.04em' }}>
+          ✓ All positions on track
+        </span>
+      ) : (
+        <span style={{ fontSize: 12, color: 'var(--warn)', fontFamily: 'var(--mono)', letterSpacing: '0.04em' }}>
+          ⚠ {needsAttention} position{needsAttention > 1 ? 's' : ''} need attention
+        </span>
+      )}
+      <span style={{ color: 'var(--line-strong)' }}>·</span>
+      <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--fg-mute)', letterSpacing: '0.04em' }}>
+        Market regime:{' '}
+        <span style={{ color: regimeColor }}>{regimelabel}</span>
+        {signalData?.total_score != null && (
+          <span style={{ color: 'var(--fg-faint)' }}>
+            {' '}({signalData.total_score}/{signalData.max_score ?? 14} signals)
+          </span>
+        )}
+      </span>
+    </div>
+  )
+}
+
+// ── P&L summary bar ───────────────────────────────────────────────────────────
+
+function PnlBar({ pnlData }) {
   if (!pnlData) return null
   const { total_realized, total_unrealized, estimated_tax_this_year, win_rate, closed_positions } = pnlData
-  const winColor = win_rate >= 70 ? 'var(--green)' : win_rate >= 50 ? 'var(--amber)' : 'var(--red)'
+
+  const cells = [
+    { label: 'Realized P&L',        value: `${total_realized >= 0 ? '+' : ''}${fmt$(total_realized)}`,       color: total_realized >= 0 ? 'var(--acid)' : 'var(--down)' },
+    { label: 'Unrealized P&L',      value: `${total_unrealized >= 0 ? '+' : ''}${fmt$(total_unrealized)}`,   color: total_unrealized >= 0 ? 'var(--acid)' : 'var(--down)' },
+    { label: 'Est. tax this year',  value: fmt$(estimated_tax_this_year),                                     color: 'var(--warn)' },
+    { label: 'Win rate',            value: closed_positions > 0 ? `${win_rate}%` : '—',                      color: win_rate >= 70 ? 'var(--acid)' : win_rate >= 50 ? 'var(--fg-dim)' : 'var(--down)' },
+  ]
 
   return (
-    <div
-      className="border"
-      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}
-    >
-      <div className="px-5 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-        <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Banked Income &amp; Tax</h2>
-        <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-          Based on {closed_positions} closed position{closed_positions !== 1 ? 's' : ''} · short-term capital gains rate
-        </p>
+    <div style={{
+      margin: '0 32px 32px',
+      border: '1px solid var(--line)',
+      borderRadius: 2,
+      background: 'var(--bg-card)',
+    }}>
+      <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--line)' }}>
+        <Eyebrow>Banked Income &amp; Tax</Eyebrow>
+        <span style={{ marginLeft: 10, fontSize: 11, color: 'var(--fg-faint)', fontFamily: 'var(--mono)' }}>
+          Based on {closed_positions} closed position{closed_positions !== 1 ? 's' : ''}
+        </span>
       </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 divide-x" style={{ borderColor: 'var(--border)' }}>
-        {[
-          { label: 'Realized P&L', value: `${total_realized >= 0 ? '+' : ''}$${Math.abs(total_realized).toLocaleString()}`, color: total_realized >= 0 ? 'var(--green)' : 'var(--red)' },
-          { label: 'Unrealized P&L', value: `${total_unrealized >= 0 ? '+' : ''}$${Math.abs(total_unrealized).toLocaleString()}`, color: total_unrealized >= 0 ? 'var(--green)' : 'var(--red)' },
-          { label: 'Est. Tax (this year)', value: `$${estimated_tax_this_year.toLocaleString()}`, color: 'var(--amber)' },
-          { label: 'Win Rate', value: closed_positions > 0 ? `${win_rate}%` : '—', color: closed_positions > 0 ? winColor : 'var(--muted)' },
-        ].map(f => (
-          <div key={f.label} className="px-5 py-4">
-            <div className="text-xs uppercase tracking-wider mb-1" style={{ color: 'var(--muted)' }}>{f.label}</div>
-            <div className="text-3xl font-bold font-mono" style={{ color: f.color }}>{f.value}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cells.length}, 1fr)` }}>
+        {cells.map((c, i) => (
+          <div key={c.label} style={{
+            padding: '18px 20px',
+            borderRight: i < cells.length - 1 ? '1px solid var(--line)' : 'none',
+          }}>
+            <Eyebrow style={{ marginBottom: 6 }}>{c.label}</Eyebrow>
+            <div className="num" style={{ fontSize: 22, color: c.color, letterSpacing: '-0.02em' }}>
+              {c.value}
+            </div>
           </div>
         ))}
       </div>
@@ -599,64 +905,63 @@ function PnlSummary({ pnlData }) {
 
 // ── Dashboard ─────────────────────────────────────────────────────────────────
 
-export default function Dashboard({ dashData: _dashData, signalData, positions, holdings: _holdings, alphaData, pnlData, onNavigate }) {
-  const hour     = new Date().getHours()
-  const greeting = hour < 12 ? 'Good morning.' : hour < 17 ? 'Good afternoon.' : 'Good evening.'
-  const dateStr  = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
-
-  const open         = positions.filter(p => p.status === 'open')
-  const macroUncertain = open.some(p => p.macro_uncertainty === true)
+export default function Dashboard({
+  dashData: _dashData,
+  signalData,
+  positions,
+  holdings,
+  alphaData: _alphaData,
+  pnlData,
+  onNavigate,
+}) {
+  const { apiFetch } = useAuth()
+  const [chartRange, setChartRange] = useState('3M')
 
   return (
-    <div className="space-y-4">
+    <div style={{ margin: '-28px -32px', display: 'flex', flexDirection: 'column' }}>
 
-      {/* Greeting row */}
-      <div className="flex items-center justify-between">
-        <span className="text-sm" style={{ color: 'var(--muted)' }}>{greeting}</span>
-        <span className="text-xs" style={{ color: 'var(--muted)' }}>{dateStr}</span>
-      </div>
+      {/* Equity header */}
+      <EquityHeader
+        holdings={holdings}
+        positions={positions}
+        signalData={signalData}
+      />
 
-      {/* Hero: income number (left) + trend chart (right) */}
-      <div
-        className="grid md:grid-cols-2 border overflow-hidden"
-        style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}
-      >
-        <div className="p-6 border-b md:border-b-0 md:border-r" style={{ borderColor: 'var(--border)', minHeight: 180 }}>
-          <IncomeHero positions={positions} />
-        </div>
-        <div className="p-6" style={{ minHeight: 180 }}>
-          <IncomeTrendChart positions={positions} />
-        </div>
-      </div>
+      {/* Equity + income chart */}
+      <EquityChart
+        range={chartRange}
+        onRangeChange={setChartRange}
+        apiFetch={apiFetch}
+      />
 
-      {/* Status band */}
-      <StatusBand positions={positions} signalData={signalData} />
+      {/* Status banner */}
+      <StatusBanner positions={positions} signalData={signalData} />
 
-      {/* Macro uncertainty banner */}
-      {macroUncertain && (
-        <div
-          className="px-5 py-3 border flex items-start gap-3 text-xs"
-          style={{ backgroundColor: 'rgba(255,176,32,0.08)', borderColor: 'rgba(255,176,32,0.35)', borderRadius: 'var(--radius-md)' }}
-        >
-          <span style={{ color: 'var(--amber)', fontSize: 14, lineHeight: 1 }}>⚠</span>
-          <div>
-            <span className="font-semibold" style={{ color: 'var(--amber)' }}>Elevated macro uncertainty this week.</span>
-            <span className="ml-1" style={{ color: 'var(--muted)' }}>
-              Multiple macro news signals detected. Consider waiting before acting on roll or close recommendations.
+      {/* Open contracts strip */}
+      <OpenContractsStrip positions={positions} onNavigate={onNavigate} />
+
+      {/* Holdings table with CC drawer */}
+      <div style={{ padding: '20px 0 0' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', padding: '0 32px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 12 }}>
+            <Eyebrow>Holdings</Eyebrow>
+            <span style={{ fontSize: 12, color: 'var(--fg-mute)', fontFamily: 'var(--mono)' }}>
+              {holdings.length} position{holdings.length !== 1 ? 's' : ''} · click a row for covered call status
             </span>
           </div>
+          <Button size="sm" onClick={() => onNavigate('Portfolios')}>
+            Manage →
+          </Button>
         </div>
-      )}
+        <HoldingsTable
+          holdings={holdings}
+          positions={positions}
+          onNavigate={onNavigate}
+        />
+      </div>
 
-      {/* Open positions table */}
-      <PositionsTable positions={positions} onNavigate={onNavigate} />
-
-      {/* Banked income + tax */}
-      <PnlSummary pnlData={pnlData} />
-
-      {/* News feed */}
-      <NewsFeed news={alphaData?.news} />
-
+      {/* P&L summary */}
+      {pnlData && <PnlBar pnlData={pnlData} />}
     </div>
   )
 }

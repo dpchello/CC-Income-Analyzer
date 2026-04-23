@@ -2,208 +2,319 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── CSS Token System ──────────────────────────────────────────────────────── */
+/* ── Harvest Design Tokens ─────────────────────────────────────────────────── */
 
 :root {
-  /* Backgrounds — 3 depth levels */
-  --bg:          #080d1a;
-  --surface:     #0d1526;
-  --surface-2:   #131e33;
+  /* Backgrounds */
+  --bg:         #faf8f3;
+  --bg-elev:    #f3f0e7;
+  --bg-elev-2:  #ebe7db;
+  --bg-card:    #ffffff;
 
-  /* Borders — near-invisible for cards; shadows handle depth */
-  --border:        rgba(255,255,255,0.08);
-  --border-strong: rgba(255,255,255,0.14);
-  --border-input:  rgba(255,255,255,0.18);  /* form inputs need visibility */
+  /* Foreground */
+  --fg:         #1a1e16;
+  --fg-dim:     #4a4f44;
+  --fg-mute:    #6e7166;
+  --fg-faint:   #9a9a90;
 
-  /* Text */
-  --text:        #dce8f5;
-  --muted:       #5e7a96;
-  --label:       #8fa8c4;
+  /* Lines / borders */
+  --line:        rgba(24,28,20,0.10);
+  --line-strong: rgba(24,28,20,0.18);
+  --line-soft:   rgba(24,28,20,0.06);
 
-  /* Brand accent — gold replaces green for UI chrome */
-  --gold:        #c9a84c;
-  --gold-dim:    rgba(201,168,76,0.12);
+  /* Brand accent — deep forest green. "acid" kept as alias so prototype CSS
+     references resolve without renaming every component. */
+  --acid:       #2f5233;
+  --acid-dim:   #3f6844;
+  --acid-deep:  #1e3621;
+  --acid-faint: rgba(47,82,51,0.08);
+  --acid-line:  rgba(47,82,51,0.28);
 
-  /* Financial status */
-  --green:       #3ecf8e;
-  --green-dim:   rgba(62,207,142,0.12);
-  --red:         #f87171;
-  --red-dim:     rgba(248,113,113,0.12);
-  --amber:       #f59e0b;
-  --amber-dim:   rgba(245,158,11,0.12);
-  --blue:        #60a5fa;
-  --orange:      #f97316;
+  /* Semantic */
+  --warn:       #b8502e;
+  --warn-faint: rgba(184,80,46,0.10);
+  --down:       #c14a35;
 
-  /* Glows (key metrics only) */
-  --glow-green:  0 0 24px rgba(62,207,142,0.15);
-  --glow-gold:   0 0 24px rgba(201,168,76,0.12);
+  /* Secondary accent */
+  --olive:      #6a7648;
+  --olive-dim:  #4a5436;
 
-  /* Radii */
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
-  --radius-xl: 16px;
+  /* Type families */
+  --sans:  "Inter Tight", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --body:  "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --serif: "Instrument Serif", "Cormorant Garamond", Georgia, serif;
+  --mono:  "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
 
-  /* Shadows — elevation system */
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.5), 0 1px 2px rgba(0,0,0,0.4);
-  --shadow-md: 0 4px 16px rgba(0,0,0,0.6), 0 2px 4px rgba(0,0,0,0.4);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.7), 0 4px 8px rgba(0,0,0,0.5);
+  /* Radii — small on purpose; aesthetic is "document", not "app" */
+  --r-1: 2px;
+  --r-2: 4px;
+  --r-3: 8px;
+  --r-4: 12px;
+
+  /* Shadows */
+  --shadow-card:  0 4px 12px rgba(24,28,20,0.06);
+  --shadow-modal: 0 30px 80px rgba(24,28,20,0.12), 0 0 0 1px rgba(47,82,51,0.08);
+
+  /* Motion */
+  --ui: 150ms ease;
 }
 
-html.light {
-  --bg:          #f0f4f8;
-  --surface:     #ffffff;
-  --surface-2:   #f5f8fb;
-  --border:        rgba(0,0,0,0.08);
-  --border-strong: rgba(0,0,0,0.14);
-  --border-input:  rgba(0,0,0,0.20);
-  --text:        #1a2332;
-  --muted:       #64748b;
-  --label:       #8096b0;
-  --gold:        #a8802a;
-  --gold-dim:    rgba(168,128,42,0.10);
-  --green:       #059669;
-  --green-dim:   rgba(5,150,105,0.10);
-  --red:         #dc2626;
-  --red-dim:     rgba(220,38,38,0.10);
-  --amber:       #d97706;
-  --amber-dim:   rgba(217,119,6,0.10);
-  --blue:        #2563eb;
-  --orange:      #f97316;
+/* ── Base ──────────────────────────────────────────────────────────────────── */
 
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.06);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.07);
-  --shadow-lg: 0 8px 24px rgba(0,0,0,0.12), 0 4px 8px rgba(0,0,0,0.08);
-}
-
-/* ── Base Styles ───────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; }
 
 html, body {
   background-color: var(--bg);
-  color: var(--text);
-  font-family: 'DM Sans', sans-serif;
-  transition: background-color 0.2s, color 0.2s;
+  color: var(--fg);
+  font-family: var(--body);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
 }
 
-.font-mono {
-  font-family: 'IBM Plex Mono', monospace;
-}
+/* ── Typography utilities ──────────────────────────────────────────────────── */
 
-/* ── Theme-aware utility classes ───────────────────────────────────────────── */
+.h-sans   { font-family: var(--sans); }
+.h-serif  { font-family: var(--serif); font-weight: 400; letter-spacing: -0.01em; }
+.h-mono   { font-family: var(--mono); }
 
-.th-bg       { background-color: var(--bg); }
-.th-surface  { background-color: var(--surface); }
-.th-border   { border-color: var(--border); }
-.th-text     { color: var(--text); }
-.th-muted    { color: var(--muted); }
-.th-label    { color: var(--label); }
-.th-green    { color: var(--green); }
-.th-red      { color: var(--red); }
-.th-amber    { color: var(--amber); }
-.th-gold     { color: var(--gold); }
-.th-blue     { color: var(--blue); }
-
-.th-surface-border {
-  background-color: var(--surface);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow-sm);
-}
-
-/* ── Form elements — need stronger border than cards ─────────────────────── */
-
-input, select, textarea {
-  border-color: var(--border-input);
-}
-
-input:focus, select:focus, textarea:focus {
-  border-color: var(--gold) !important;
-  outline: none;
-}
-
-/* ── Animations ────────────────────────────────────────────────────────────── */
-
-@keyframes pulse-green {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.4; }
-}
-
-@keyframes pulse-red {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.3; }
-}
-
-.pulse-green { animation: pulse-green 1.5s ease-in-out infinite; }
-.pulse-red   { animation: pulse-red   1.0s ease-in-out infinite; }
-
-/* ── Legacy .panel class (still used in some components) ──────────────────── */
-
-.panel {
-  background-color: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-}
-
-/* ── Card utility — surface + border + radius + light-mode shadow ─────────── */
-
-.th-card {
-  background-color: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-}
-
-/* Tabular numbers for all financial data */
-.font-tabular {
-  font-family: 'IBM Plex Mono', monospace;
+/* Tabular numbers — all financial data */
+.num, .h-num {
+  font-family: var(--mono);
   font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 
-/* ── Alert Badge (nav count bubble) ───────────────────────────────────────── */
+/* Eyebrow label — section headers, stat labels */
+.h-eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+}
 
-.alert-badge {
+/* Display number — hero equity figure */
+.h-display {
+  font-family: var(--serif);
+  font-size: 60px;
+  font-style: italic;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+/* ── Color utilities ───────────────────────────────────────────────────────── */
+
+.h-up       { color: var(--acid); }
+.h-down     { color: var(--down); }
+.h-warn     { color: var(--warn); }
+.h-mute     { color: var(--fg-mute); }
+.h-faint    { color: var(--fg-faint); }
+
+/* ── Surface utilities ─────────────────────────────────────────────────────── */
+
+.h-card {
+  background: var(--bg-card);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+}
+
+.h-elev {
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--r-2);
+}
+
+.h-hair { border: 0; border-top: 1px solid var(--line); margin: 0; }
+
+/* ── Button ────────────────────────────────────────────────────────────────── */
+
+.h-btn {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 9px;
-  background-color: var(--red);
-  color: #fff;
-  font-size: 11px;
-  font-weight: 700;
-  line-height: 1;
-  flex-shrink: 0;
-}
-
-/* ── Header Alert Strip ────────────────────────────────────────────────────── */
-
-@keyframes pulse-strip {
-  0%, 100% { opacity: 1; }
-  50%       { opacity: 0.75; }
-}
-
-.alert-strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 20px;
-  font-size: 12px;
+  gap: 8px;
+  height: 36px;
+  padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--body);
+  font-size: 13px;
   font-weight: 500;
-  background-color: rgba(255, 61, 90, 0.12);
-  border-bottom: 1px solid rgba(255, 61, 90, 0.3);
-  color: var(--red);
-  animation: pulse-strip 2.5s ease-in-out infinite;
+  letter-spacing: -0.005em;
+  border-radius: var(--r-2);
+  cursor: pointer;
+  transition: background var(--ui), border-color var(--ui), color var(--ui);
+  white-space: nowrap;
   flex-shrink: 0;
 }
+.h-btn:hover { background: rgba(24,28,20,0.04); }
 
-html.light .alert-strip {
-  background-color: rgba(220, 38, 38, 0.08);
-  border-bottom-color: rgba(220, 38, 38, 0.25);
+.h-btn.primary {
+  background: var(--acid);
+  color: #faf8f3;
+  border-color: var(--acid);
+  font-weight: 600;
 }
+.h-btn.primary:hover { background: var(--acid-deep); border-color: var(--acid-deep); }
+
+.h-btn.ghost { border-color: transparent; color: var(--fg-dim); }
+.h-btn.ghost:hover { color: var(--fg); background: rgba(24,28,20,0.04); }
+
+.h-btn.sm { height: 28px; padding: 0 10px; font-size: 12px; }
+.h-btn.lg { height: 44px; padding: 0 20px; font-size: 14px; font-weight: 600; }
+
+/* ── Chip ──────────────────────────────────────────────────────────────────── */
+
+.h-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-1);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+.h-chip.active, .h-chip.acid {
+  color: var(--acid);
+  border-color: var(--acid-line);
+  background: var(--acid-faint);
+}
+.h-chip.warn {
+  color: var(--warn);
+  border-color: rgba(184,80,46,0.30);
+  background: var(--warn-faint);
+}
+.h-chip.solid { background: var(--bg-elev); }
+
+/* ── Dot ───────────────────────────────────────────────────────────────────── */
+
+.h-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--acid);
+  flex-shrink: 0;
+}
+.h-dot.warn { background: var(--warn); }
+.h-dot.down { background: var(--down); }
 
 /* ── Scrollbar ─────────────────────────────────────────────────────────────── */
 
 ::-webkit-scrollbar       { width: 6px; height: 6px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
+
+/* ── Table ─────────────────────────────────────────────────────────────────── */
+
+.h-table { width: 100%; border-collapse: collapse; }
+.h-table th {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+  font-weight: 400;
+  padding: 10px 14px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+.h-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 13px;
+  color: var(--fg);
+}
+.h-table tr:last-child td { border-bottom: none; }
+.h-table tbody tr:hover td { background: rgba(24,28,20,0.02); }
+
+/* ── Loading skeleton ──────────────────────────────────────────────────────── */
+
+@keyframes h-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position:  400px 0; }
+}
+
+.h-skeleton {
+  background: linear-gradient(90deg,
+    var(--line-soft) 25%,
+    rgba(24,28,20,0.04) 50%,
+    var(--line-soft) 75%
+  );
+  background-size: 400px 100%;
+  animation: h-shimmer 1.4s ease infinite;
+  border-radius: var(--r-1);
+}
+
+/* ── Alert badge ───────────────────────────────────────────────────────────── */
+
+.h-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: var(--r-1);
+  background: var(--acid);
+  color: var(--bg);
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+/* ── Conviction border (RecCard left accent) ───────────────────────────────── */
+
+.conv-high { border-left: 2px solid var(--acid); }
+.conv-med  { border-left: 2px solid var(--olive); }
+.conv-low  { border-left: 2px solid var(--line-strong); }
+
+/* ── Compat aliases — maps old dark-theme tokens to Harvest equivalents.
+     Keeps un-migrated components functional while we migrate each screen. ── */
+
+:root {
+  --surface:      var(--bg-card);
+  --surface-2:    var(--bg-elev);
+  --text:         var(--fg);
+  --muted:        var(--fg-mute);
+  --label:        var(--fg-dim);
+  --border:       var(--line);
+  --border-strong:var(--line-strong);
+  --border-input: var(--line-strong);
+
+  --green:        var(--acid);
+  --green-dim:    var(--acid-faint);
+  --red:          var(--down);
+  --red-dim:      var(--warn-faint);
+  --amber:        var(--warn);
+  --amber-dim:    var(--warn-faint);
+  --orange:       var(--warn);
+  --gold:         var(--acid);
+  --gold-dim:     var(--acid-faint);
+  --blue:         var(--acid-dim);
+
+  --glow-green:   none;
+  --glow-gold:    none;
+
+  --radius-sm:    var(--r-2);
+  --radius-md:    var(--r-3);
+  --radius-lg:    var(--r-4);
+  --radius-xl:    var(--r-4);
+
+  --shadow-sm:    var(--shadow-card);
+  --shadow-md:    var(--shadow-card);
+  --shadow-lg:    var(--shadow-modal);
+}

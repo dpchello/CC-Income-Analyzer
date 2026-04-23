@@ -149,6 +149,7 @@ function RollScenarioCard({ scenario: s, contracts }) {
 }
 
 function TaxAwareActionCard({ pos, action }) {
+  const { apiFetch } = useAuth()
   const [expanded] = useState(true)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   const [rollTargets, setRollTargets] = useState(null)
@@ -161,7 +162,7 @@ function TaxAwareActionCard({ pos, action }) {
   useEffect(() => {
     if (!expanded || !shouldShowRolls || rollTargets !== null || rollLoading) return
     setRollLoading(true)
-    fetch(`/api/roll-targets/${pos.id}`)
+    apiFetch(`/api/roll-targets/${pos.id}`)
       .then(r => r.json())
       .then(d => setRollTargets(d))
       .catch(() => setRollError('Could not load roll suggestions.'))
@@ -269,7 +270,7 @@ function TaxAwareActionCard({ pos, action }) {
                 <div className="mt-1" style={{ color: 'var(--muted)' }}>Buy back this call and sell a new one at the same or higher strike, targeting 30–45 days until expiry.</div>
               </div>
             )}
-            {shouldShowRolls && rollTargets && (
+            {shouldShowRolls && rollTargets?.scenarios && (
               <div className="space-y-2">
                 {rollTargets.scenarios.map(s => (
                   <RollScenarioCard key={s.scenario} scenario={s} contracts={pos.contracts} />
@@ -862,13 +863,14 @@ function HoldingRow({ holding, coveredShares, onDelete, onEdit }) {
 // ── Edit holding modal ────────────────────────────────────────────────────────
 
 function EditHoldingModal({ holding, onSave, onClose }) {
+  const { apiFetch } = useAuth()
   const [shares, setShares] = useState(holding.shares != null ? String(holding.shares) : '')
   const [avgCost, setAvgCost] = useState(holding.avg_cost != null ? String(holding.avg_cost) : '')
   const [saving, setSaving] = useState(false)
 
   async function save() {
     setSaving(true)
-    await fetch(`/api/holdings/${holding.id}`, {
+    await apiFetch(`/api/holdings/${holding.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ shares: parseInt(shares), avg_cost: parseFloat(avgCost) }),
@@ -916,6 +918,7 @@ function statusFromPos(pos) {
 }
 
 function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, onMove }) {
+  const { apiFetch } = useAuth()
   const [expanded, setExpanded] = useState(false)
   const [isClosing, setIsClosing] = useState(false)
   const [closePrice, setClosePrice] = useState('')
@@ -938,7 +941,7 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
 
   async function doSaveNotes() {
     setNotesSaving(true)
-    await fetch(`/api/positions/${pos.id}`, {
+    await apiFetch(`/api/positions/${pos.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ notes: notesDraft }),
@@ -954,13 +957,13 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
     if (isNaN(price) || price < 0) return
     if (isNaN(n) || n <= 0 || n > pos.contracts) return
     if (n < pos.contracts) {
-      await fetch(`/api/positions/${pos.id}/partial-close`, {
+      await apiFetch(`/api/positions/${pos.id}/partial-close`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contracts_to_close: n, close_price: price }),
       })
     } else {
-      await fetch(`/api/positions/${pos.id}`, {
+      await apiFetch(`/api/positions/${pos.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'closed', close_price: price }),
@@ -976,7 +979,7 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
     const cts = parseInt(editContracts, 10)
     const sp  = parseFloat(editSellPrice)
     if (isNaN(cts) || cts <= 0 || isNaN(sp) || sp <= 0) return
-    await fetch(`/api/positions/${pos.id}`, {
+    await apiFetch(`/api/positions/${pos.id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ contracts: cts, sell_price: sp }),
@@ -986,7 +989,7 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
   }
 
   async function doMove(portfolioId) {
-    await fetch(`/api/positions/${pos.id}/move`, {
+    await apiFetch(`/api/positions/${pos.id}/move`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ portfolio_id: portfolioId }),
@@ -1825,7 +1828,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                           <td className="px-4 py-2">
                             <button
                               onClick={async () => {
-                                await fetch(`/api/positions/${p.id}/reopen`, { method: 'PUT' })
+                                await apiFetch(`/api/positions/${p.id}/reopen`, { method: 'PUT' })
                                 onRefresh()
                               }}
                               className="text-xs hover:underline"

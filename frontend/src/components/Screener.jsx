@@ -1,6 +1,6 @@
 import { ScreenerPanel, OIChart } from './SignalTracker.jsx'
 
-export default function Screener({ portfolios, holdings, positions, onRefresh, signalData, userTier, onUpgrade }) {
+export default function Screener({ portfolios, holdings, positions, onRefresh, signalData, userTier, onUpgrade, initialTicker }) {
   const regime = signalData?.regime
 
   return (
@@ -13,6 +13,7 @@ export default function Screener({ portfolios, holdings, positions, onRefresh, s
         regime={regime}
         userTier={userTier}
         onUpgrade={onUpgrade}
+        initialTicker={initialTicker}
       />
       <OIChart />
     </div>

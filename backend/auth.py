@@ -9,19 +9,49 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 import bcrypt as _bcrypt
 from pydantic import BaseModel
-from sqlmodel import Session, select
 
-from database import User, get_session
+import db
 
 load_dotenv(Path(__file__).parent / ".env")
 
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-change-in-production")
+if SECRET_KEY == "dev-secret-change-in-production":
+    import warnings
+    warnings.warn("JWT_SECRET_KEY is not set — using insecure default. Set it before deploying.")
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 7
 
 bearer_scheme = HTTPBearer(auto_error=False)
-
 router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+
+# ── Lightweight user dict wrapper ─────────────────────────────────────────────
+# auth.py previously used SQLModel User objects. The rest of the app accesses
+# .id, .email, .tier, .is_active — this dict-backed class keeps that interface.
+
+class User:
+    def __init__(self, data: dict):
+        self._d = data
+
+    @property
+    def id(self) -> str:
+        return self._d["id"]
+
+    @property
+    def email(self) -> str:
+        return self._d["email"]
+
+    @property
+    def tier(self) -> str:
+        return self._d.get("tier", "free")
+
+    @property
+    def is_active(self) -> bool:
+        return self._d.get("is_active", True)
+
+    def get(self, key, default=None):
+        return self._d.get(key, default)
 
 
 # ── Password helpers ──────────────────────────────────────────────────────────
@@ -51,28 +81,29 @@ def decode_token(token: str) -> Optional[str]:
 
 def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
-    session: Session = Depends(get_session),
 ) -> User:
     if not credentials:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     user_id = decode_token(credentials.credentials)
     if not user_id:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-    user = session.get(User, user_id)
-    if not user or not user.is_active:
+    data = db.get_user_by_id(user_id)
+    if not data or not data.get("is_active"):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
-    return user
+    return User(data)
 
 def get_optional_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(bearer_scheme),
-    session: Session = Depends(get_session),
 ) -> Optional[User]:
     if not credentials:
         return None
     user_id = decode_token(credentials.credentials)
     if not user_id:
         return None
-    return session.get(User, user_id)
+    data = db.get_user_by_id(user_id)
+    if not data:
+        return None
+    return User(data)
 
 
 # ── Request / response models ─────────────────────────────────────────────────
@@ -96,14 +127,13 @@ class AuthResponse(BaseModel):
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("/signup", response_model=AuthResponse)
-def signup(body: SignupRequest, session: Session = Depends(get_session)):
+def signup(body: SignupRequest):
     email = body.email.strip().lower()
-    if session.exec(select(User).where(User.email == email)).first():
+    if db.get_user_by_email(email):
         raise HTTPException(status_code=400, detail="Email already registered")
-    user = User(email=email, hashed_password=hash_password(body.password))
-    session.add(user)
-    session.commit()
-    session.refresh(user)
+    user_data = db.create_user(email=email, hashed_password=hash_password(body.password))
+    user = User(user_data)
+    db.ensure_default_portfolio(user.id)
     return AuthResponse(
         access_token=create_access_token(user.id),
         user_id=user.id,
@@ -113,11 +143,12 @@ def signup(body: SignupRequest, session: Session = Depends(get_session)):
 
 
 @router.post("/login", response_model=AuthResponse)
-def login(body: LoginRequest, session: Session = Depends(get_session)):
+def login(body: LoginRequest):
     email = body.email.strip().lower()
-    user = session.exec(select(User).where(User.email == email)).first()
-    if not user or not verify_password(body.password, user.hashed_password):
+    user_data = db.get_user_by_email(email)
+    if not user_data or not verify_password(body.password, user_data["hashed_password"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
+    user = User(user_data)
     return AuthResponse(
         access_token=create_access_token(user.id),
         user_id=user.id,

@@ -142,7 +142,7 @@ function TechnicalsPanel({ technicals }) {
   return (
     <div className="border" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}>
       <div className="px-5 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-        <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Technical Indicators — SPY</h2>
+        <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Market Technical Indicators</h2>
         <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>via AlphaVantage · daily data</p>
       </div>
       <div className="px-5 py-4 grid grid-cols-2 md:grid-cols-4 gap-6">
@@ -182,7 +182,7 @@ function TechnicalsPanel({ technicals }) {
 
 // ── Screener ──────────────────────────────────────────────────────────────────
 
-export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regime, userTier, onUpgrade }) {
+export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regime, userTier, onUpgrade, initialTicker }) {
   const { apiFetch } = useAuth()
   const activePortfolios = (portfolios || []).filter(p => !p.archived)
   const [selectedPortfolioId, setSelectedPortfolioId] = useState(
@@ -213,8 +213,20 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
   const [sortCol, setSortCol] = useState('composite_score')
   const [sortDir, setSortDir] = useState('desc')
   const [colExp, setColExp]   = useState({ price: false, greeks: false, volume: false, score: false, value: false })
+  const portfolioHoldings = (holdings || []).filter(h => h.portfolio_id === selectedPortfolioId)
+  const portfolioDefaultTicker = portfolioHoldings[0]?.ticker || ''
+  const [tickerFilter, setTickerFilter] = useState(initialTicker || portfolioDefaultTicker)
+  // committedTicker is what the API actually uses — only updated on Enter or initialTicker change
+  const [committedTicker, setCommittedTicker] = useState(initialTicker || portfolioDefaultTicker)
 
-  useEffect(() => { runScreener() }, [selectedPortfolioId])  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (initialTicker) {
+      setTickerFilter(initialTicker)
+      setCommittedTicker(initialTicker)
+    }
+  }, [initialTicker])
+
+  useEffect(() => { runScreener() }, [selectedPortfolioId, committedTicker])  // eslint-disable-line react-hooks/exhaustive-deps
 
   async function runScreener() {
     const dte  = DTE_RANGES.find(d => d.id === dteRange) || DTE_RANGES[5]
@@ -224,6 +236,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
     setError(null)
     setResults(null)
     try {
+      const tf = committedTicker.trim().toUpperCase() || portfolioDefaultTicker
       const params = new URLSearchParams({
         portfolio_id: selectedPortfolioId,
         min_delta: minD,
@@ -231,6 +244,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
         min_dte: dte.minDte,
         max_dte: dte.maxDte,
         limit: showCount,
+        ticker: tf,
       })
       const res = await apiFetch(`/api/screener?${params}`)
       if (res.status === 403) {
@@ -261,12 +275,12 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
     setAdding(key)
     try {
       const body = {
-        ticker: 'SPY', type: 'short_call',
+        ticker: committedTicker || portfolioDefaultTicker, type: 'short_call',
         strike: c.strike, expiry: c.expiry,
         contracts: c.contracts_suggested, sell_price: c.mid,
         premium_collected: c.premium_total, portfolio_id: selectedPortfolioId,
       }
-      const res = await fetch('/api/positions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const res = await apiFetch('/api/positions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       if (res.ok) { setAdded(prev => ({ ...prev, [key]: true })); onRefresh() }
       else { const err = await res.json(); setError(err.detail || 'Failed to add') }
     } catch (e) { setError(String(e)) }
@@ -386,7 +400,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
           <div>
             <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Options Screener</h2>
             <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-              Live SPY options chain · ranked by composite score (signal + raw yield + delta safety + DTE quality)
+              Live options chain · ranked by composite score (signal + raw yield + delta safety + DTE quality)
             </p>
           </div>
           <button
@@ -404,8 +418,8 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
           <div className="mt-3 pt-3 border-t grid grid-cols-1 md:grid-cols-2 gap-2" style={{ borderColor: 'var(--border)' }}>
             {[
               { label: 'A · Market Signal', pts: 'up to 25 pts', color: 'var(--green)', why: 'A great option in bad market conditions is still a bad trade. This component ensures the macro environment is right before anything else matters. If conditions are unfavorable, the max achievable score drops — protecting you from acting on good-looking numbers at the wrong time.' },
-              { label: 'B · Income Potential', pts: 'up to 30 pts', color: 'var(--green)', why: 'The primary reason to sell a covered call is income. This component scores how much you\'d collect relative to SPY\'s price. It gets the highest weight because it directly determines whether the trade is financially worth doing.' },
-              { label: 'C · Assignment Risk', pts: 'up to 20 pts', color: 'var(--amber)', why: 'Assignment means your shares get sold. Lower assignment risk (lower delta) means more buffer between SPY\'s current price and your strike. High-risk options score lower here even if they pay more — the extra income rarely compensates for the loss of upside.' },
+              { label: 'B · Income Potential', pts: 'up to 30 pts', color: 'var(--green)', why: 'The primary reason to sell a covered call is income. This component scores how much you\'d collect relative to your stock\'s price. It gets the highest weight because it directly determines whether the trade is financially worth doing.' },
+              { label: 'C · Assignment Risk', pts: 'up to 20 pts', color: 'var(--amber)', why: 'Assignment means your shares get sold. Lower assignment risk (lower delta) means more buffer between your stock\'s current price and your strike. High-risk options score lower here even if they pay more — the extra income rarely compensates for the loss of upside.' },
               { label: 'D · Timing Sweet Spot', pts: 'up to 25 pts', color: 'var(--amber)', why: 'Options decay fastest in the 21–45 day window before expiry — that\'s where you collect the most income per day of risk. Too short and last-minute moves can blow past your strike. Too long and your capital is tied up for too little return.' },
             ].map(s => (
               <div key={s.label} className="p-3 border text-xs" style={{ borderColor: 'var(--border)', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(128,128,128,0.04)' }}>
@@ -433,11 +447,12 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
               value={selectedPortfolioId}
               onChange={e => { setSelectedPortfolioId(e.target.value); setResults(null) }}
             >
-              {activePortfolios.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              {[...activePortfolios].sort((a, b) => (b.starred ? 1 : 0) - (a.starred ? 1 : 0)).map(p => <option key={p.id} value={p.id}>{p.starred ? `★ ${p.name}` : p.name}</option>)}
             </select>
           </div>
           <button
-            onClick={runScreener} disabled={loading}
+            onClick={() => { setCommittedTicker(tickerFilter.trim().toUpperCase() || portfolioDefaultTicker); runScreener() }}
+            disabled={loading}
             className="px-5 py-2 text-sm font-medium border disabled:opacity-50"
             style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: 'var(--gold-dim)', borderRadius: 'var(--radius-md)' }}
           >
@@ -447,6 +462,36 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
             <div className="text-xs leading-relaxed" style={{ color: 'var(--muted)' }}>
               {meta.total_contracts} contracts · {meta.total_shares} shares · avg cost ${meta.avg_cost?.toFixed(2)} · signal {meta.signal_score}/12
             </div>
+          )}
+        </div>
+
+        {/* Row 1b: Ticker filter */}
+        <div className="flex flex-wrap gap-3 items-center">
+          <span className="text-xs uppercase tracking-wider font-mono w-20 shrink-0" style={{ color: 'var(--muted)' }}>Ticker</span>
+          <input
+            type="text"
+            value={tickerFilter}
+            onChange={e => setTickerFilter(e.target.value.toUpperCase())}
+            onKeyDown={e => {
+              if (e.key === 'Enter') { setCommittedTicker(tickerFilter.trim().toUpperCase() || portfolioDefaultTicker) }
+            }}
+            placeholder={portfolioDefaultTicker || 'AAPL'}
+            className="w-24 px-2 py-1 text-xs font-mono border focus:outline-none"
+            style={inputStyle}
+          />
+          {tickerFilter && tickerFilter !== portfolioDefaultTicker && (
+            <button
+              onClick={() => { setTickerFilter(portfolioDefaultTicker); setCommittedTicker(portfolioDefaultTicker) }}
+              className="text-xs font-mono"
+              style={{ color: 'var(--muted)', backgroundColor: 'transparent' }}
+            >
+              {portfolioDefaultTicker ? `✕ reset to ${portfolioDefaultTicker}` : '✕ clear'}
+            </button>
+          )}
+          {committedTicker && committedTicker !== (tickerFilter.trim().toUpperCase() || portfolioDefaultTicker) && (
+            <span className="text-xs font-mono" style={{ color: 'var(--muted)' }}>
+              press Enter to search
+            </span>
           )}
         </div>
 
@@ -581,7 +626,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
         <div className="px-5 py-10 text-center space-y-2">
           <p className="text-sm font-medium" style={{ color: 'var(--text)' }}>No strong candidates right now.</p>
           <p className="text-sm" style={{ color: 'var(--muted)' }}>
-            No SPY holdings found for this portfolio — add your shares in the My Positions tab to calculate contract sizing and after-tax estimates.
+            No holdings found for this portfolio — add your shares in the My Positions tab to calculate contract sizing and after-tax estimates.
           </p>
           <p className="text-xs" style={{ color: 'var(--muted)' }}>Check back after the next market session.</p>
         </div>
@@ -600,7 +645,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
             </p>
           ) : (
             <p className="text-sm" style={{ color: 'var(--muted)' }}>
-              No candidates match your current filters. Try a different DTE range, widen the delta filter, or add SPY holdings to unlock sizing.
+              No candidates match your current filters. Try a different DTE range, widen the delta filter, or add holdings to unlock sizing.
             </p>
           )}
           <p className="text-xs" style={{ color: 'var(--muted)' }}>Check back after the next market session.</p>
@@ -934,7 +979,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
 
 // ── OI Chart inner (Visx) ─────────────────────────────────────────────────────
 
-function OIChartInner({ data, width, height, spyPrice }) {
+function OIChartInner({ data, width, height, spyPrice, ticker }) {
   const { showTooltip, hideTooltip, tooltipData, tooltipLeft, tooltipTop, tooltipOpen } = useTooltip()
   const MARGIN = { top: 8, right: 16, left: 44, bottom: 22 }
   const innerW = Math.max(0, width - MARGIN.left - MARGIN.right)
@@ -992,7 +1037,7 @@ function OIChartInner({ data, width, height, spyPrice }) {
           )}
           {spyLineX !== null && (
             <text x={spyLineX + 3} y={10} fontSize={9} fill="var(--amber)">
-              SPY ${spyPrice}
+              {ticker ? `${ticker} $${spyPrice}` : `$${spyPrice}`}
             </text>
           )}
           <AxisBottom
@@ -1038,6 +1083,7 @@ function OIChartInner({ data, width, height, spyPrice }) {
 // ── OI Chart ──────────────────────────────────────────────────────────────────
 
 export function OIChart() {
+  const { apiFetch } = useAuth()
   const [expiries, setExpiries] = useState([])
   const [selectedExpiry, setSelectedExpiry] = useState(null)
   const [oiData, setOiData] = useState(null)
@@ -1045,7 +1091,7 @@ export function OIChart() {
   const [error, setError] = useState(null)
 
   useEffect(() => {
-    fetch('/api/options/expiries')
+    apiFetch('/api/options/expiries')
       .then(r => r.json())
       .then(data => {
         const list = Array.isArray(data) ? data : []
@@ -1053,14 +1099,14 @@ export function OIChart() {
         if (list.length > 0) setSelectedExpiry(list[0])
       })
       .catch(() => {})
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!selectedExpiry) return
     let cancelled = false
     setLoading(true)
     setError(null)
-    fetch(`/api/oi/chain?expiry=${selectedExpiry}`)
+    apiFetch(`/api/oi/chain?expiry=${selectedExpiry}`)
       .then(r => r.json())
       .then(data => { if (!cancelled) setOiData(data) })
       .catch(() => { if (!cancelled) setError('Could not load OI data.') })
@@ -1069,6 +1115,7 @@ export function OIChart() {
   }, [selectedExpiry])
 
   const spyPrice = oiData?.spy_price || 0
+  const oiTicker = oiData?.ticker || ''
 
   // Filter to ±15% around spot, transform for chart (puts above zero, calls below)
   const chartData = (oiData?.strikes || [])
@@ -1090,7 +1137,7 @@ export function OIChart() {
         <div>
           <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Open Interest by Strike</h2>
           <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-            Green bars above = Put OI · Red bars below = Call OI · Dashed line = SPY price · ±15% around spot
+            Green bars above = Put OI · Red bars below = Call OI · Dashed line = spot price · ±15% around spot
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">
@@ -1132,6 +1179,7 @@ export function OIChart() {
                   width={width}
                   height={height}
                   spyPrice={spyPrice}
+                  ticker={oiTicker}
                 />
               )}
             </ParentSize>

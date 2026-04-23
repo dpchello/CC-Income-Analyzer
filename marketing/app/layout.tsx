@@ -4,9 +4,9 @@ import Nav from '@/components/Nav'
 import Footer from '@/components/Footer'
 
 export const metadata: Metadata = {
-  title: 'Harvest — Find, Track, and Capture Every Covered Call Opportunity',
+  title: 'Harvest — Income from the shares you already own',
   description:
-    'Harvest turns the stocks you already own into a source of monthly income. Track covered calls, get plain-English recommendations, and collect more from your portfolio — free.',
+    'Harvest scans your portfolio, models risk, and recommends covered calls sized to your positions. Ranked by expected yield, delta, and event risk — never by commission.',
   keywords: [
     'covered call income tracker',
     'covered call portfolio tracker',
@@ -16,9 +16,9 @@ export const metadata: Metadata = {
     'sell covered calls for income',
   ],
   openGraph: {
-    title: 'Harvest — Find, Track, and Capture Every Covered Call Opportunity',
+    title: 'Harvest — Income from the shares you already own',
     description:
-      'Turn the stocks you already own into monthly income. No options experience needed.',
+      'Turn the stocks you already own into monthly income. Plain-English recommendations, no jargon, no complexity.',
     type: 'website',
   },
 }
@@ -36,13 +36,15 @@ const softwareAppSchema = {
     description: 'Free tier available. Pro at $29/month.',
   },
   description:
-    'Track and optimize covered call income from stocks you already own. Plain-English recommendations, no options experience needed.',
+    'Covered-call platform for long-term shareholders. Scans your portfolio and recommends income trades sized to your positions.',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareAppSchema) }}

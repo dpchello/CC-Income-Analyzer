@@ -1,9 +1,11 @@
 import { useState } from 'react'
+import { useAuth } from '../auth.jsx'
 
 const inputStyle = { backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)' }
 
 export default function AddHolding({ portfolioId, onAdded }) {
-  const [form, setForm] = useState({ ticker: 'SPY', shares: '', avg_cost: '', purchase_date: '' })
+  const { apiFetch } = useAuth()
+  const [form, setForm] = useState({ ticker: '', shares: '', avg_cost: '', purchase_date: '' })
   const [loading, setLoading] = useState(false)
   const [msg, setMsg] = useState(null)
 
@@ -19,14 +21,14 @@ export default function AddHolding({ portfolioId, onAdded }) {
         avg_cost: parseFloat(form.avg_cost),
         purchase_date: form.purchase_date || new Date().toISOString().slice(0, 10),
       }
-      const res = await fetch('/api/holdings', {
+      const res = await apiFetch('/api/holdings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       })
       if (res.ok) {
         setMsg({ type: 'success', text: 'Holding added.' })
-        setForm({ ticker: 'SPY', shares: '', avg_cost: '', purchase_date: '' })
+        setForm({ ticker: '', shares: '', avg_cost: '', purchase_date: '' })
         setTimeout(onAdded, 500)
       } else {
         const err = await res.json()
@@ -50,7 +52,7 @@ export default function AddHolding({ portfolioId, onAdded }) {
             type="text" className={field} style={inputStyle}
             value={form.ticker}
             onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))}
-            placeholder="SPY" required
+            placeholder="AAPL" required
           />
         </div>
         <div>

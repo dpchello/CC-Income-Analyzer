@@ -325,6 +325,91 @@ class DataFetcher:
         _cache.set(cache_key, result)
         return result
 
+    # ── Ticker-agnostic helpers (supports arbitrary underlyings) ────────────────
+
+    def get_price_for(self, ticker: str) -> float:
+        cache_key = f"price_{ticker}"
+        cached = _cache.get(cache_key)
+        if cached is not None:
+            return cached
+        try:
+            t = _ticker(ticker)
+            price = float(t.fast_info.last_price)
+        except Exception:
+            price = 0.0
+        _cache.set(cache_key, price)
+        return price
+
+    def get_screener_expiries_for(self, ticker: str, max_dte: int = 60) -> list:
+        cache_key = f"screener_expiries_{ticker}_{max_dte}"
+        cached = _cache.get(cache_key)
+        if cached:
+            return cached
+        try:
+            t = _ticker(ticker)
+            all_expiries = t.options
+            today = datetime.today().date()
+            result = [
+                e for e in all_expiries
+                if 0 <= (datetime.strptime(e, "%Y-%m-%d").date() - today).days <= max_dte
+            ]
+        except Exception:
+            result = []
+        _cache.set(cache_key, result)
+        return result
+
+    def get_options_chain_for(self, ticker: str, expiry: str) -> list:
+        cache_key = f"chain_{ticker}_{expiry}"
+        cached = _cache.get(cache_key)
+        if cached:
+            return cached
+        try:
+            t = _ticker(ticker)
+            chain = t.option_chain(expiry)
+            calls = chain.calls
+            spot = self.get_price_for(ticker)
+            exp_date = datetime.strptime(expiry, "%Y-%m-%d").date()
+            T = max((exp_date - datetime.today().date()).days, 1) / 365.0
+            available_cols = [c for c in ["strike", "bid", "ask", "lastPrice", "volume",
+                              "openInterest", "impliedVolatility"]
+                              if c in calls.columns]
+            result = calls[available_cols].to_dict("records")
+            put_oi_by_strike: dict = {}
+            try:
+                puts = chain.puts
+                if "strike" in puts.columns and "openInterest" in puts.columns:
+                    for _, row in puts[["strike", "openInterest"]].iterrows():
+                        k = round(float(row["strike"]), 2)
+                        oi = row["openInterest"]
+                        put_oi_by_strike[k] = int(oi) if oi is not None and not (isinstance(oi, float) and np.isnan(oi)) else None
+            except Exception:
+                pass
+            for row in result:
+                for k, v in list(row.items()):
+                    if isinstance(v, float) and np.isnan(v):
+                        row[k] = None
+                    elif isinstance(v, float):
+                        row[k] = round(v, 4)
+                row["put_oi"] = put_oi_by_strike.get(round(float(row.get("strike") or 0), 2))
+                iv = row.get("impliedVolatility") or 0
+                strike = row.get("strike") or 0
+                if spot > 0 and iv > 0 and strike > 0:
+                    delta, gamma, theta, vega = _bs_greeks(spot, strike, T, iv)
+                else:
+                    delta = gamma = theta = vega = None
+                row["delta"] = delta
+                row["gamma"] = gamma
+                row["theta"] = theta
+                row["vega"]  = vega
+                mid = round(((row.get("bid") or 0) + (row.get("ask") or 0)) / 2, 2)
+                intrinsic = round(max(0.0, spot - float(row.get("strike") or 0)), 2)
+                row["intrinsic_value"] = intrinsic
+                row["time_premium"]    = round(max(0.0, mid - intrinsic), 2)
+        except Exception:
+            result = []
+        _cache.set(cache_key, result)
+        return result
+
     def get_vix_recent_history(self, days: int = 10) -> list:
         """Return list of recent VIX daily closes, oldest first."""
         cache_key = f"vix_recent_{days}"

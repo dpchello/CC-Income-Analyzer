@@ -710,6 +710,406 @@ Your options:
 
 ---
 
+### PIPE-REC-01 · Strategy definitions — rules, scoring, templates
+**Status:** `pending`
+**Description:** Define the full logic for all five strategies in the backend so PIPE-REC-02 can use them as its rule engine. This is not just a config endpoint — each strategy governs how the recommendation engine filters, scores, generates action strings, and selects thesis templates.
+
+**What each strategy defines:**
+
+- **Filter thresholds:** `maxDelta`, `minIvr`, `minYield` — already drafted in the frontend `STRATEGIES` const. These gate which strikes are eligible.
+- **Target DTE window:** each strategy has a preferred DTE range. Wheel → 21–45 DTE; Income → 14–35 DTE; Safe → 30–60 DTE; Watch → 21–45 DTE; Custom → 7–60 DTE. The endpoint should select the best expiry within this window, not just "nearest month."
+- **Scoring weight vectors:** the existing screener composite score is `Signal 25 + Yield 30 + Delta 20 + DTE 25`. Strategies shift these weights. Define as explicit weight dicts per strategy:
+  | Strategy | w_signal | w_yield | w_delta | w_dte |
+  |---|---|---|---|---|
+  | wheel   | 25 | 30 | 20 | 25 |
+  | income  | 15 | 40 | 15 | 30 |
+  | safe    | 30 | 20 | 30 | 20 |
+  | watch   | 25 | 25 | 20 | 30 |
+  | custom  | 25 | 30 | 20 | 25 |
+- **Conviction mapping:** Score 0–100 maps to conviction label: ≥ 80 = High, 60–79 = Med, < 60 = Low. The conviction filter in the frontend is client-side but conviction labels are computed on the backend. The scoring formula for each component is:
+  ```
+  s_signal = max(0.0, market_signal_score) / 12 * w_signal
+  s_yield  = min(annYield / (strategy.minYield * 2.0), 1.0) * w_yield
+             # full marks at 2× the strategy's minimum yield threshold
+             # (replaces the hardcoded 0.70% raw yield cap in the screener)
+  s_delta  = (1 - delta / strategy.maxDelta) * w_delta
+  s_dte    = dte_score(dte, strategy.dte_window) * w_dte
+             # peaks at midpoint of strategy.dte_window, tapers to 0 at edges
+  composite_score = round(s_signal + s_yield + s_delta + s_dte)  # 0–100
+  ```
+- **Action string template:** e.g. `"Sell {contracts}× {expiry_short} ${strike} Call"` where `expiry_short` = "Jun 20", `strike` = formatted with no decimal if whole number.
+- **Thesis template:** 2–3 sentence fill-in-the-blank, plain English, no jargon. Include: current IV context (high/moderate/low relative to strategy threshold), strike distance from spot as %, DTE, expected income. Template example for Wheel: `"{ticker} IV is {iv_context} at {iv_pct}%. The ${strike} strike is {distance_pct}% above the current price with {dte} days until expiry, giving you time to collect ${premium_per_contract}/contract."` Define one template per strategy as a string with `.format(**metrics)` substitution.
+- **Tag derivation rules:** Tags are derived from computed metrics, not hardcoded. Define as a helper `_derive_tags(ticker_metrics, strategy)`:
+  - `HIGH IV` — current IV > 60% (or > strategy.minIvr × 1.5)
+  - `EARNINGS BUFFER` — next earnings date is after the expiry date (requires earnings date from yfinance `ticker.calendar`)
+  - `NEAR RESISTANCE` — strike is within 3% of 52-week high (requires `ticker.info['fiftyTwoWeekHigh']`)
+  - `STRONG TREND` — spot price is above its 50-day moving average
+  - `PEAK DECAY WINDOW` — DTE is 14–28 (theta accelerates fastest here)
+  - `POST-EARNINGS` — earnings were within the last 10 trading days
+
+**Conviction scoring is the prerequisite for everything downstream.** The Recommendations tab conviction filter chip only works if the backend sends a `conviction` field on each rec. That field is derived entirely from `composite_score` using the formula above.
+
+**Backend output:** `STRATEGY_PRESETS` dict + `GET /api/strategies` endpoint (trivial — returns the dict). The scoring formula, weight vectors, templates, and tag rules are the actual deliverable. The endpoint is just exposure.
+
+**Decision required before build — IV proxy for individual stocks:** The `minIvr` filter references "IV rank" — but the existing `fetcher.get_vix_history()` returns SPY/VIX IV rank only. Individual stocks each have their own IV history. For v1, use the **current at-the-money implied volatility from the options chain as the IV proxy** — no historical rank, just raw current IV%. The strategy `minIvr` thresholds should be re-calibrated against raw IV% ranges (e.g., minIvr: 20 means "current IV ≥ 20%"). This is a simplification but it works fine for v1. Document this decision in the implementation notes.
+
+**Scope:** `backend/main.py` — `STRATEGY_PRESETS` dict, `_build_thesis(ticker, strategy_id, metrics)` helper, `_derive_tags(ticker, strategy_id, metrics)` helper, `GET /api/strategies` endpoint. `frontend/src/components/Recommendations.jsx` — replace `STRATEGIES` const with an API fetch.
+**Depends on:** nothing — this is the prerequisite for PIPE-REC-02.
+
+---
+
+### PIPE-REC-02 · Recommendations engine — backend endpoint + frontend wiring
+**Status:** `pending`
+**Description:** Build the `GET /api/recommendations` endpoint that powers the Recommendations tab. This is the core product promise: given a user's holdings and a strategy, return ranked covered call opportunities across all their tickers. Currently the tab shows mock data.
+
+**What already exists (do not reinvent):**
+- `fetcher.get_options_chain_for(ticker, expiry)` — fetches full call chain for any ticker. Already used in the screener.
+- `fetcher.get_price_for(ticker)` — spot price for any ticker.
+- `fetcher.get_screener_expiries_for(ticker, max_dte)` — returns available expiry dates within a DTE range.
+- `db.get_holdings(user_id, portfolio_id=None)` — passing `None` returns all holdings across all portfolios.
+- The composite score formula — `Signal 25 + Yield 30 + Delta 20 + DTE 25` — already in the screener endpoint. Reuse it with strategy-specific weight vectors from PIPE-REC-01.
+
+**Critical constraint — share ownership gate (covered calls require 100 shares per contract):**
+
+You cannot sell a covered call without owning the underlying shares. The recommendations engine must gate on this before any scoring:
+
+```python
+# For each unique ticker in the portfolio:
+ticker_holdings = [
+    h for h in all_holdings
+    if h.get("ticker", "").upper() == ticker
+    and h.get("category") in (None, "long_stock", "long", "equity")
+]
+total_shares = sum(h.get("shares", 0) for h in ticker_holdings)
+total_contracts = int(total_shares // 100)   # 150 shares = 1 contract, not 1.5
+
+# Subtract already-written covered call contracts for this ticker
+open_calls = [
+    p for p in open_positions
+    if p.get("ticker", "").upper() == ticker
+    and p.get("status") == "open"
+    and p.get("category") in (None, "covered_call")
+]
+written_contracts = sum(int(p.get("contracts", 0)) for p in open_calls)
+free_contracts = max(0, total_contracts - written_contracts)
+
+# Skip entirely if user can't write even one contract
+if free_contracts == 0:
+    continue   # ticker appears in dot plot as ineligible dot, not in recs
+```
+
+This also means: if a user holds 80 shares of GOOGL, GOOGL will appear on the dot plot (so they can see the opportunity) but its dot will be ineligible and it will not appear in the ranked cards. The dot label should include a sub-label: "(80 shares — need 100)". This is a design decision to flag in the UI.
+
+**New work — the recommendation loop:**
+```
+1. Load holdings: db.get_holdings(user_id, portfolio_id or None)
+2. Load open positions: db.get_open_positions(user_id) — for written-contract deduction
+3. Deduplicate holdings by ticker, sum shares across portfolios if portfolio_id=all
+4. For each unique ticker:
+   a. Apply share ownership gate (above) — skip if free_contracts == 0
+   b. Fetch spot price via fetcher.get_price_for(ticker)
+   c. Get available expiries via fetcher.get_screener_expiries_for(ticker, strategy.max_dte)
+   d. Select target expiry: nearest expiry within strategy.dte_window (21–45 for wheel etc.)
+   e. Fetch call chain via fetcher.get_options_chain_for(ticker, target_expiry)
+   f. Find "best strike": call closest to strategy.maxDelta without exceeding it
+   g. If no valid strike: add as ineligible dot, skip rec
+   h. Compute metrics:
+      mid = (bid + ask) / 2
+      annYield = (mid / spot) * (365 / dte) * 100
+      current_iv = row.get("impliedVolatility", 0) * 100   # as a %
+      pop = round((1 - delta) * 100)   # approximation; see P.O.P. note below
+      premium_total = mid * free_contracts * 100
+   i. Compute eligibility: delta ≤ maxDelta AND current_iv ≥ minIvr AND annYield ≥ minYield
+   j. Build dot: { id, sym, x=mid/spot*100, y=annYield, delta, ivr=current_iv, eligible }
+   k. If eligible: compute composite score (PIPE-REC-01 formula), build rec
+5. Sort recs by score descending
+6. Return { meta: { updatedAt, eligibleCount }, dots, recs }
+```
+
+**P.O.P. — Probability of Profit:**
+
+P.O.P. for a short covered call = probability the call expires worthless = probability the stock stays below the strike at expiry. This is what lets you keep 100% of the premium.
+
+**Mathematical definition:** P.O.P. = N(−d₂) from Black-Scholes, where:
+```
+d₂ = (ln(S/K) + (r − q − σ²/2) × T) / (σ × √T)
+P.O.P. = N(−d₂) = 1 − N(d₂)
+```
+`d₂` is already computed inside `_bs_greeks()` in `data_fetcher.py` (as local variable `d2`). `nd2 = _ncdf(d2)` is also already computed. The backend just doesn't expose these.
+
+**For v1:** Use the close approximation `P.O.P. ≈ round((1 − delta) * 100)`. This is `N(−d₁)` not `N(−d₂)`, but d₂ is only slightly less than d₁ (differs by σ√T, typically 2–5% for 30-day options). The approximation error is 1–3 percentage points — acceptable for display.
+
+**For v2 (exact):** Add a new helper in `data_fetcher.py`:
+```python
+def _bs_pop(S, K, T, sigma, r=0.043, q=0.012) -> Optional[float]:
+    """Exact P.O.P. = N(-d2) for a short call."""
+    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        return None
+    d1 = (math.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    return round(_ncdf(-d2) * 100, 1)
+```
+This does not change `_bs_greeks` signature (no callers affected) and gives exact N(−d₂) values.
+
+**Conviction mapping:** High = score ≥ 80, Med = score 60–79, Low = score < 60. Applied on the backend so the conviction filter in the frontend is a true client-side filter against a pre-labeled field.
+
+**Portfolio scoping:** `portfolio_id=all` (or absent) → `db.get_holdings(user_id, portfolio_id=None)`. `portfolio_id=<id>` → `db.get_holdings(user_id, portfolio_id=id)`. No new infrastructure needed.
+
+**Performance:** This endpoint calls `get_options_chain_for()` for each unique ticker. On a 10-ticker portfolio that is 10 chain fetches. The fetcher already caches at 60s TTL so repeat calls within a minute are free. Add `@lru_cache` or the existing TTL cache on `get_screener_expiries_for` if not already cached.
+
+**Frontend wiring after backend ships:**
+- Remove the mock data fallback in `Recommendations.jsx` (the `catch` block that sets `MOCK_*`).
+- In `App.jsx`, add a `/api/recommendations?portfolio=all&strategy=wheel` call to `fetchAll()` and set `recCount = data.recs.length`. This drives the sidebar badge.
+
+**Scope:** `backend/main.py` (new `GET /api/recommendations` endpoint, reuse screener helpers), `frontend/src/components/Recommendations.jsx` (remove mock fallback), `frontend/src/App.jsx` (add to `fetchAll`, wire `recCount`).
+**Depends on:** PIPE-REC-01 (strategy rules + templates must be defined first).
+
+---
+
+### PIPE-REC-03 · Portfolio dropdown scoping — connect to real endpoint
+**Status:** `pending`
+**Description:** The portfolio dropdown is already built with grouped sections (All portfolios / My Portfolios / Brokerages) — this was implemented when the Recommendations tab was built. What remains is connecting the dropdown selection to the real recommendations endpoint once PIPE-REC-02 ships, and verifying the `portfolio_id=all` logic works end-to-end.
+
+**What the frontend already does (implemented):**
+- Dropdown renders "All portfolios" at top, then "My Portfolios" section (custom portfolios, no `brokerage_name`), then "Brokerages" section (portfolios with `brokerage_name` from SnapTrade import).
+- Each entry shows holding count derived from the `holdings` prop.
+- Selecting a portfolio stores the ID in `localStorage('harvest.recs')` and passes it to the API call.
+
+**What still needs to happen in PIPE-REC-03:**
+- In `backend/main.py`: handle `portfolio_id=all` in the recommendations endpoint — when this value is received, call `db.get_holdings(user_id, portfolio_id=None)` (no filter). All other values filter to that specific portfolio.
+- Verify that switching portfolios updates the dot count and card count simultaneously (QA checklist item).
+- The `sub` text on each entry shows holding counts from the prop — verify these counts accurately reflect what the backend will return for that portfolio scope.
+
+**What is NOT in this pipe:** The watchlist (`watch`) scope. That belongs in PIPE-REC-07 and is blocked on the Watchlist feature.
+
+**Scope:** `backend/main.py` (handle `portfolio_id=all` → `None` mapping), QA verification of portfolio switching.
+**Depends on:** PIPE-REC-02.
+
+---
+
+### PIPE-REC-04 · "Custom" strategy — Tune drawer with sliders
+**Status:** `pending`
+**Description:** The Custom strategy preset currently passes through with no filters (maxDelta=0.50, minIvr=0, minYield=0), making it a "show everything" dump. It needs a "Tune" button that opens a slide-in drawer with three sliders so users can define their own thresholds.
+
+**What it entails:**
+- A "Tune ›" link appears next to the strategy dropdown only when `strategy === 'custom'`.
+- Clicking it opens a right-side drawer (overlay, not a modal) with three range inputs:
+  - Max delta: 0.10–0.50, step 0.01, default 0.30. Display format: `0.{nn}` delta.
+  - Min IV: 0–80, step 5. Display format: `{n}%` current IV.
+  - Min yield: 0–40%, step 1. Display format: `{n}% ann. yield`.
+- Sliders update the filter in real-time (debounced 400ms before triggering a refetch).
+- Custom thresholds are saved to `localStorage` under `harvest.recs.customFilt` and restored on mount.
+- The strategy dropdown trigger shows the user's custom thresholds as the subtitle: e.g. "δ ≤ 0.28 · IV ≥ 30 · Yield ≥ 15%".
+
+**Scope:** `frontend/src/components/Recommendations.jsx` — `CustomTuneDrawer` component, `customFilt` state, pass overridden thresholds to the strategy object before sending to the API.
+**Depends on:** PIPE-REC-02 (needs the endpoint to test live filter changes).
+
+---
+
+### PIPE-REC-05 · "Details" button — deep-link to position card in My Positions
+**Status:** `pending`
+**Description:** The "Details" button on each recommendation card should navigate to My Positions and highlight the open position for that ticker. Currently it just navigates to the Portfolios tab root with no scroll or highlight.
+
+**What this requires on the Portfolios side:** The `navigate('Portfolios', { sym: 'AAPL' })` call already exists in App.jsx's `navigate()` function (it handles `params`), but `Portfolios.jsx` doesn't read the `sym` param. The fix is to accept a `highlightSym` prop in Portfolios.jsx and, on mount or when it changes, scroll the matching position card into view and apply a highlight ring to it. Use a ref map on position cards (same pattern as the dot-plot → card scroll in Recommendations).
+
+**Specifically:**
+- `App.jsx` — pass `highlightSym` to `<Portfolios />` from the `screenerTicker`-style state.
+- `Portfolios.jsx` — read `highlightSym` prop, apply a `border-color: var(--acid)` highlight ring to that card, scroll it into view on mount.
+- `Recommendations.jsx` — update "Details" onClick to `onNavigate('Portfolios', { sym: rec.sym })`.
+
+**Scope:** `frontend/src/App.jsx` (add `highlightSym` state, pass to Portfolios), `frontend/src/components/Portfolios.jsx` (read prop, scroll + highlight), `frontend/src/components/Recommendations.jsx` (update onClick).
+**Depends on:** nothing blocking — pure frontend.
+
+---
+
+### PIPE-REC-06 · "Trade →" button — pre-fill Add Position form
+**Status:** `pending`
+**Description:** The "Trade →" button on each recommendation card should open the Add Position form pre-filled with the ticker, strike, expiry, and contract count from that recommendation. Currently it navigates to the Screener with just the ticker — the user still has to fill in everything manually.
+
+**What this entails:** No new component is needed. The existing `AddPosition.jsx` modal already takes form fields. The path is:
+- `Recommendations.jsx` calls `onNavigate('Portfolios', { openAddPosition: { sym, strike, expiry, contracts } })`.
+- `App.jsx` passes this as a `prefillPosition` prop to Portfolios.
+- `Portfolios.jsx` detects `prefillPosition` on mount and opens the Add Position modal with those fields pre-populated.
+
+**Note on "broker routing":** Harvest does not execute trades — it records positions you've already placed. "Trade →" means "I'm about to do this trade, help me record it." The button label could be updated to "Record trade →" for clarity.
+
+**Scope:** `frontend/src/App.jsx` (route param for `prefillPosition`), `frontend/src/components/Portfolios.jsx` (accept `prefillPosition` prop, open modal with fields filled), `frontend/src/components/Recommendations.jsx` (update Trade → onClick to pass full rec data).
+**Rationale:** "Trade →" is the highest-intent action on the tab. If it drops the user at a blank form, the recommendation data is wasted. Pre-filling removes friction at the exact moment the user has decided to act.
+
+---
+
+### PIPE-REC-07 · Watchlist scope in Recommendations (blocked)
+**Status:** `pending`
+**Description:** The handoff spec includes a `watch` portfolio scope — symbols from the user's watchlist that they do not own, shown as ideas-only mode (dot appears, but "Trade →" is disabled and stat row shows "No position — ideas only"). This is entirely blocked on the Watchlist feature not yet existing.
+
+**What needs to exist first:** A way to save and retrieve a list of tickers the user is watching but doesn't own. Once Watchlist ships (currently a PlaceholderScreen), the path is:
+- Backend: `GET /api/recommendations?portfolio=watch` → load tickers from watchlist table instead of holdings. `contracts = 0` for all of them. `premium = null`. The dot plot renders them with open circles + dashed border to distinguish from owned holdings.
+- Frontend: Add `watch` entry to `portfolioList` in `Recommendations.jsx`. Cards for watchlist tickers render without the stat row and Trade button; show "Add to positions first to trade" instead.
+
+**Do not start this until Watchlist is built.** No blocking work can be done here.
+
+---
+
+### PIPE-REC-08 · Sort-by dropdown on ranked cards (low priority)
+**Status:** `pending`
+**Description:** The ranked cards section header currently shows "Sorted by score" as static text. This should be a small dropdown: Score / Ann. yield / P.O.P. / Premium $. Client-side sort only — no refetch required.
+
+**What it entails:** Add `sortBy` state (`'score' | 'yield' | 'pop' | 'premium'`), a small dropdown trigger on the "Sorted by score" text (ghost button, same chevron pattern as the other dropdowns), and a `sortFn` that sorts `filteredRecs` before rendering. Each sort key maps to a rec field: score → `rec.score`, yield → `rec.annYield`, pop → `rec.pop`, premium → `rec.premium ?? 0`.
+
+**Scope:** `frontend/src/components/Recommendations.jsx` only.
+**Rationale:** Pure frontend, low complexity. Useful for yield-focused users who want to see highest-income ideas first rather than highest-composite-score. Low priority — ship after PIPE-REC-02 is live and the tab has real data to sort.
+
+---
+
+### PIPE-REC-09 · Strategy backtesting — historical success rates
+**Status:** `pending`
+**Description:** Run each of the five strategy presets against historical price data to measure real success rates: how often does each strategy's recommended strike expire worthless, what the typical annualized yield was in practice, and where each strategy breaks down. Results feed into the conviction scoring model (PIPE-REC-01) and give users evidence that the strategies work before they commit real money.
+
+**What "success" means for a covered call:**
+- **Max profit** — stock closed below the strike at expiry. User keeps 100% of the premium.
+- **Near miss** — stock barely closed above strike (within 2%). Realistic scenario where a trader closes early at ~50% profit rather than risk assignment.
+- **Assignment** — stock closed above strike. Shares are called away at the strike price. Not a loss — user sold shares at a pre-agreed price and kept the premium — but upside was capped.
+- **Loss** — stock spiked far enough through the strike that the buy-back cost exceeded the premium collected. Rare for OTM covered calls at 0.25–0.32 delta but possible in earnings spikes.
+
+**What data is available:**
+yfinance `ticker.history(period="2y")` gives 2 years of daily OHLCV for any ticker. This is free and already in the fetcher infrastructure. **Historical IV chains are not freely available** — the backtest uses rolling 30-day realized volatility as an IV proxy. This means estimated premiums are conservative lower bounds (realized vol < implied vol on average, due to the volatility risk premium). Document this clearly in the UI.
+
+**The simulation loop — per ticker, per strategy:**
+```python
+for entry_date in history.index[::5]:   # every 5 trading days (weekly entry)
+    spot = history.loc[entry_date, "Close"]
+    rv = rolling_30d_vol(history, entry_date)    # realized vol as IV proxy
+    if rv * 100 < strategy.minIvr: continue      # skip if IV below strategy threshold
+
+    target_dte = midpoint(strategy.dte_window)   # e.g. 33 days for wheel (21-45)
+    expiry_date = nearest_friday(entry_date + timedelta(days=target_dte))
+
+    strike = find_strike_at_delta(spot, rv, target_dte/365, strategy.maxDelta)
+    mid = bs_call_price(spot, strike, target_dte/365, rv)
+    ann_yield = (mid / spot) * (365 / target_dte) * 100
+
+    if ann_yield < strategy.minYield: continue   # skip if yield below threshold
+    if expiry_date not in history.index: continue
+
+    expiry_price = history.loc[expiry_date, "Close"]
+    if expiry_price <= strike:
+        outcome, pnl = "max_profit", mid * 100
+    elif expiry_price <= strike * 1.02:
+        outcome, pnl = "near_miss", mid * 100 * 0.50
+    else:
+        # Assignment: sold shares at strike, kept premium, missed upside above strike
+        outcome, pnl = "assignment", (strike - spot + mid) * 100
+
+    results.append({ ticker, strategy_id, entry_date, expiry_date, strike,
+                     spot, mid, ann_yield, rv, outcome, pnl })
+```
+
+**Helper functions needed in `backend/backtest.py`:**
+
+```python
+def rolling_30d_vol(prices: pd.Series, as_of: date, window: int = 30) -> float:
+    """Annualized realized vol from 30-day daily log returns ending on as_of."""
+    subset = prices.loc[:as_of].tail(window + 1)
+    log_ret = np.log(subset / subset.shift(1)).dropna()
+    return float(log_ret.std() * np.sqrt(252))
+
+def find_strike_at_delta(spot, sigma, T, target_delta, r=0.043, q=0.012) -> float:
+    """Binary search for the OTM call strike that produces target_delta."""
+    lo, hi = spot, spot * 1.50
+    for _ in range(40):
+        k = (lo + hi) / 2
+        d, *_ = _bs_greeks(spot, k, T, sigma, r, q)
+        if d is None: break
+        if d > target_delta: lo = k
+        else: hi = k
+    return round((lo + hi) / 2, 2)
+
+def bs_call_price(S, K, T, sigma, r=0.043, q=0.012) -> float:
+    """Black-Scholes theoretical call price (no bid/ask spread modeled)."""
+    if T <= 0 or sigma <= 0: return 0.0
+    d1 = (math.log(S/K) + (r - q + 0.5*sigma**2)*T) / (sigma*math.sqrt(T))
+    d2 = d1 - sigma * math.sqrt(T)
+    return round(S*math.exp(-q*T)*_ncdf(d1) - K*math.exp(-r*T)*_ncdf(d2), 2)
+```
+`_bs_greeks` and `_ncdf` are already in `data_fetcher.py` — import them rather than duplicating.
+
+**Metrics to compute per strategy (aggregated across all tickers and time):**
+- **Max profit rate** — % of trades where option expired worthless (actual realized P.O.P.)
+- **Assignment rate** — % of trades where stock closed above strike
+- **Average realized annualized yield** — actual premiums collected, annualized
+- **Average net P&L per trade** — weighted across all outcomes
+- **Worst rolling 3-month period** — window with lowest max-profit rate (shows regime sensitivity)
+- **Win rate above/below VIX 20** — split outcomes by VIX level on entry date to validate whether the signal engine's regime filter actually improves outcomes when followed
+
+**Endpoint:** `GET /api/backtest?strategy=wheel&lookback=365`
+- Runs the simulation across all of the requesting user's holdings tickers (or a supplied `tickers=AAPL,MSFT` param).
+- Results cached per `(strategy_id, ticker_set_hash, lookback_days)` with 24-hour TTL — each run makes multiple yfinance history calls.
+- Returns: `{ strategy_id, tickers, lookback_days, trades_simulated, max_profit_rate, assignment_rate, avg_ann_yield, avg_pnl_per_trade, worst_3m_period, by_vix_regime, monthly_outcomes[] }`
+
+**Frontend — StrategyPerformance section in Recommendations.jsx:**
+- Collapsed panel below the ranked cards, toggle with "See how this strategy has performed →".
+- Shows a compact stats row: `{max_profit_rate}% max profit · {avg_ann_yield}% avg yield · {assignment_rate}% assignment · {n} simulated trades`.
+- Expands to a monthly bar chart (green = max profit, amber = near-miss, red = assignment) over the lookback window.
+- Disclaimer at the bottom: *"Estimated using Black-Scholes with realized volatility. Actual premiums are typically higher (implied > realized). Assignment is not a loss — it means your shares sold at the price you agreed to. Past simulation results do not predict future performance."*
+
+**Important limitations to document:**
+1. Realized vol understates actual IV — backtest premiums are conservative lower bounds.
+2. No bid/ask spread modeled — real yield is 5–15% lower per trade due to slippage.
+3. Weekly entries don't reflect the signal engine's timing filter — the actual app recommends entries only when regime is SELL PREMIUM. The backtest's "win rate above/below VIX 20" metric approximates this.
+4. Assignment outcomes depend heavily on what the user does with their shares — some users are happy to sell, others aren't. Show assignment rate prominently but don't label it "loss."
+
+**Scope:** `backend/backtest.py` (new), `backend/data_fetcher.py` (add `get_historical_prices(ticker, period)`), `backend/main.py` (`GET /api/backtest` endpoint), `frontend/src/components/Recommendations.jsx` (StrategyPerformance collapsible section).
+**Depends on:** PIPE-REC-01 (strategy definitions must include `dte_window`). Does **not** depend on PIPE-REC-02 — the backtest runs independently of the live recommendations engine.
+**Rationale:** Users are being asked to trust five strategy presets with real money. Showing "Wheel strategy: 76% max profit rate across 104 simulated AAPL trades over 2 years" makes the conviction scores credible and gives new users a reason to trust the app before they've logged a single real trade.
+
+---
+
+### PIPE-REC-10 · "My Available Shares" strategy — portfolio-scoped inventory view
+**Status:** `pending`
+**Description:** A new strategy preset — "My Available Shares" — that shows every covered call a user can write today against their selected portfolio, with no yield or IV floor. It is the default strategy when the Recommendations tab loads. Cards are ranked by composite score (same formula as all other strategies) and carry the standard High/Med/Low conviction labels. Its unique role is removing the eligibility gates so every writable position appears, letting the score tell the user how good each opportunity actually is.
+
+**Frontend (already done):** "My Available Shares" is already in the `STRATEGIES` const in `Recommendations.jsx` with `id: 'available'`, first in the list and the default selected strategy. The `filt` object has `maxDelta: 0.40, minIvr: 0, minYield: 0`. The strategy dropdown shows "Everything you can write today" as the subtitle.
+
+**What the backend must do differently for `strategy_id = 'available'`:**
+
+1. **Ticker universe is strictly the selected portfolio's holdings.** For `available`, the universe is exactly and only the tickers in `db.get_holdings(user_id, portfolio_id)` where `category` is `long_stock` (or equivalent) and `floor(shares / 100) >= 1`. No additional tickers are added regardless of portfolio scope. Other strategies may in future draw from a broader universe (e.g. watchlist for the `watch` strategy).
+
+2. **Skip the `minIvr` and `minYield` gates entirely.** Every holding with ≥1 free contract gets a dot on the plot and a card in the results, even if current IV is low or the yield is modest. The user should see AAPL even if IV is only 18% — they own the shares and can write a call regardless of whether conditions are ideal. Dots are still marked eligible/ineligible on the plot, but "ineligible" for `available` only means `free_contracts == 0` (all contracts already written), not that yield or IV is below a threshold.
+
+3. **Rank cards by composite score, descending — same as all other strategies.** The score tells the user how good each opportunity is right now. A Low-conviction AAPL card still shows up; the conviction label explains why conditions aren't ideal. Conviction thresholds are standard: High ≥ 80, Med 60–79, Low < 60.
+
+4. **Show "available contracts" prominently in the action string.** The action string should be: `"Sell {free_contracts}× {expiry} ${strike} Call"`. The thesis should mention how many contracts are free vs total: *"You have {total_contracts} contracts available ({free_contracts} unwritten). Current IV is {iv_context} at {iv_pct}%..."*. If all contracts are already written, the card does not appear — only the ineligible dot on the plot.
+
+**The "already fully written" case:**
+If a user owns 200 shares of MSFT (2 contracts) and already has 2 open covered calls on MSFT, MSFT appears on the dot plot with an ineligible dot labeled "2/2 written" and does not appear in the ranked cards. This is the single most important piece of information the `available` strategy communicates — users can see at a glance what they've already covered vs what still has room.
+
+**Example of what a ranked card looks like under `available`:**
+```
+AAPL                          Med   score 64          +$620 total
+Sell 2× Jun 20 $205 Call
+Ann. yield 24%   P.O.P. 75%   Δ 0.25
+You have 5 contracts total, 3 already written. Current IV is moderate at 38%.
+These 2 remaining contracts could earn $620 before Jun 20 — conditions are decent
+but not peak. Consider waiting if IV rises before the next expiry cycle.
+[MODERATE IV]  [3 ALREADY WRITTEN]       Details    Write calls →
+```
+
+**Dot plot behavior under `available`:**
+- Holdings with ≥1 free contract → filled dot (eligible), regardless of yield/IV
+- Holdings with 0 free contracts (all written) → outlined dot, labeled "written" in muted type
+- Holdings with < 100 shares → outlined dot, labeled "< 100 shares"
+- The eligible zone shading still renders for reference, but it is informational only — it does not gate which dots are filled
+
+**Scope:**
+- `frontend/src/components/Recommendations.jsx` — strategy already added to `STRATEGIES` const. The `available` strategy's unique dot-plot eligibility logic (ineligible = 0 free contracts, not below yield threshold) needs to be communicated via the API response `eligible` flag once PIPE-REC-02 ships.
+- `backend/main.py` — `GET /api/recommendations` must detect `strategy_id == 'available'` and: skip minIvr/minYield gates; set `eligible = (free_contracts > 0)` on dots; include "already written" tickers as ineligible dots with a `reason: "all_written"` field; rank by composite score.
+- `backend/main.py` (PIPE-REC-01 addition) — Add `available` to `STRATEGY_PRESETS` with `dte_window: [21, 45]`, `maxDelta: 0.40`, `minIvr: 0`, `minYield: 0`, scoring weights same as wheel, and `portfolio_scoped_only: true`.
+
+**Depends on:** PIPE-REC-02 (the recommendations endpoint must exist before the special `available` logic can be implemented server-side). The frontend dropdown entry is already live.
+**Rationale:** New users opening the Recommendations tab for the first time don't know which strategy to pick. Landing on "My Available Shares" gives them an immediate, concrete answer: here are your holdings, here is what you can write today, here is how good each opportunity is right now. The conviction label does the work of telling them whether to act — they don't need to understand IV thresholds to read a High vs Low badge.
+
+---
+
 ### PIPE-031 · SnapTrade Credentials + snaptrade_raw Table (Supabase follow-on)
 **Status:** `done`
 **Description:** After PIPE-030 ships, add the SnapTrade-specific Supabase tables required by PIPE-034.

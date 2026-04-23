@@ -6,8 +6,8 @@ numpy
 python-dotenv
 requests
 aiofiles
-sqlmodel
 python-jose[cryptography]
-passlib[bcrypt]
 bcrypt
 duckdb
+supabase
+snaptrade-python-sdk

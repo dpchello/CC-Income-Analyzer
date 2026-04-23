@@ -50,33 +50,41 @@ export default function FaqAccordion() {
   const [open, setOpen] = useState<number | null>(null)
 
   return (
-    <section className="mx-auto max-w-3xl px-6 py-20">
+    <section style={{ padding: '96px 36px', borderTop: '1px solid var(--line)' }}>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(faqSchema) }}
       />
-      <h2 className="mb-10 text-center text-3xl font-bold text-[var(--text)]">
-        Common questions
-      </h2>
-      <div className="flex flex-col gap-3">
-        {faqs.map((faq, i) => (
-          <div key={i} className="panel overflow-hidden">
-            <button
-              className="flex w-full items-center justify-between px-6 py-5 text-left"
-              onClick={() => setOpen(open === i ? null : i)}
-            >
-              <span className="font-semibold text-[var(--text)]">{faq.q}</span>
-              <span className="ml-4 shrink-0 text-[var(--amber)] text-lg">
-                {open === i ? '−' : '+'}
-              </span>
-            </button>
-            {open === i && (
-              <div className="border-t border-[var(--border)] px-6 py-5 text-sm leading-relaxed text-[var(--muted)]">
-                {faq.a}
-              </div>
-            )}
-          </div>
-        ))}
+      <div style={{ maxWidth: 720, margin: '0 auto' }}>
+        <div className="eyebrow" style={{ marginBottom: 16, textAlign: 'center' }}>Common questions</div>
+        <h2 className="display" style={{ fontSize: 40, letterSpacing: '-0.03em', fontWeight: 500, textAlign: 'center', margin: '0 0 48px', color: 'var(--fg)' }}>
+          Frequently asked
+        </h2>
+        <div style={{ display: 'flex', flexDirection: 'column' }}>
+          {faqs.map((faq, i) => (
+            <div key={i} style={{ borderTop: '1px solid var(--line)' }}>
+              <button
+                onClick={() => setOpen(open === i ? null : i)}
+                style={{
+                  display: 'flex', width: '100%', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '20px 0', textAlign: 'left', background: 'none', border: 'none',
+                  cursor: 'pointer', gap: 16,
+                }}
+              >
+                <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--fg)', lineHeight: 1.4 }}>{faq.q}</span>
+                <span style={{ flexShrink: 0, color: 'var(--acid)', fontFamily: 'var(--mono)', fontSize: 16, lineHeight: 1 }}>
+                  {open === i ? '−' : '+'}
+                </span>
+              </button>
+              {open === i && (
+                <div style={{ paddingBottom: 20, paddingTop: 4 }}>
+                  <p style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--fg-dim)', margin: 0 }}>{faq.a}</p>
+                </div>
+              )}
+            </div>
+          ))}
+          <div style={{ borderTop: '1px solid var(--line)' }} />
+        </div>
       </div>
     </section>
   )

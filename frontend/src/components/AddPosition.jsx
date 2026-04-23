@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useAuth } from '../auth.jsx'
 
 const inputStyle = {
   backgroundColor: 'var(--bg)',
@@ -6,10 +7,12 @@ const inputStyle = {
   color: 'var(--text)',
 }
 
-export default function AddPosition({ onAdded }) {
+export default function AddPosition({ onAdded, holdings }) {
+  const { apiFetch } = useAuth()
   const [expiries, setExpiries] = useState([])
+  const holdingTickers = [...new Set((holdings || []).map(h => h.ticker).filter(Boolean))]
   const [form, setForm] = useState({
-    ticker: 'SPY', type: 'short_call', strike: '', expiry: '',
+    ticker: holdingTickers[0] || '', type: 'short_call', strike: '', expiry: '',
     contracts: 6, sell_price: '', premium_collected: '',
   })
   const [loading, setLoading] = useState(false)
@@ -17,7 +20,7 @@ export default function AddPosition({ onAdded }) {
   const [msg, setMsg] = useState(null)
 
   useEffect(() => {
-    fetch('/api/options/expiries').then(r => r.json()).then(data => {
+    apiFetch('/api/options/expiries').then(r => r.json()).then(data => {
       setExpiries(data)
       if (data.length > 0) setForm(f => ({ ...f, expiry: data[0] }))
     }).catch(() => {})
@@ -27,7 +30,7 @@ export default function AddPosition({ onAdded }) {
     if (!form.expiry || !form.strike) return
     setFetching(true)
     try {
-      const res = await fetch(`/api/options/price?expiry=${form.expiry}&strike=${form.strike}&type=call`)
+      const res = await apiFetch(`/api/options/price?expiry=${form.expiry}&strike=${form.strike}&type=call`)
       const data = await res.json()
       if (data.price) setForm(f => ({ ...f, sell_price: data.price.toFixed(2) }))
     } catch (_) {}
@@ -51,7 +54,7 @@ export default function AddPosition({ onAdded }) {
         sell_price: parseFloat(form.sell_price),
         premium_collected: parseFloat(form.premium_collected) || parseFloat(form.sell_price) * parseInt(form.contracts) * 100,
       }
-      const res = await fetch('/api/positions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      const res = await apiFetch('/api/positions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       if (res.ok) { setMsg({ type: 'success', text: 'Position added.' }); setTimeout(onAdded, 600) }
       else setMsg({ type: 'error', text: 'Failed to add position.' })
     } catch (err) {
@@ -65,6 +68,26 @@ export default function AddPosition({ onAdded }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
+      <div>
+        <label className={label} style={{ color: 'var(--muted)' }}>Ticker</label>
+        {holdingTickers.length > 0 ? (
+          <select
+            className={field} style={inputStyle}
+            value={form.ticker}
+            onChange={e => setForm(f => ({ ...f, ticker: e.target.value }))}
+            required
+          >
+            {holdingTickers.map(t => <option key={t} value={t}>{t}</option>)}
+          </select>
+        ) : (
+          <input
+            type="text" className={field} style={inputStyle}
+            value={form.ticker}
+            onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))}
+            placeholder="AAPL" required
+          />
+        )}
+      </div>
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className={label} style={{ color: 'var(--muted)' }}>Expiry</label>

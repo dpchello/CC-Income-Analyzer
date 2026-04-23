@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { fetchIncomeEstimate, type CalculatorResult } from '@/lib/calculator'
 
 const FREE_USES = 3
@@ -25,6 +25,8 @@ function incrementUses() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify({ count, date: today }))
 }
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:5173'
+
 export default function CalculatorWidget() {
   const [ticker, setTicker] = useState('')
   const [shares, setShares] = useState('')
@@ -35,8 +37,8 @@ export default function CalculatorWidget() {
   const [email, setEmail] = useState('')
   const [waitlistDone, setWaitlistDone] = useState(false)
 
-  const uses = getUses()
-  const remaining = Math.max(0, FREE_USES - uses)
+  const [remaining, setRemaining] = useState(FREE_USES)
+  useEffect(() => { setRemaining(Math.max(0, FREE_USES - getUses())) }, [])
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -76,31 +78,25 @@ export default function CalculatorWidget() {
 
   if (limitReached) {
     return (
-      <div className="panel mx-auto max-w-lg p-8 text-center">
-        <p className="text-2xl font-bold text-[var(--text)]">You&apos;ve used your free lookups</p>
-        <p className="mt-2 text-[var(--muted)]">
+      <div style={{
+        background: 'var(--bg-card)', border: '1px solid var(--line-strong)', borderRadius: 4,
+        padding: '40px 36px', textAlign: 'center', maxWidth: 520, margin: '0 auto',
+      }}>
+        <div className="display" style={{ fontSize: 22, color: 'var(--fg)', marginBottom: 8 }}>
+          You&apos;ve used your free lookups
+        </div>
+        <p style={{ color: 'var(--fg-dim)', fontSize: 14, lineHeight: 1.6 }}>
           Sign up free to get unlimited calculator access plus full portfolio tracking.
         </p>
         {waitlistDone ? (
-          <p className="mt-6 font-semibold text-[var(--green)]">
+          <p style={{ marginTop: 24, fontWeight: 600, color: 'var(--acid)', fontSize: 14 }}>
             You&apos;re on the list — check your inbox!
           </p>
         ) : (
-          <form onSubmit={handleWaitlist} className="mt-6 flex gap-3">
-            <input
-              type="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="your@email.com"
-              className="flex-1 rounded-md border border-[var(--border)] bg-[var(--bg)] px-4 py-3 text-sm text-[var(--text)] placeholder-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--amber)]"
-            />
-            <button
-              type="submit"
-              className="rounded-md bg-[var(--amber)] px-5 py-3 text-sm font-semibold text-black hover:opacity-90"
-            >
-              Notify me
-            </button>
+          <form onSubmit={handleWaitlist} style={{ display: 'flex', gap: 8, marginTop: 24 }}>
+            <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
+              placeholder="your@email.com" style={inputStyle} />
+            <button type="submit" className="btn btn-primary">Notify me</button>
           </form>
         )}
       </div>
@@ -108,74 +104,85 @@ export default function CalculatorWidget() {
   }
 
   return (
-    <div className="panel mx-auto max-w-lg p-8">
-      <h3 className="text-lg font-bold text-[var(--text)]">
-        What could your portfolio earn?
-      </h3>
-      <p className="mt-1 text-sm text-[var(--muted)]">
-        Enter any stock you own to see your monthly income estimate.
-        {remaining < FREE_USES && (
-          <span className="ml-1 text-[var(--amber)]">
-            {remaining} free {remaining === 1 ? 'lookup' : 'lookups'} remaining today.
-          </span>
-        )}
-      </p>
+    <div style={{ background: 'var(--bg-card)', border: '1px solid var(--line-strong)', borderRadius: 4, padding: '32px 36px', maxWidth: 560, margin: '0 auto' }}>
+      <div style={{ marginBottom: 20 }}>
+        <div className="display" style={{ fontSize: 18, color: 'var(--fg)', marginBottom: 4 }}>
+          What could your portfolio earn?
+        </div>
+        <p style={{ color: 'var(--fg-mute)', fontSize: 13, margin: 0 }}>
+          Enter any stock you own to see your monthly income estimate.
+          {remaining < FREE_USES && (
+            <span style={{ color: 'var(--acid)', marginLeft: 4 }}>
+              {remaining} free {remaining === 1 ? 'lookup' : 'lookups'} remaining today.
+            </span>
+          )}
+        </p>
+      </div>
 
-      <form onSubmit={handleSubmit} className="mt-6 flex gap-3">
-        <input
-          type="text"
-          value={ticker}
-          onChange={(e) => setTicker(e.target.value.toUpperCase())}
-          placeholder="Ticker (e.g. AAPL)"
-          maxLength={6}
-          required
-          className="w-36 rounded-md border border-[var(--border)] bg-[var(--bg)] px-4 py-3 text-sm font-mono text-[var(--text)] placeholder-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--amber)]"
-        />
-        <input
-          type="number"
-          value={shares}
-          onChange={(e) => setShares(e.target.value)}
-          placeholder="Shares owned"
-          min={1}
-          required
-          className="flex-1 rounded-md border border-[var(--border)] bg-[var(--bg)] px-4 py-3 text-sm text-[var(--text)] placeholder-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--amber)]"
-        />
-        <button
-          type="submit"
-          disabled={loading}
-          className="rounded-md bg-[var(--amber)] px-5 py-3 text-sm font-semibold text-black hover:opacity-90 disabled:opacity-50"
-        >
+      <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <input type="text" value={ticker} onChange={(e) => setTicker(e.target.value.toUpperCase())}
+          placeholder="Ticker (e.g. AAPL)" maxLength={6} required
+          style={{ ...inputStyle, width: 140, fontFamily: 'var(--mono)', textTransform: 'uppercase' }} />
+        <input type="number" value={shares} onChange={(e) => setShares(e.target.value)}
+          placeholder="Shares owned" min={1} required
+          style={{ ...inputStyle, flex: 1 }} />
+        <button type="submit" disabled={loading} className="btn btn-primary" style={{ whiteSpace: 'nowrap' }}>
           {loading ? '…' : 'Calculate'}
         </button>
       </form>
 
       {error && (
-        <p className="mt-4 text-sm text-[var(--red)]">{error}</p>
+        <p style={{ marginTop: 12, fontSize: 13, color: 'var(--down)' }}>{error}</p>
       )}
 
       {result && (
-        <div className="mt-6 rounded-lg border border-[var(--border)] bg-[var(--bg)] p-5">
-          <p className="text-sm text-[var(--muted)]">
-            Estimated monthly income from {result.ticker}
-          </p>
-          <p className="mt-1 text-4xl font-bold text-[var(--green)]">
-            ${result.monthly_estimate.toLocaleString()}
-          </p>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            {result.annualized_yield_pct}% annualized · {result.contracts} contracts ·{' '}
-            {result.expiry} expiry
-          </p>
-          <p className="mt-1 text-sm text-[var(--muted)]">
-            Sell the ${result.strike} call, collect ${result.mid?.toFixed(2)}/share
-          </p>
-          <a
-            href={process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:5173'}
-            className="mt-5 block w-full rounded-md bg-[var(--amber)] py-3 text-center text-sm font-semibold text-black hover:opacity-90"
-          >
+        <div style={{ marginTop: 24, borderTop: '1px solid var(--line)', paddingTop: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+            <div className="eyebrow">Estimated monthly income · {result.ticker}</div>
+            {result.price != null && (
+              <span className="eyebrow" style={{ fontSize: 10 }}>
+                ${result.price.toLocaleString()} / share
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 20 }}>
+            <div className="num" style={{ fontSize: 48, color: 'var(--acid)', letterSpacing: '-0.03em', lineHeight: 1 }}>
+              ${result.monthly_estimate.toLocaleString()}
+            </div>
+            <div style={{ display: 'flex', gap: 16, paddingBottom: 4 }}>
+              <div style={{ textAlign: 'center', paddingLeft: 10 }}>
+                <div className="eyebrow" style={{ fontSize: 10, marginBottom: 3 }}>Monthly yield</div>
+                <div className="num" style={{ fontSize: 18, color: 'var(--fg)', letterSpacing: '-0.02em' }}>
+                  {(result.annualized_yield_pct / 12).toFixed(2)}%
+                </div>
+              </div>
+              <div style={{ borderLeft: '1px solid var(--line)', paddingLeft: 16, textAlign: 'center' }}>
+                <div className="eyebrow" style={{ fontSize: 10, marginBottom: 3 }}>Annualized</div>
+                <div className="num" style={{ fontSize: 18, color: 'var(--fg)', letterSpacing: '-0.02em' }}>
+                  {result.annualized_yield_pct}%
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style={{ color: 'var(--fg-dim)', fontSize: 13, marginTop: 14 }}>
+            Sell the ${result.strike} call, collect ${result.mid?.toFixed(2)}/share · {result.contracts} contract{result.contracts !== 1 ? 's' : ''} · {result.expiry} expiry
+          </div>
+          <a href={appUrl} className="btn btn-primary" style={{ display: 'flex', justifyContent: 'center', marginTop: 20, height: 40 }}>
             Track your full portfolio free →
           </a>
         </div>
       )}
     </div>
   )
+}
+
+const inputStyle: React.CSSProperties = {
+  height: 36,
+  padding: '0 12px',
+  border: '1px solid var(--line-strong)',
+  borderRadius: 4,
+  background: 'var(--bg)',
+  color: 'var(--fg)',
+  fontSize: 13,
+  outline: 'none',
 }

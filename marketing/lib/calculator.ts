@@ -8,6 +8,7 @@ export interface CalculatorResult {
   expiry: string
   dte: number
   mid: number
+  price: number
 }
 
 export interface CalculatorError {
@@ -22,9 +23,17 @@ export async function fetchIncomeEstimate(
 ): Promise<{ result?: CalculatorResult; error?: CalculatorError; status: number }> {
   const params = new URLSearchParams({ ticker, shares: String(shares) })
   const res = await fetch(`/api/calculator?${params}`)
-  const data = await res.json()
-  if (!res.ok) {
-    return { error: data.detail || data, status: res.status }
+
+  let data: unknown
+  try {
+    data = await res.json()
+  } catch {
+    return { error: { message: 'Server error. Please try again.' }, status: res.status }
   }
-  return { result: data, status: 200 }
+
+  if (!res.ok) {
+    const err = data as Record<string, unknown>
+    return { error: (err?.detail ?? data) as CalculatorError, status: res.status }
+  }
+  return { result: data as CalculatorResult, status: 200 }
 }

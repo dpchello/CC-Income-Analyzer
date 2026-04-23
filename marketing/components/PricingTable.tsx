@@ -29,49 +29,46 @@ export default function PricingTable() {
   return (
     <div>
       {/* Billing toggle */}
-      <div className="mb-10 flex items-center justify-center gap-4">
-        <button
-          onClick={() => setAnnual(false)}
-          className={`text-sm font-medium transition-colors ${!annual ? 'text-[var(--text)]' : 'text-[var(--muted)]'}`}
-        >
-          Monthly
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 48 }}>
+        <button onClick={() => setAnnual(false)} style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          fontSize: 13, color: !annual ? 'var(--fg)' : 'var(--fg-mute)', fontWeight: !annual ? 600 : 400,
+        }}>Monthly</button>
+
+        <button onClick={() => setAnnual(!annual)} style={{
+          position: 'relative', width: 44, height: 24, borderRadius: 12,
+          background: 'var(--acid)', border: 'none', cursor: 'pointer',
+        }}>
+          <span style={{
+            position: 'absolute', top: 2, width: 20, height: 20, borderRadius: 10,
+            background: '#faf8f3', transition: 'left 0.15s',
+            left: annual ? 22 : 2,
+          }} />
         </button>
-        <button
-          onClick={() => setAnnual(!annual)}
-          className="relative h-6 w-11 rounded-full bg-[var(--amber)] transition-all"
-          aria-label="Toggle billing period"
-        >
-          <span
-            className={`absolute top-0.5 h-5 w-5 rounded-full bg-black transition-all ${annual ? 'left-5' : 'left-0.5'}`}
-          />
-        </button>
-        <button
-          onClick={() => setAnnual(true)}
-          className={`text-sm font-medium transition-colors ${annual ? 'text-[var(--text)]' : 'text-[var(--muted)]'}`}
-        >
+
+        <button onClick={() => setAnnual(true)} style={{
+          background: 'none', border: 'none', cursor: 'pointer',
+          fontSize: 13, color: annual ? 'var(--fg)' : 'var(--fg-mute)', fontWeight: annual ? 600 : 400,
+          display: 'flex', alignItems: 'center', gap: 8,
+        }}>
           Annual
-          <span className="ml-2 rounded-full bg-[var(--green)]/20 px-2 py-0.5 text-xs text-[var(--green)]">
-            Save $108
-          </span>
+          <span className="chip chip-acid" style={{ height: 18, fontSize: 10 }}>Save $108</span>
         </button>
       </div>
 
-      <div className="mx-auto grid max-w-4xl gap-6 px-6 md:grid-cols-2">
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1, background: 'var(--line)', border: '1px solid var(--line)', maxWidth: 880, margin: '0 auto' }}>
         {/* Free */}
-        <div className="panel flex flex-col p-8">
-          <p className="text-sm font-semibold uppercase tracking-wider text-[var(--muted)]">Free</p>
-          <p className="mt-3 text-4xl font-bold text-[var(--text)]">$0</p>
-          <p className="mt-1 text-sm text-[var(--muted)]">forever</p>
-          <a
-            href={appUrl}
-            className="mt-6 block w-full rounded-md border border-[var(--border)] py-3 text-center text-sm font-semibold text-[var(--text)] hover:border-[var(--amber)] hover:text-[var(--amber)] transition-colors"
-          >
+        <div style={{ background: 'var(--bg)', padding: '40px 36px', display: 'flex', flexDirection: 'column' }}>
+          <div className="eyebrow" style={{ marginBottom: 16 }}>Free</div>
+          <div className="num" style={{ fontSize: 48, color: 'var(--fg)', letterSpacing: '-0.03em', lineHeight: 1 }}>$0</div>
+          <div style={{ color: 'var(--fg-mute)', fontSize: 12, marginTop: 6, fontFamily: 'var(--mono)' }}>forever</div>
+          <a href={appUrl} className="btn" style={{ marginTop: 24, justifyContent: 'center' }}>
             Get started free
           </a>
-          <ul className="mt-8 flex flex-col gap-3">
+          <ul style={{ marginTop: 32, display: 'flex', flexDirection: 'column', gap: 10, padding: 0, listStyle: 'none' }}>
             {freeFeatures.map((f) => (
-              <li key={f} className="flex items-start gap-3 text-sm text-[var(--muted)]">
-                <span className="mt-0.5 text-[var(--green)]">✓</span>
+              <li key={f} style={{ display: 'flex', gap: 10, fontSize: 13, color: 'var(--fg-dim)' }}>
+                <span style={{ color: 'var(--acid)', flexShrink: 0 }}>✓</span>
                 {f}
               </li>
             ))}
@@ -79,30 +76,30 @@ export default function PricingTable() {
         </div>
 
         {/* Pro */}
-        <div className="panel relative flex flex-col border-[var(--amber)] p-8" style={{ borderColor: 'var(--amber)' }}>
-          <div className="absolute -top-3 left-1/2 -translate-x-1/2 rounded-full bg-[var(--amber)] px-4 py-1 text-xs font-bold text-black">
-            MOST POPULAR
-          </div>
-          <p className="text-sm font-semibold uppercase tracking-wider text-[var(--amber)]">Pro</p>
-          <div className="mt-3 flex items-end gap-2">
-            <p className="text-4xl font-bold text-[var(--text)]">
+        <div style={{ background: 'var(--bg-elev)', padding: '40px 36px', display: 'flex', flexDirection: 'column', position: 'relative', borderLeft: '1px solid var(--acid-line)' }}>
+          <div style={{
+            position: 'absolute', top: -1, left: 36,
+            background: 'var(--acid)', color: '#faf8f3',
+            fontSize: 10, fontFamily: 'var(--mono)', letterSpacing: '0.12em', textTransform: 'uppercase',
+            padding: '3px 10px', borderRadius: '0 0 4px 4px',
+          }}>Most popular</div>
+          <div className="eyebrow" style={{ marginBottom: 16, color: 'var(--acid)' }}>Pro</div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 6 }}>
+            <div className="num" style={{ fontSize: 48, color: 'var(--fg)', letterSpacing: '-0.03em', lineHeight: 1 }}>
               ${annual ? '20' : '29'}
-            </p>
-            <p className="mb-1 text-sm text-[var(--muted)]">/month</p>
+            </div>
+            <div style={{ color: 'var(--fg-mute)', fontSize: 13, marginBottom: 6 }}>/month</div>
           </div>
-          <p className="mt-1 text-sm text-[var(--muted)]">
+          <div style={{ color: 'var(--fg-mute)', fontSize: 12, marginTop: 6, fontFamily: 'var(--mono)' }}>
             {annual ? 'Billed $240/year — save $108' : 'Billed monthly'}
-          </p>
-          <a
-            href={`${appUrl}/upgrade`}
-            className="mt-6 block w-full rounded-md bg-[var(--amber)] py-3 text-center text-sm font-semibold text-black hover:opacity-90 transition-opacity"
-          >
+          </div>
+          <a href={`${appUrl}/upgrade`} className="btn btn-primary" style={{ marginTop: 24, justifyContent: 'center' }}>
             Start Pro
           </a>
-          <ul className="mt-8 flex flex-col gap-3">
+          <ul style={{ marginTop: 32, display: 'flex', flexDirection: 'column', gap: 10, padding: 0, listStyle: 'none' }}>
             {proFeatures.map((f) => (
-              <li key={f} className="flex items-start gap-3 text-sm text-[var(--muted)]">
-                <span className="mt-0.5 text-[var(--amber)]">✓</span>
+              <li key={f} style={{ display: 'flex', gap: 10, fontSize: 13, color: 'var(--fg-dim)' }}>
+                <span style={{ color: 'var(--acid)', flexShrink: 0 }}>✓</span>
                 {f}
               </li>
             ))}
@@ -110,8 +107,8 @@ export default function PricingTable() {
         </div>
       </div>
 
-      <p className="mt-10 text-center text-sm text-[var(--muted)]">
-        No credit card required for free tier. Cancel Pro anytime.
+      <p style={{ marginTop: 24, textAlign: 'center', fontSize: 12, color: 'var(--fg-faint)', fontFamily: 'var(--mono)', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+        No credit card required for free tier · Cancel Pro anytime
       </p>
     </div>
   )

@@ -5,50 +5,45 @@ import SignalTracker from './components/SignalTracker.jsx'
 import Screener from './components/Screener.jsx'
 import Settings from './components/Settings.jsx'
 import ScoreGuide from './components/ScoreGuide.jsx'
-import Sidebar, { MobileMenuButton } from './components/Sidebar.jsx'
+import Sidebar, { TopBar } from './components/Sidebar.jsx'
 import AuthGate from './components/AuthGate.jsx'
 import UpgradeModal from './components/UpgradeModal.jsx'
+import PlaceholderScreen from './components/PlaceholderScreen.jsx'
+import Recommendations from './components/Recommendations.jsx'
 import { useAuth } from './auth.jsx'
 
-// Compute alert count: positions with URGENT or HIGH urgency
 function computeAlertCount(positions) {
-  if (!positions || !positions.length) return 0
+  if (!positions?.length) return 0
   return positions.filter(p => {
     if (p.status !== 'open') return false
-    if (p.dte <= 7) return true                                                                                      // GAMMA_DANGER → URGENT
-    if (p.distance_to_strike_pct != null && p.distance_to_strike_pct <= 1.5 && p.distance_to_strike_pct > 0) return true  // STRIKE_BREACH → URGENT
+    if (p.dte <= 7) return true
+    if (p.distance_to_strike_pct != null && p.distance_to_strike_pct <= 1.5 && p.distance_to_strike_pct > 0) return true
     return false
   }).length
 }
 
 export default function App() {
   const { user, ready, logout, apiFetch } = useAuth()
-  const [activeTab, setActiveTab]     = useState('Dashboard')
-  const [dashData, setDashData]       = useState(null)
-  const [signalData, setSignalData]   = useState(null)
-  const [positions, setPositions]     = useState([])
-  const [portfolios, setPortfolios]   = useState([])
-  const [holdings, setHoldings]       = useState([])
-  const [alphaData, setAlphaData]     = useState({ news: null, technicals: null, usage: null })
-  const [pnlData, setPnlData]         = useState(null)
-  const [lastUpdated, setLastUpdated] = useState(null)
-  const [loading, setLoading]         = useState(true)
-  const [refreshing, setRefreshing]   = useState(false)
-  const [stripDismissed, setStripDismissed] = useState(
-    () => sessionStorage.getItem('alertStripDismissed') === 'true'
+  const [activeTab, setActiveTab]   = useState(
+    () => localStorage.getItem('harvest.route') || 'Dashboard'
   )
-  const [upgradeModal, setUpgradeModal] = useState(null) // null | { reason: string }
-
-  function openUpgrade(reason = '') {
-    setUpgradeModal({ reason })
-  }
-  function closeUpgrade() {
-    setUpgradeModal(null)
-  }
+  const [dashData, setDashData]     = useState(null)
+  const [signalData, setSignalData] = useState(null)
+  const [positions, setPositions]   = useState([])
+  const [portfolios, setPortfolios] = useState([])
+  const [holdings, setHoldings]     = useState([])
+  const [alphaData, setAlphaData]   = useState({ news: null, technicals: null, usage: null })
+  const [pnlData, setPnlData]       = useState(null)
+  const [loading, setLoading]       = useState(true)
+  const [upgradeModal, setUpgradeModal] = useState(null)
+  const [screenerTicker, setScreenerTicker] = useState(null)
+  const [snapHealth, setSnapHealth] = useState(null)
+  // TODO PIPE-REC-02: Replace with real count once GET /recommendations ships
+  const [recCount, setRecCount] = useState(0)
 
   const fetchAll = useCallback(async () => {
     try {
-      const [dash, sig, pos, ptf, hld, news, tech, usage, pnl] = await Promise.all([
+      const [dash, sig, pos, ptf, hld, news, tech, usage, pnl, snapH] = await Promise.all([
         apiFetch('/api/dashboard').then(r => r.json()),
         apiFetch('/api/signals').then(r => r.json()),
         apiFetch('/api/positions').then(r => r.json()),
@@ -58,6 +53,7 @@ export default function App() {
         apiFetch('/api/alpha/technicals').then(r => r.json()).catch(() => null),
         apiFetch('/api/alpha/usage').then(r => r.json()).catch(() => null),
         apiFetch('/api/pnl-summary').then(r => r.json()).catch(() => null),
+        apiFetch('/api/snaptrade/health').then(r => r.json()).catch(() => null),
       ])
       setDashData(dash)
       setSignalData(sig)
@@ -66,209 +62,196 @@ export default function App() {
       setHoldings(hld)
       setAlphaData({ news, technicals: tech, usage })
       setPnlData(pnl)
-      setLastUpdated(new Date())
+      setSnapHealth(snapH)
     } catch (e) {
       console.error('Fetch error:', e)
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [apiFetch])
 
   useEffect(() => {
     if (!user) return
     fetchAll()
-    const interval = setInterval(fetchAll, 60000)
-    return () => clearInterval(interval)
+    const id = setInterval(fetchAll, 60_000)
+    return () => clearInterval(id)
   }, [fetchAll, user])
+
+  function navigate(tab, params = {}) {
+    setActiveTab(tab)
+    localStorage.setItem('harvest.route', tab)
+    if (tab === 'Screener' && params.ticker) setScreenerTicker(params.ticker)
+  }
 
   const alertCount = computeAlertCount(positions)
 
-  // When user navigates to Portfolios, mark alerts as seen for this session
-  function handleNavigate(tab) {
-    setActiveTab(tab)
-    if (tab === 'Portfolios') {
-      sessionStorage.setItem('alertStripDismissed', 'true')
-      setStripDismissed(true)
-    }
-  }
-
-  // Reset strip dismissal when alert count rises (new urgent position appeared)
-  const prevAlertCountRef = useRef(0)
-  useEffect(() => {
-    if (alertCount > prevAlertCountRef.current) {
-      sessionStorage.removeItem('alertStripDismissed')
-      setStripDismissed(false)
-    }
-    prevAlertCountRef.current = alertCount
-  }, [alertCount])
-
-  const showAlertStrip = alertCount > 0 && activeTab !== 'Portfolios' && !stripDismissed
-
-  function dismissStrip() {
-    sessionStorage.setItem('alertStripDismissed', 'true')
-    setStripDismissed(true)
-  }
-
-  // Waiting for localStorage token validation
   if (!ready) return (
-    <div className="flex items-center justify-center min-h-screen" style={{ backgroundColor: 'var(--bg)' }}>
-      <div className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin"
-        style={{ borderColor: 'var(--gold)', borderTopColor: 'transparent' }} />
+    <div style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      minHeight: '100vh', background: 'var(--bg)',
+    }}>
+      <div style={{
+        width: 24, height: 24, borderRadius: '50%',
+        border: '2px solid var(--acid)',
+        borderTopColor: 'transparent',
+        animation: 'spin 0.7s linear infinite',
+      }} />
     </div>
   )
 
-  // Not authenticated — show login/signup
   if (!user) return <AuthGate />
 
   return (
-    <div className="flex min-h-screen font-sans" style={{ backgroundColor: 'var(--bg)', color: 'var(--text)' }}>
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '240px 1fr',
+      minHeight: '100vh',
+      background: 'var(--bg)',
+    }}>
+      {/* Left sidebar */}
+      <Sidebar
+        activeTab={activeTab}
+        onNavigate={navigate}
+        alertCount={alertCount}
+        recCount={recCount}
+      />
 
-      {/* ── Desktop Sidebar ───────────────────────────────────────────── */}
-      <Sidebar activeTab={activeTab} onNavigate={handleNavigate} alertCount={alertCount} />
+      {/* Right: topbar + content */}
+      <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <TopBar
+          activeTab={activeTab}
+          alertCount={alertCount}
+          onNavigate={navigate}
+        />
 
-      {/* ── Right column: header + content ───────────────────────────── */}
-      <div className="flex flex-col flex-1 min-w-0">
-
-        {/* ── Slim Header ────────────────────────────────────────────── */}
-        <header
-          className="px-5 flex items-center justify-between h-14 border-b flex-shrink-0"
-          style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)' }}
-        >
-          <div className="flex items-center gap-3">
-            {/* Hamburger — visible on mobile only, opens the Sidebar drawer */}
-            <MobileMenuButton />
-            <span className="font-semibold text-base tracking-tight" style={{ color: 'var(--text)' }}>
-              🌾 Harvest
-            </span>
-            {lastUpdated && (
-              <span className="text-xs hidden sm:inline" style={{ color: 'var(--muted)' }}>
-                Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              onClick={async () => { setRefreshing(true); await fetchAll(); setRefreshing(false) }}
-              disabled={refreshing}
-              title="Refresh all data"
-              className="flex items-center gap-1.5 px-2.5 py-1 text-xs border transition-colors"
-              style={{
-                borderColor: 'var(--border)',
-                color: refreshing ? 'var(--muted)' : 'var(--text)',
-                backgroundColor: 'transparent',
-                borderRadius: 'var(--radius-sm)',
-                cursor: refreshing ? 'not-allowed' : 'pointer',
-              }}
+        {snapHealth?.needs_reconnect && (
+          <div style={{
+            padding: '10px 24px', fontSize: 12,
+            background: 'rgba(255,176,32,0.08)',
+            borderBottom: '1px solid var(--amber)',
+            color: 'var(--amber)',
+            display: 'flex', alignItems: 'center', gap: 12,
+          }}>
+            <span>⚠ One or more brokerage connections need reconnecting.</span>
+            <a
+              href="#"
+              onClick={e => { e.preventDefault(); navigate('Portfolios') }}
+              style={{ color: 'var(--amber)', textDecoration: 'underline' }}
             >
-              <span
-                className={refreshing ? 'animate-spin' : ''}
-                style={{ display: 'inline-block', fontSize: '11px' }}
-              >↻</span>
-              {refreshing ? 'Refreshing…' : 'Refresh'}
-            </button>
-
-            <span className="text-xs hidden sm:inline" style={{ color: 'var(--muted)' }}>
-              {user.email}
-            </span>
-            {user.tier === 'pro' && (
-              <span
-                className="text-xs px-1.5 py-0.5 font-semibold"
-                style={{
-                  background: 'var(--gold-dim)',
-                  color: 'var(--gold)',
-                  borderRadius: 'var(--radius-sm)',
-                  letterSpacing: '0.04em',
-                }}
-              >
-                PRO
-              </span>
-            )}
-            <button
-              onClick={logout}
-              className="text-xs px-2 py-1 border"
-              style={{
-                borderColor: 'var(--border)',
-                color: 'var(--muted)',
-                backgroundColor: 'transparent',
-                borderRadius: 'var(--radius-sm)',
-                cursor: 'pointer',
-              }}
-            >
-              Sign out
-            </button>
+              Go to Portfolios →
+            </a>
           </div>
-        </header>
+        )}
 
-        {/* ── Content ────────────────────────────────────────────────── */}
-        <main className="px-6 py-6 flex-1 overflow-y-auto">
+        <main style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}>
           {loading ? (
-            <div className="flex items-center justify-center h-64">
-              <div className="text-center space-y-2">
-                <div
-                  className="w-6 h-6 border-2 border-t-transparent rounded-full animate-spin mx-auto"
-                  style={{ borderColor: 'var(--green)', borderTopColor: 'transparent' }}
-                />
-                <p className="text-sm" style={{ color: 'var(--muted)' }}>Loading market data…</p>
-              </div>
-            </div>
+            <LoadingState />
           ) : (
-            <>
-              {activeTab === 'Dashboard' && (
-                <Dashboard
-                  dashData={dashData}
-                  signalData={signalData}
-                  positions={positions}
-                  holdings={holdings}
-                  alphaData={alphaData}
-                  pnlData={pnlData}
-                  onNavigate={setActiveTab}
-                />
-              )}
-              {activeTab === 'Portfolios' && (
-                <Portfolios
-                  positions={positions}
-                  portfolios={portfolios}
-                  holdings={holdings}
-                  dashData={dashData}
-                  signalData={signalData}
-                  onRefresh={fetchAll}
-                  userTier={user.tier}
-                  onUpgrade={openUpgrade}
-                />
-              )}
-              {activeTab === 'Screener' && (
-                <Screener
-                  portfolios={portfolios}
-                  holdings={holdings}
-                  positions={positions}
-                  onRefresh={fetchAll}
-                  signalData={signalData}
-                  userTier={user.tier}
-                  onUpgrade={openUpgrade}
-                />
-              )}
-              {activeTab === 'Signal Tracker' && (
-                <SignalTracker
-                  signalData={signalData}
-                  alphaData={alphaData}
-                />
-              )}
-              {activeTab === 'Score Guide' && <ScoreGuide />}
-              {activeTab === 'Settings' && (
-                <Settings onRefresh={fetchAll} alphaUsage={alphaData.usage} />
-              )}
-            </>
+            <Screen
+              activeTab={activeTab}
+              dashData={dashData}
+              signalData={signalData}
+              positions={positions}
+              portfolios={portfolios}
+              holdings={holdings}
+              alphaData={alphaData}
+              pnlData={pnlData}
+              user={user}
+              onNavigate={navigate}
+              onRefresh={fetchAll}
+              onUpgrade={r => setUpgradeModal({ reason: r })}
+              screenerTicker={screenerTicker}
+            />
           )}
         </main>
       </div>
 
       {upgradeModal && (
         <UpgradeModal
-          onClose={closeUpgrade}
+          onClose={() => setUpgradeModal(null)}
           triggerReason={upgradeModal.reason}
         />
       )}
+
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+      `}</style>
     </div>
   )
+}
+
+function LoadingState() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 240 }}>
+      <div style={{ textAlign: 'center' }}>
+        <div style={{
+          width: 24, height: 24, borderRadius: '50%',
+          border: '2px solid var(--acid)', borderTopColor: 'transparent',
+          animation: 'spin 0.7s linear infinite', margin: '0 auto 10px',
+        }} />
+        <p style={{ fontSize: 13, color: 'var(--fg-mute)' }}>Loading…</p>
+      </div>
+    </div>
+  )
+}
+
+function Screen({
+  activeTab, dashData, signalData, positions, portfolios, holdings,
+  alphaData, pnlData, user, onNavigate, onRefresh, onUpgrade, screenerTicker,
+}) {
+  switch (activeTab) {
+    case 'Dashboard':
+      return (
+        <Dashboard
+          dashData={dashData} signalData={signalData} positions={positions}
+          holdings={holdings} alphaData={alphaData} pnlData={pnlData}
+          onNavigate={onNavigate}
+        />
+      )
+    case 'Portfolios':
+      return (
+        <Portfolios
+          positions={positions} portfolios={portfolios} holdings={holdings}
+          dashData={dashData} signalData={signalData} onRefresh={onRefresh}
+          userTier={user.tier} onUpgrade={onUpgrade}
+        />
+      )
+    case 'Screener':
+      return (
+        <Screener
+          portfolios={portfolios} holdings={holdings} positions={positions}
+          onRefresh={onRefresh} signalData={signalData}
+          userTier={user.tier} onUpgrade={onUpgrade}
+          initialTicker={screenerTicker}
+        />
+      )
+    case 'Signal Tracker':
+      return <SignalTracker signalData={signalData} alphaData={alphaData} />
+    case 'Score Guide':
+      return <ScoreGuide />
+    case 'Settings':
+      return <Settings onRefresh={onRefresh} alphaUsage={alphaData.usage} />
+    // ── New screens — placeholder until implemented ──────────────────────
+    case 'Recommendations':
+      return (
+        <Recommendations
+          portfolios={portfolios}
+          holdings={holdings}
+          positions={positions}
+          onNavigate={onNavigate}
+        />
+      )
+    case 'Watchlist':
+      return <PlaceholderScreen id="Watchlist" label="Watchlist" icon="Eye" onNavigate={onNavigate} />
+    case 'Journal':
+      return <PlaceholderScreen id="Journal" label="Trade journal" icon="BookOpen" onNavigate={onNavigate} />
+    case 'Performance':
+      return <PlaceholderScreen id="Performance" label="Performance" icon="ChartLine" onNavigate={onNavigate} />
+    case 'Academy':
+      return <PlaceholderScreen id="Academy" label="Academy" icon="GraduationCap" onNavigate={onNavigate} />
+    case 'Alerts':
+      return <PlaceholderScreen id="Alerts" label="Alerts" icon="Bell" onNavigate={onNavigate} />
+    default:
+      return null
+  }
 }

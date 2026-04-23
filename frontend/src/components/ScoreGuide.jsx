@@ -106,7 +106,7 @@ export default function ScoreGuide() {
             Harvest helps you earn regular income from stocks you already own — without selling them.
           </p>
           <p className="text-sm leading-relaxed mt-3" style={{ color: muted }}>
-            Here's how it works in plain English: when you own shares of SPY (the S&P 500 ETF),
+            Here's how it works in plain English: when you own shares of a stock — AAPL, SPY, MSFT, whatever you hold —
             you can sell someone else the <em>right</em> to buy those shares at a set price in the future.
             For giving them that right, they pay you a fee upfront — that's your income.
             If the stock price never reaches the agreed price, they walk away and you keep the fee.
@@ -233,7 +233,7 @@ export default function ScoreGuide() {
         subtitle="The 4-part formula that ranks every option"
       >
         <p className="text-sm leading-relaxed" style={{ color: muted }}>
-          When the market signal is positive, Harvest looks at every available SPY option and ranks them.
+          When the market signal is positive, Harvest looks at every available option for your stock and ranks them.
           Each option gets a score from 0 to 100. The higher the score, the better the opportunity.
         </p>
 
@@ -264,7 +264,7 @@ export default function ScoreGuide() {
           <Card accent={green}>
             <div className="text-sm font-semibold mb-2" style={{ color: text }}>B · Income Potential <span className="text-xs font-normal" style={{ color: muted }}>(up to 30 pts)</span></div>
             <p className="text-xs leading-relaxed" style={{ color: muted }}>
-              How much income you'd collect as a percentage of what SPY is worth right now.
+              How much income you'd collect as a percentage of what your stock is worth right now.
               A higher income-to-price ratio means better bang for your risk.
               Options collecting less than a reasonable threshold score low here — the income just isn't worth tying up your shares.
             </p>
@@ -276,8 +276,8 @@ export default function ScoreGuide() {
           <Card accent={amber}>
             <div className="text-sm font-semibold mb-2" style={{ color: text }}>C · Assignment Risk <span className="text-xs font-normal" style={{ color: muted }}>(up to 20 pts)</span></div>
             <p className="text-xs leading-relaxed" style={{ color: muted }}>
-              How likely is it that SPY reaches your strike price and your shares get called away?
-              Lower assignment risk (a lower delta number) means more buffer between where SPY is now and where it needs to be to trigger a sale.
+              How likely is it that your stock reaches your strike price and your shares get called away?
+              Lower assignment risk (a lower delta number) means more buffer between where your stock is now and where it needs to be to trigger a sale.
               High-risk options score low here even if they pay more — because the risk of assignment outweighs the income.
             </p>
             <p className="text-xs mt-2" style={{ color: amber }}>
@@ -341,11 +341,11 @@ export default function ScoreGuide() {
             </div>
             <p className="text-xs leading-relaxed" style={{ color: muted }}>
               Your option expires in 7 days or fewer. At this stage, the "gamma" risk is high —
-              meaning the option's delta (assignment probability) can change very quickly with small moves in SPY.
+              meaning the option's delta (assignment probability) can change very quickly with small moves in the stock.
               If you haven't already locked in most of your profit, now is the time to close or roll.
             </p>
             <p className="text-xs mt-2 p-2 rounded" style={{ backgroundColor: 'rgba(0,0,0,0.2)', color: muted, borderRadius: 'var(--radius-sm)' }}>
-              <strong style={{ color: text }}>Example:</strong> You sold a $540 call expiring Friday. SPY is at $537 and rising.
+              <strong style={{ color: text }}>Example:</strong> You sold a $540 call expiring Friday. Your stock is at $537 and rising.
               With 3 days left, even a 1% move could push you into assignment territory. Close now and redeploy next week.
             </p>
           </Card>
@@ -356,15 +356,15 @@ export default function ScoreGuide() {
               <span className="text-xs px-1.5 py-0.5 font-mono" style={{ backgroundColor: `${red}18`, color: red, borderRadius: 'var(--radius-sm)' }}>URGENT</span>
             </div>
             <p className="text-xs leading-relaxed" style={{ color: muted }}>
-              SPY is within 1.5% of your strike price. This means the call is close to the money
+              Your stock is within 1.5% of your strike price. This means the call is close to the money
               and your shares are at real risk of being called away before expiry.
-              You need to decide: close the position to protect your upside, wait and hope SPY pulls back,
+              You need to decide: close the position to protect your upside, wait and hope it pulls back,
               or roll to a higher strike.
             </p>
             <p className="text-xs mt-2 p-2 rounded" style={{ backgroundColor: 'rgba(0,0,0,0.2)', color: muted, borderRadius: 'var(--radius-sm)' }}>
-              <strong style={{ color: text }}>Example:</strong> You sold a $545 call. SPY is now at $537.
+              <strong style={{ color: text }}>Example:</strong> You sold a $545 call. Your stock is now at $537.
               That's only $8 away — a normal day's move. The assignment risk badge will show red.
-              If SPY breaks $545, the buyer exercises and you sell your shares at $545.
+              If it breaks $545, the buyer exercises and you sell your shares at $545.
             </p>
           </Card>
 
@@ -407,12 +407,12 @@ export default function ScoreGuide() {
             </div>
             <p className="text-xs leading-relaxed" style={{ color: muted }}>
               The market just dropped sharply and is now bouncing back. This is actually a risky time for covered calls —
-              if SPY rebounds quickly, your call caps the gains your shares would otherwise make.
+              if your stock rebounds quickly, your call caps the gains your shares would otherwise make.
               Consider whether the recovery is likely to be fast (you'd want to close the call) or slow (you can hold).
             </p>
             <p className="text-xs mt-2 p-2 rounded" style={{ backgroundColor: 'rgba(0,0,0,0.2)', color: muted, borderRadius: 'var(--radius-sm)' }}>
-              <strong style={{ color: text }}>Example:</strong> SPY fell 4% last week and is now sharply recovering. Your $540 call,
-              which seemed safely out of the money, suddenly looks vulnerable as SPY climbs back toward it.
+              <strong style={{ color: text }}>Example:</strong> The market fell 4% last week and is now sharply recovering. Your $540 call,
+              which seemed safely out of the money, suddenly looks vulnerable as your stock climbs back toward it.
             </p>
           </Card>
         </div>
@@ -428,14 +428,14 @@ export default function ScoreGuide() {
 
           <FAQ question="What happens if my shares get called away?">
             <p>
-              If SPY closes above your strike price at expiry, the buyer exercises their right and your shares are sold at the strike price.
+              If your stock closes above your strike price at expiry, the buyer exercises their right and your shares are sold at the strike price.
               This isn't a disaster — you chose the strike price, you collected the premium, and you sell at a price you agreed to in advance.
             </p>
             <p>
-              <strong style={{ color: text }}>What you gain:</strong> You keep all the premium income you collected upfront. You sell your shares at the strike (often above your original purchase price). You can use the cash to buy SPY back and start again.
+              <strong style={{ color: text }}>What you gain:</strong> You keep all the premium income you collected upfront. You sell your shares at the strike (often above your original purchase price). You can use the cash to buy your shares back and start again.
             </p>
             <p>
-              <strong style={{ color: text }}>What you give up:</strong> Any gains above the strike price. If SPY was $540 and shot to $560, you sold at $540 and missed the last $20 per share of upside.
+              <strong style={{ color: text }}>What you give up:</strong> Any gains above the strike price. If your stock was at $540 and shot to $560, you sold at $540 and missed the last $20 per share of upside.
             </p>
             <p>
               This is the core tradeoff of covered calls: consistent income now, in exchange for capping your upside on extreme rallies.
@@ -474,10 +474,10 @@ export default function ScoreGuide() {
           <FAQ question="What does 'assignment' mean and should I be afraid of it?">
             <p>
               Assignment happens when the buyer of your call option decides to exercise their right and buy your shares.
-              This occurs when SPY closes above your strike price at expiry.
+              This occurs when your stock closes above your strike price at expiry.
             </p>
             <p>
-              <strong style={{ color: text }}>Is it bad?</strong> Not necessarily. You sold your shares at the strike price (which you agreed to), kept the premium, and now have cash. You can simply buy SPY back and sell another call.
+              <strong style={{ color: text }}>Is it bad?</strong> Not necessarily. You sold your shares at the strike price (which you agreed to), kept the premium, and now have cash. You can simply buy your shares back and sell another call.
             </p>
             <p>
               <strong style={{ color: text }}>What to watch out for:</strong> Taxes. Selling shares is a taxable event. If you've held them a long time, the sale may trigger long-term capital gains. Check with your tax advisor if you're close to a strike and want to avoid assignment for tax reasons — rolling to a higher strike is usually the solution.
@@ -503,7 +503,7 @@ export default function ScoreGuide() {
               For most positions, once per day (or even every few days) is enough. Covered calls are not a day-trading strategy.
             </p>
             <p>
-              <strong style={{ color: text }}>Check more often when:</strong> You have a position with under 14 days to expiry. SPY has moved more than 1% in a day. A red alert badge appears on "My Positions" in the sidebar.
+              <strong style={{ color: text }}>Check more often when:</strong> You have a position with under 14 days to expiry. Your stock has moved more than 1% in a day. A red alert badge appears on "My Positions" in the sidebar.
             </p>
             <p>
               The sidebar badge and the alert strip at the top are designed to make urgency visible without requiring you to navigate into the app to find out if something needs attention.
@@ -516,7 +516,7 @@ export default function ScoreGuide() {
               It's how you maintain continuous income without ever running out of positions to manage.
             </p>
             <p>
-              <strong style={{ color: text }}>Roll when:</strong> Your current position has decayed to 50% of its value (capture profit, redeploy). You have fewer than 21 days to expiry and a new 30–45 day option is available. SPY is approaching your strike and you want to move the ceiling higher.
+              <strong style={{ color: text }}>Roll when:</strong> Your current position has decayed to 50% of its value (capture profit, redeploy). You have fewer than 21 days to expiry and a new 30–45 day option is available. Your stock is approaching your strike and you want to move the ceiling higher.
             </p>
             <p>
               <strong style={{ color: text }}>What happens to your shares:</strong> Nothing. You still own them throughout. Rolling is just two trades: buy back the old call, sell a new one. Your shares never leave your account.
