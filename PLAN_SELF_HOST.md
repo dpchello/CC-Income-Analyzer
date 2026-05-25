@@ -257,7 +257,9 @@ find ~/HarvestBackups -name 'harvest-state-*.tar.gz' -mtime +14 -delete
 
 Then sync `~/HarvestBackups` to iCloud Drive (free, native) or Backblaze B2 (~$0.005/GB/mo).
 
-**One thing to verify:** `backend/users/<uuid>/` directories suggest per-user file storage. If those hold anything that should outlive a Mac wipe (SnapTrade tokens, exports, etc.), they should arguably move to Supabase Storage. Flag this as an open question; not blocking for v1 launch but worth a 30-min audit before paying customers exist.
+~~**One thing to verify:** `backend/users/<uuid>/` directories suggest per-user file storage. If those hold anything that should outlive a Mac wipe (SnapTrade tokens, exports, etc.), they should arguably move to Supabase Storage. Flag this as an open question; not blocking for v1 launch but worth a 30-min audit before paying customers exist.~~
+
+**Resolved 2026-05-25:** `backend/users/` was dead state — leftover from the pre-Supabase era. Contained one `portfolios.json` for one user UUID, only referenced by the historical migration script ([backend/migrations/002_migrate.py](backend/migrations/002_migrate.py)) which reads it AS INPUT. No runtime code writes to that directory. Deleted. No backup needed; this data already lives in Supabase.
 
 ---
 
