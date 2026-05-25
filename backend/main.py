@@ -22,37 +22,65 @@ import feedback_log
 import db
 import auth as auth_module
 from auth import User
+import backtest as backtest_module
+from rate_limit import limiter
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+import hmac
 
 app = FastAPI(title="Harvest")
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(auth_module.router)
 
+_DEFAULT_DEV_ORIGINS = "http://localhost:5173,http://localhost:3001,http://127.0.0.1:5173,http://127.0.0.1:3001"
+_ALLOWED_ORIGINS = [o.strip() for o in os.getenv("ALLOWED_ORIGINS", _DEFAULT_DEV_ORIGINS).split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# ── Freemium gates ────────────────────────────────────────────────────────────
 
-FREE_POSITION_LIMIT = 3
-FREE_SCREENER_DAILY_LIMIT = 1
+@app.middleware("http")
+async def daily_snapshot_guard(request, call_next):
+    """Self-healing: first request of each day kicks the OI snapshot in the
+    background if the OS-level cron didn't fire. No-op the rest of the day."""
+    try:
+        oi_tracker.maybe_run_daily_snapshot()
+    except Exception as e:  # never let the guard break a request
+        print(f"[snapshot-guard] middleware error: {e}")
+    return await call_next(request)
 
-def require_pro(current_user: User = Depends(auth_module.get_current_user)):
-    if current_user.tier != "pro":
-        raise HTTPException(status_code=403, detail={"code": "UPGRADE_REQUIRED"})
+# ── Freemium gate ─────────────────────────────────────────────────────────────
+# Free users have full access until their cumulative closed-position profit
+# exceeds PROFIT_GATE_THRESHOLD. After that the app becomes read-only.
+
+PROFIT_GATE_THRESHOLD = 1000.0
+
+def get_cumulative_profit(user_id: str) -> float:
+    positions = db.get_positions(user_id)
+    return sum(
+        p.get("final_pnl") or 0
+        for p in positions
+        if p.get("status") == "closed" and (p.get("final_pnl") or 0) > 0
+    )
+
+def check_write_access(current_user: User = Depends(auth_module.get_current_user)) -> User:
+    """Dependency for mutating endpoints — blocks gated free users."""
+    if current_user.tier == "pro":
+        return current_user
+    profit = get_cumulative_profit(current_user.id)
+    if profit >= PROFIT_GATE_THRESHOLD:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "PROFIT_GATE_REACHED", "profit": round(profit, 2)},
+        )
     return current_user
-
-def _screener_gate(user: User):
-    if user.tier == "pro":
-        return
-    today = date.today().isoformat()
-    usage = db.get_usage(user.id, "screener", today)
-    if usage and usage["count"] >= FREE_SCREENER_DAILY_LIMIT:
-        raise HTTPException(status_code=403, detail={"code": "DAILY_LIMIT_REACHED"})
-    db.increment_usage(user.id, "screener", today)
 
 fetcher = DataFetcher()
 engine  = SignalEngine()
@@ -62,6 +90,171 @@ engine  = SignalEngine()
 
 def _dte(expiry_str: str) -> int:
     return (datetime.strptime(expiry_str, "%Y-%m-%d").date() - date.today()).days
+
+
+# ── Strategy presets ──────────────────────────────────────────────────────────
+# Each preset governs filter thresholds, DTE window, scoring weights, thesis
+# template, and tag derivation rules for the recommendations engine.
+#
+# IV NOTE (v1): minIvr is compared against the raw at-the-money IV% from the
+# options chain (impliedVolatility * 100), not a historical IV rank, because
+# individual stock IV history is not available without a paid data source.
+
+STRATEGY_PRESETS: dict = {
+    "available": {
+        "id": "available", "label": "My Available Shares",
+        "hint": "Everything you can write today",
+        "filt": {"maxDelta": 0.40, "minIvr": 0.0, "minYield": 0.0},
+        "dte_window": [21, 45],
+        "weights": {"signal": 25, "yield": 30, "delta": 20, "dte": 25},
+        "portfolio_scoped_only": True,
+        "thesis_tpl": (
+            "You have {total_contracts} contract{s_total} total, {written_contracts} already written. "
+            "Current IV is {iv_context} at {iv_pct:.0f}%. "
+            "These {free_contracts} remaining contract{s_free} could earn ${premium_total:.0f} before {expiry_short} — "
+            "conditions are {condition_context} right now."
+        ),
+    },
+    "wheel": {
+        "id": "wheel", "label": "Wheel starters",
+        "hint": "Low risk, 30-delta ceiling — IV/yield filters dropped to capture calm-market winners (PIPE-REC-09 hypothesis test, 2026-04-25)",
+        "filt": {"maxDelta": 0.32, "minIvr": 0.0, "minYield": 0.0},
+        "dte_window": [21, 45],
+        "weights": {"signal": 25, "yield": 30, "delta": 20, "dte": 25},
+        "thesis_tpl": (
+            "{ticker} IV is {iv_context} at {iv_pct:.0f}%. "
+            "The ${strike} strike is {distance_pct:.1f}% above the current price with {dte} days until expiry, "
+            "giving you time to collect ${premium_per_contract:.0f}/contract."
+        ),
+    },
+    "income": {
+        "id": "income", "label": "High-IV income",
+        "hint": "Aggressive yield, 40-delta",
+        "filt": {"maxDelta": 0.40, "minIvr": 40.0, "minYield": 22.0},
+        "dte_window": [14, 35],
+        "weights": {"signal": 15, "yield": 40, "delta": 15, "dte": 30},
+        "thesis_tpl": (
+            "{ticker} IV is elevated at {iv_pct:.0f}% — above the {minIvr:.0f}% floor for this strategy. "
+            "The ${strike} strike with {dte} days collects ${premium_per_contract:.0f}/contract, "
+            "{annYield:.0f}% annualized. Theta decay is accelerating."
+        ),
+    },
+    "safe": {
+        "id": "safe", "label": "Low-delta conservative",
+        "hint": "Capital preservation first",
+        "filt": {"maxDelta": 0.25, "minIvr": 10.0, "minYield": 8.0},
+        "dte_window": [30, 60],
+        "weights": {"signal": 30, "yield": 20, "delta": 30, "dte": 20},
+        "thesis_tpl": (
+            "{ticker} is in a {trend_context} trend with IV at {iv_pct:.0f}%. "
+            "The ${strike} strike at delta {delta:.2f} gives a {distance_pct:.1f}% buffer above spot. "
+            "{dte} days to expiry collects ${premium_per_contract:.0f}/contract with lower assignment risk."
+        ),
+    },
+    "watch": {
+        "id": "watch", "label": "From my watchlist",
+        "hint": "Watchlist ideas — IV ceiling at 15% to match calm-market winning band (PIPE-REC-09 hypothesis test, 2026-04-25)",
+        "filt": {"maxDelta": 0.40, "minIvr": 0.0, "maxIvr": 15.0, "minYield": 0.0},
+        "dte_window": [21, 45],
+        "weights": {"signal": 25, "yield": 25, "delta": 20, "dte": 30},
+        "thesis_tpl": (
+            "{ticker} (watchlist) shows IV at {iv_pct:.0f}%. "
+            "The ${strike} strike collects ${premium_per_contract:.0f}/contract over {dte} days — "
+            "{annYield:.0f}% annualized."
+        ),
+    },
+    "conservative": {
+        "id": "conservative", "label": "Conservative",
+        "hint": "Calm-market 30-delta · IV ≤ 15% · 28-42 DTE",
+        "filt": {"maxDelta": 0.30, "minIvr": 0.0, "maxIvr": 15.0, "minYield": 0.0},
+        "dte_window": [28, 42],
+        "weights": {"signal": 25, "yield": 30, "delta": 20, "dte": 25},
+        "thesis_tpl": (
+            "{ticker} IV at {iv_pct:.0f}% (calm). "
+            "The ${strike} strike with {dte} days collects ${premium_per_contract:.0f}/contract "
+            "({annYield:.0f}% annualized, delta {delta:.2f})."
+        ),
+    },
+}
+
+
+def _dte_score(dte: int, dte_window: List[int]) -> float:
+    """Returns 0–1: peaks at midpoint of dte_window, tapers to 0 at edges."""
+    lo, hi = dte_window
+    if dte < lo or dte > hi:
+        return 0.0
+    mid = (lo + hi) / 2.0
+    half = mid - lo
+    if half <= 0:
+        return 1.0
+    return (dte - lo) / half if dte <= mid else (hi - dte) / (hi - mid)
+
+
+def _build_thesis(strategy_id: str, metrics: dict) -> str:
+    """Fill the strategy thesis template with computed metrics."""
+    preset = STRATEGY_PRESETS.get(strategy_id, STRATEGY_PRESETS["conservative"])
+    iv_raw = metrics.get("iv", 0) or 0
+    iv_pct = iv_raw * 100
+    iv_context = "elevated" if iv_pct >= 40 else "moderate" if iv_pct >= 20 else "low"
+    trend_context = "bullish" if metrics.get("above_ma50") else "neutral"
+    total_contracts   = metrics.get("total_contracts", 0)
+    written_contracts = metrics.get("written_contracts", 0)
+    free_contracts    = metrics.get("free_contracts", 0)
+    composite_score   = metrics.get("composite_score", 0)
+    condition_context = "ideal" if composite_score >= 80 else "decent" if composite_score >= 60 else "suboptimal"
+    try:
+        return preset["thesis_tpl"].format(
+            ticker=metrics.get("ticker", ""),
+            strike=metrics.get("strike", 0),
+            distance_pct=metrics.get("distance_pct", 0),
+            dte=metrics.get("dte", 0),
+            premium_per_contract=metrics.get("premium_per_contract", 0),
+            premium_total=metrics.get("premium_total", 0),
+            annYield=metrics.get("annYield", 0),
+            delta=metrics.get("delta", 0),
+            iv_pct=iv_pct,
+            iv_context=iv_context,
+            trend_context=trend_context,
+            minIvr=preset["filt"]["minIvr"],
+            total_contracts=total_contracts,
+            written_contracts=written_contracts,
+            free_contracts=free_contracts,
+            s_total="" if total_contracts == 1 else "s",
+            s_free="" if free_contracts == 1 else "s",
+            expiry_short=metrics.get("expiry_short", "expiry"),
+            condition_context=condition_context,
+        )
+    except (KeyError, ValueError):
+        return f"{metrics.get('ticker', '')} — {preset['hint']}"
+
+
+def _derive_tags(ticker_metrics: dict, strategy: dict) -> List[str]:
+    """Derive recommendation tags from computed ticker metrics."""
+    tags: List[str] = []
+    iv_pct = (ticker_metrics.get("iv") or 0) * 100
+    if iv_pct > 60:
+        tags.append("HIGH IV")
+    written = ticker_metrics.get("written_contracts", 0)
+    total   = ticker_metrics.get("total_contracts", 0)
+    if total > 0 and written > 0:
+        tags.append(f"{written}/{total} WRITTEN")
+    expiry = ticker_metrics.get("expiry", "")
+    earnings_date = ticker_metrics.get("earnings_date")
+    if earnings_date and expiry and earnings_date > expiry:
+        tags.append("EARNINGS BUFFER")
+    high_52w = ticker_metrics.get("fifty_two_week_high")
+    strike = ticker_metrics.get("strike") or 0
+    if high_52w and high_52w > 0 and abs(strike - high_52w) / high_52w <= 0.03:
+        tags.append("NEAR RESISTANCE")
+    if ticker_metrics.get("above_ma50"):
+        tags.append("STRONG TREND")
+    dte = ticker_metrics.get("dte") or 0
+    if 14 <= dte <= 28:
+        tags.append("PEAK DECAY WINDOW")
+    days_since_earnings = ticker_metrics.get("days_since_earnings")
+    if days_since_earnings is not None and days_since_earnings <= 10:
+        tags.append("POST-EARNINGS")
+    return tags
 
 
 def _roll_score(net_credit: float, new_time_prem: float, new_intrinsic: float, dte: int) -> float:
@@ -151,6 +344,62 @@ class HoldingUpdate(BaseModel):
     avg_cost: Optional[float] = None
 
 
+# ── Gate status endpoint ──────────────────────────────────────────────────────
+
+@app.get("/api/user/gate-status")
+def user_gate_status(current_user: User = Depends(auth_module.get_current_user)):
+    if current_user.tier == "pro":
+        return {"gated": False, "cumulative_profit": 0.0, "threshold": PROFIT_GATE_THRESHOLD}
+    profit = get_cumulative_profit(current_user.id)
+    return {
+        "gated": profit >= PROFIT_GATE_THRESHOLD,
+        "cumulative_profit": round(profit, 2),
+        "threshold": PROFIT_GATE_THRESHOLD,
+    }
+
+@app.get("/api/strategies")
+def get_strategies():
+    return list(STRATEGY_PRESETS.values())
+
+
+# ── Backtest endpoint (PIPE-REC-09) ───────────────────────────────────────────
+#
+# Returns historical-success metrics for a strategy on a single ticker. Uses
+# real DuckDB option chains for premiums + Greeks, dual-track results
+# (unconditional vs regime-gated), and 24h cache.
+# Pro-tier — backtest is a credibility-builder for the upgrade narrative.
+
+BACKTEST_MAX_LOOKBACK_DAYS = 1825  # 5y hard cap to bound endpoint latency
+BACKTEST_DEFAULT_LOOKBACK = 730    # 2y default per spec
+
+@app.get("/api/backtest")
+def get_backtest(
+    strategy: str = Query(..., min_length=2, max_length=32),
+    ticker: str = Query("SPY", min_length=1, max_length=8),
+    lookback: int = Query(BACKTEST_DEFAULT_LOOKBACK, ge=90, le=BACKTEST_MAX_LOOKBACK_DAYS),
+    cadence: str = Query("both", pattern="^(unconditional|regime_gated|both)$"),
+    share_count: int = Query(100, ge=100, le=1_000_000),  # PIPE-REC-13
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    if current_user.tier != "pro":
+        raise HTTPException(
+            status_code=402,
+            detail={"code": "PRO_FEATURE", "message": "Strategy backtests are a Pro feature."},
+        )
+    if strategy not in STRATEGY_PRESETS:
+        raise HTTPException(status_code=400, detail=f"unknown strategy: {strategy}")
+    ticker_u = ticker.upper()
+    try:
+        return backtest_module.get_or_run(
+            ticker=ticker_u, strategy_id=strategy,
+            lookback_days=lookback, cadence=cadence,
+            share_count=share_count,
+        )
+    except ValueError as e:
+        # Coverage missing or invalid params
+        raise HTTPException(status_code=422, detail=str(e))
+
+
 # ── Portfolio endpoints ───────────────────────────────────────────────────────
 
 @app.get("/api/portfolios")
@@ -168,7 +417,7 @@ def get_portfolios(current_user: User = Depends(auth_module.get_current_user)):
     return result
 
 @app.post("/api/portfolios")
-def create_portfolio(body: PortfolioIn, current_user: User = Depends(auth_module.get_current_user)):
+def create_portfolio(body: PortfolioIn, current_user: User = Depends(check_write_access)):
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Portfolio name cannot be empty")
@@ -178,7 +427,7 @@ def create_portfolio(body: PortfolioIn, current_user: User = Depends(auth_module
     return db.create_portfolio(current_user.id, name)
 
 @app.delete("/api/portfolios/{portfolio_id}")
-def delete_portfolio(portfolio_id: str, current_user: User = Depends(auth_module.get_current_user)):
+def delete_portfolio(portfolio_id: str, current_user: User = Depends(check_write_access)):
     portfolio = db.get_portfolio(current_user.id, portfolio_id)
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -198,7 +447,7 @@ def delete_portfolio(portfolio_id: str, current_user: User = Depends(auth_module
     return {"ok": True}
 
 @app.put("/api/portfolios/{portfolio_id}/archive")
-def archive_portfolio(portfolio_id: str, current_user: User = Depends(auth_module.get_current_user)):
+def archive_portfolio(portfolio_id: str, current_user: User = Depends(check_write_access)):
     portfolio = db.get_portfolio(current_user.id, portfolio_id)
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -211,13 +460,13 @@ def archive_portfolio(portfolio_id: str, current_user: User = Depends(auth_modul
     return db.update_portfolio(current_user.id, portfolio_id, {"archived": True})
 
 @app.put("/api/portfolios/{portfolio_id}/unarchive")
-def unarchive_portfolio(portfolio_id: str, current_user: User = Depends(auth_module.get_current_user)):
+def unarchive_portfolio(portfolio_id: str, current_user: User = Depends(check_write_access)):
     if not db.get_portfolio(current_user.id, portfolio_id):
         raise HTTPException(status_code=404, detail="Portfolio not found")
     return db.update_portfolio(current_user.id, portfolio_id, {"archived": False})
 
 @app.put("/api/portfolios/{portfolio_id}/rename")
-def rename_portfolio(portfolio_id: str, body: PortfolioIn, current_user: User = Depends(auth_module.get_current_user)):
+def rename_portfolio(portfolio_id: str, body: PortfolioIn, current_user: User = Depends(check_write_access)):
     if not db.get_portfolio(current_user.id, portfolio_id):
         raise HTTPException(status_code=404, detail="Portfolio not found")
     name = body.name.strip()
@@ -230,7 +479,7 @@ class StarIn(BaseModel):
     starred: bool
 
 @app.put("/api/portfolios/{portfolio_id}/star")
-def star_portfolio(portfolio_id: str, body: StarIn, current_user: User = Depends(auth_module.get_current_user)):
+def star_portfolio(portfolio_id: str, body: StarIn, current_user: User = Depends(check_write_access)):
     result = db.star_portfolio(current_user.id, portfolio_id, body.starred)
     if not result:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -400,8 +649,6 @@ def get_positions(
                 p["macro_event"] = None
             p["macro_uncertainty"] = news_uncertainty.get("is_elevated", False)
         enriched.append(p)
-    if current_user.tier == "free":
-        enriched = enriched[:FREE_POSITION_LIMIT]
     return enriched
 
 
@@ -441,8 +688,138 @@ def _capture_signal_snapshot() -> dict:
         return {"timestamp": datetime.now().isoformat(), "error": "snapshot_failed"}
 
 
+# ── PIPE-REC-12: Roll candidates endpoint ─────────────────────────────────────
+# Returns the user's open positions that are eligible to roll, with a
+# suggested replacement contract per the active strategy.
+
+@app.get("/api/positions/roll-candidates")
+def get_roll_candidates(
+    strategy: str = Query("conservative"),
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    """For each open position with DTE ≤ 21 OR mid-trade profit ≥ 50%,
+    return a suggested next contract using the strategy's filters.
+
+    Triggers (matching backtest.py:_manage_position):
+      - 50%-profit close: current_mid ≤ entry_mid × 0.50
+      - 21-DTE defensive: dte ≤ 21 AND underlying ≥ strike × 0.97 (at-risk)
+      - ITM roll up-and-out: underlying > strike × 1.005 AND DTE > 21
+    """
+    preset = STRATEGY_PRESETS.get(strategy, STRATEGY_PRESETS["conservative"])
+    open_positions = [p for p in db.get_open_positions(current_user.id) if p.get("status") == "open"]
+    if not open_positions:
+        return {"strategy": strategy, "candidates": []}
+
+    candidates = []
+    for pos in open_positions:
+        ticker = (pos.get("ticker") or "").upper()
+        if not ticker:
+            continue
+        try:
+            spot = fetcher.get_price_for(ticker)
+        except Exception:
+            continue
+        if not spot or spot <= 0:
+            continue
+        entry_premium = float(pos.get("sell_price") or 0)
+        strike = float(pos.get("strike") or 0)
+        if strike <= 0 or entry_premium <= 0:
+            continue
+        dte = _dte(pos["expiry"]) if pos.get("expiry") else None
+        if dte is None or dte < 0:
+            continue
+        try:
+            current_mid = fetcher.get_option_price(pos["expiry"], strike, "call") or 0
+        except Exception:
+            current_mid = 0
+
+        # Trigger evaluation
+        is_50pct = entry_premium > 0 and current_mid > 0 and current_mid <= entry_premium * 0.50
+        is_itm_roll = spot > strike * 1.005 and dte > 21
+        is_21dte_defensive = dte <= 21 and spot >= strike * 0.97
+        triggered = is_50pct or is_itm_roll or is_21dte_defensive
+        if not triggered:
+            continue
+
+        if is_50pct:
+            reason = "Hit 50% profit target — close to lock in gains and redeploy"
+            trigger_label = "50% profit close"
+        elif is_itm_roll:
+            reason = f"SPY at ${spot:.2f} is above ${strike:.0f} strike — roll up-and-out to recover upside"
+            trigger_label = "ITM roll up-and-out"
+        else:
+            reason = "21 DTE with strike at-risk — defensive roll to reset gamma"
+            trigger_label = "21-DTE defensive roll"
+
+        # Suggest a new contract using the strategy's filters
+        try:
+            expiries = fetcher.get_screener_expiries_for(ticker, max_dte=preset["dte_window"][1])
+        except Exception:
+            expiries = []
+        target_dte = sum(preset["dte_window"]) // 2
+        suggested = None
+        for exp in expiries:
+            try:
+                exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+            except Exception:
+                continue
+            this_dte = (exp_date - date.today()).days
+            lo, hi = preset["dte_window"]
+            if not (lo <= this_dte <= hi):
+                continue
+            try:
+                chain = fetcher.get_options_chain_for(ticker, exp)
+            except Exception:
+                continue
+            best = None
+            for row in chain:
+                row_delta = row.get("delta")
+                if row_delta is None or row_delta <= 0 or row_delta > preset["filt"]["maxDelta"]:
+                    continue
+                row_iv = (row.get("impliedVolatility") or 0) * 100
+                if row_iv < preset["filt"].get("minIvr", 0.0):
+                    continue
+                max_iv = preset["filt"].get("maxIvr")
+                if max_iv is not None and row_iv > max_iv:
+                    continue
+                row_strike = row.get("strike")
+                if row_strike is None or row_strike <= spot:
+                    continue
+                if best is None or abs(row_delta - preset["filt"]["maxDelta"]) < abs(best["delta"] - preset["filt"]["maxDelta"]):
+                    best = {"strike": row_strike, "delta": row_delta, "iv_pct": row_iv,
+                            "bid": row.get("bid", 0) or 0, "ask": row.get("ask", 0) or 0}
+            if best is not None:
+                bid, ask = best["bid"], best["ask"]
+                if bid > 0 and ask > 0:
+                    mid = (bid + ask) / 2.0
+                    suggested = {
+                        "strike": best["strike"], "expiry": exp, "dte": this_dte,
+                        "mid": round(mid, 2), "delta": round(best["delta"], 3),
+                        "iv_pct": round(best["iv_pct"], 1),
+                        "ann_yield": round((mid / spot) * (365 / max(1, this_dte)) * 100, 1),
+                        "premium_total": round(mid * (pos.get("contracts") or 1) * 100, 2),
+                    }
+                    break
+
+        candidates.append({
+            "position_id": pos.get("id"),
+            "ticker": ticker,
+            "current": {
+                "strike": strike, "expiry": pos.get("expiry"),
+                "dte": dte, "entry_premium": entry_premium,
+                "current_mid": round(current_mid, 2) if current_mid else None,
+                "contracts": pos.get("contracts", 1),
+                "spot": round(spot, 2),
+            },
+            "trigger": trigger_label,
+            "reason": reason,
+            "suggestion": suggested,
+        })
+    return {"strategy": strategy, "candidates": candidates}
+
+
 @app.post("/api/positions")
-def add_position(pos: PositionIn, current_user: User = Depends(auth_module.get_current_user)):
+def add_position(pos: PositionIn, current_user: User = Depends(check_write_access)):
     default = db.ensure_default_portfolio(current_user.id)
     portfolio_id = pos.portfolio_id or default["id"]
     if not db.get_portfolio(current_user.id, portfolio_id):
@@ -463,14 +840,14 @@ def add_position(pos: PositionIn, current_user: User = Depends(auth_module.get_c
     return saved
 
 @app.delete("/api/positions/{position_id}")
-def delete_position_endpoint(position_id: str, current_user: User = Depends(auth_module.get_current_user)):
+def delete_position_endpoint(position_id: str, current_user: User = Depends(check_write_access)):
     if not db.get_position(current_user.id, position_id):
         raise HTTPException(status_code=404, detail="Position not found")
     db.delete_position(current_user.id, position_id)
     return {"ok": True}
 
 @app.put("/api/positions/{position_id}")
-def update_position_endpoint(position_id: str, update: PositionUpdate, current_user: User = Depends(auth_module.get_current_user)):
+def update_position_endpoint(position_id: str, update: PositionUpdate, current_user: User = Depends(check_write_access)):
     pos = db.get_position(current_user.id, position_id)
     if not pos:
         raise HTTPException(status_code=404, detail="Position not found")
@@ -495,7 +872,7 @@ def update_position_endpoint(position_id: str, update: PositionUpdate, current_u
     return db.update_position(current_user.id, position_id, updates)
 
 @app.put("/api/positions/{position_id}/reopen")
-def reopen_position(position_id: str, current_user: User = Depends(auth_module.get_current_user)):
+def reopen_position(position_id: str, current_user: User = Depends(check_write_access)):
     pos = db.get_position(current_user.id, position_id)
     if not pos:
         raise HTTPException(status_code=404, detail="Position not found")
@@ -511,7 +888,7 @@ def reopen_position(position_id: str, current_user: User = Depends(auth_module.g
     return db.update_position(current_user.id, position_id, updates)
 
 @app.post("/api/positions/{position_id}/partial-close")
-def partial_close_position(position_id: str, body: PartialCloseIn, current_user: User = Depends(auth_module.get_current_user)):
+def partial_close_position(position_id: str, body: PartialCloseIn, current_user: User = Depends(check_write_access)):
     pos = db.get_position(current_user.id, position_id)
     if not pos:
         raise HTTPException(status_code=404, detail="Position not found")
@@ -541,7 +918,7 @@ def partial_close_position(position_id: str, body: PartialCloseIn, current_user:
     return {"open": updated_open, "closed": saved_closed}
 
 @app.put("/api/positions/{position_id}/move")
-def move_position(position_id: str, body: PositionMove, current_user: User = Depends(auth_module.get_current_user)):
+def move_position(position_id: str, body: PositionMove, current_user: User = Depends(check_write_access)):
     if not db.get_portfolio(current_user.id, body.portfolio_id):
         raise HTTPException(status_code=404, detail="Target portfolio not found")
     pos = db.get_position(current_user.id, position_id)
@@ -574,7 +951,7 @@ def get_holdings_endpoint(
     return enriched
 
 @app.post("/api/holdings")
-def add_holding(body: HoldingIn, current_user: User = Depends(auth_module.get_current_user)):
+def add_holding(body: HoldingIn, current_user: User = Depends(check_write_access)):
     if not db.get_portfolio(current_user.id, body.portfolio_id):
         raise HTTPException(status_code=404, detail="Portfolio not found")
     new_h = body.dict()
@@ -584,14 +961,14 @@ def add_holding(body: HoldingIn, current_user: User = Depends(auth_module.get_cu
     return db.create_holding(current_user.id, new_h)
 
 @app.put("/api/holdings/{holding_id}")
-def update_holding_endpoint(holding_id: str, body: HoldingUpdate, current_user: User = Depends(auth_module.get_current_user)):
+def update_holding_endpoint(holding_id: str, body: HoldingUpdate, current_user: User = Depends(check_write_access)):
     if not db.get_holding(current_user.id, holding_id):
         raise HTTPException(status_code=404, detail="Holding not found")
     updates = {k: v for k, v in body.dict().items() if v is not None}
     return db.update_holding(current_user.id, holding_id, updates)
 
 @app.delete("/api/holdings/{holding_id}")
-def delete_holding_endpoint(holding_id: str, current_user: User = Depends(auth_module.get_current_user)):
+def delete_holding_endpoint(holding_id: str, current_user: User = Depends(check_write_access)):
     if not db.get_holding(current_user.id, holding_id):
         raise HTTPException(status_code=404, detail="Holding not found")
     db.delete_holding(current_user.id, holding_id)
@@ -686,7 +1063,6 @@ def screener(
     ticker: str = Query("SPY"),
     current_user: User = Depends(auth_module.get_current_user),
 ):
-    _screener_gate(current_user)
     ticker = ticker.upper().strip()
     all_holdings = db.get_holdings(current_user.id, portfolio_id=portfolio_id)
     port_ticker_holdings = [h for h in all_holdings if h.get("ticker", "").upper() == ticker]
@@ -952,6 +1328,440 @@ def screener(
     }
 
 
+# ── Screener (exploratory, freeform-ticker) ───────────────────────────────────
+# PIPE-037: backs the revamped Screener UI. Returns raw chain + metadata for
+# arbitrary tickers (no portfolio scope). IVR is served from PIPE-036's
+# iv_snapshots table when we have ≥20 daily samples; otherwise returns null.
+
+@app.get("/api/screener/meta")
+def screener_meta(
+    ticker: str = Query(...),
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    sym = ticker.upper().strip()
+    if not sym:
+        raise HTTPException(status_code=400, detail="ticker required")
+    meta = fetcher.get_meta_for(sym)
+    atm_iv = fetcher.get_atm_iv(sym)
+
+    # PIPE-036: record today's ATM IV snapshot + compute IVR from rolling 252d
+    ivr = None
+    samples = 0
+    ivr_confidence = "insufficient_history"
+    try:
+        db.ensure_universe_ticker(sym, source="on_demand")
+        if atm_iv is not None:
+            db.record_iv_snapshot(sym, date.today(), atm_iv)
+        history = db.get_iv_history(sym, days=252)
+        samples = len(history)
+        if samples >= 20 and atm_iv is not None:
+            lo = min(history)
+            hi = max(history)
+            if hi > lo:
+                ivr = round((atm_iv - lo) / (hi - lo) * 100, 1)
+                ivr = max(0.0, min(100.0, ivr))
+                ivr_confidence = "ok"
+    except Exception:
+        # Tables may not exist yet — graceful fallback
+        pass
+
+    return {
+        "ticker": sym,
+        "name":    meta.get("name") or sym,
+        "price":   meta.get("price") or 0.0,
+        "iv":      atm_iv,
+        "ivr":     ivr,
+        "ivr_confidence": ivr_confidence,
+        "ivr_samples":    samples,
+        "sector":        meta.get("sector"),
+        "earnings_date": meta.get("earnings_date"),
+        "mcap":          meta.get("mcap"),
+    }
+
+
+@app.get("/api/screener/expiries")
+def screener_expiries(
+    ticker: str = Query(...),
+    max_dte: int = Query(90),
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    sym = ticker.upper().strip()
+    if not sym:
+        raise HTTPException(status_code=400, detail="ticker required")
+    return fetcher.get_expiries_union(sym, max_dte)
+
+
+@app.get("/api/screener/chain")
+def screener_chain(
+    ticker: str = Query(...),
+    expiry: str = Query(...),
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    sym = ticker.upper().strip()
+    if not sym:
+        raise HTTPException(status_code=400, detail="ticker required")
+    spot = fetcher.get_price_for(sym)
+    today = date.today()
+    try:
+        exp_date = datetime.strptime(expiry, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(status_code=400, detail="expiry must be YYYY-MM-DD")
+    dte = (exp_date - today).days
+    try:
+        raw = fetcher.get_options_chain_for(sym, expiry)
+    except Exception:
+        raw = []
+    chain = []
+    for row in raw or []:
+        strike = row.get("strike")
+        if strike is None:
+            continue
+        bid = row.get("bid") or 0
+        ask = row.get("ask") or 0
+        mid = round((float(bid) + float(ask)) / 2, 2) if (bid or ask) else 0
+        chain.append({
+            "strike": float(strike),
+            "bid":    round(float(bid), 2),
+            "ask":    round(float(ask), 2),
+            "mid":    mid,
+            "iv":     row.get("impliedVolatility"),
+            "delta":  row.get("delta"),
+            "gamma":  row.get("gamma"),
+            "theta":  row.get("theta"),
+            "vega":   row.get("vega"),
+            "volume":        row.get("volume") or 0,
+            "open_interest": row.get("openInterest") or 0,
+        })
+    return {
+        "ticker": sym,
+        "expiry": expiry,
+        "dte":    dte,
+        "spot":   round(spot, 2) if spot else 0.0,
+        "chain":  chain,
+    }
+
+
+@app.get("/api/screener/price-history")
+def screener_price_history(
+    ticker: str = Query(...),
+    days: int = Query(60),
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    sym = ticker.upper().strip()
+    if not sym:
+        raise HTTPException(status_code=400, detail="ticker required")
+    days = max(1, min(days, 365))
+    return fetcher.get_recent_history_for(sym, days)
+
+
+# ── Admin: seed IV universe from curated ticker lists (PIPE-036) ─────────────
+# One-shot idempotent endpoint. Auth-gated to the admin user for now.
+
+@app.post("/api/admin/iv-universe/seed")
+def admin_seed_iv_universe(
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    if current_user.email != "leslie.c.george@gmail.com":
+        raise HTTPException(status_code=403, detail="admin only")
+    from universe import CURATED_UNIVERSE, source_for
+    inserted = 0
+    for sym in CURATED_UNIVERSE:
+        try:
+            if db.ensure_universe_ticker(sym, source=source_for(sym)):
+                inserted += 1
+        except Exception:
+            continue
+    return {"seeded": len(CURATED_UNIVERSE), "inserted": inserted}
+
+
+# ── Recommendations engine ───────────────────────────────────────────────────
+
+@app.get("/api/recommendations")
+def get_recommendations(
+    portfolio: Optional[str] = Query(None),
+    strategy: str = Query("available"),
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    preset     = STRATEGY_PRESETS.get(strategy, STRATEGY_PRESETS["available"])
+    filt       = preset["filt"]
+    weights    = preset["weights"]
+    dte_window = preset["dte_window"]
+    max_delta  = filt["maxDelta"]
+    min_ivr    = filt["minIvr"]    # raw ATM IV% (not historical rank — see PIPE-REC-01 note)
+    min_yield  = filt["minYield"]  # annualized yield %
+
+    # Resolve portfolio scope — frontend sends ?portfolio=all or ?portfolio=<uuid>
+    pid = None if (portfolio is None or portfolio == "all") else portfolio
+    all_holdings   = db.get_holdings(current_user.id, portfolio_id=pid)
+    open_positions = db.get_open_positions(current_user.id)
+
+    # Market signal score — computed once, reused for every ticker
+    spy_price_data = fetcher.get_spy_price()
+    spy_price      = spy_price_data.get("price", 0)
+    signal_tickers = fetcher.get_signal_tickers()
+    vix   = signal_tickers.get("^VIX",  {}).get("price", 20)
+    vvix  = signal_tickers.get("^VVIX", {}).get("price", 95)
+    tnx   = signal_tickers.get("^TNX",  {}).get("price", 4.3)
+    fvx   = signal_tickers.get("^FVX",  {}).get("price", 4.0)
+    tlt   = signal_tickers.get("TLT",   {}).get("price", 88)
+    vix_history   = fetcher.get_vix_history()
+    iv_rank       = vix_history.get("iv_rank", 50)
+    spy_ma        = fetcher.get_spy_ma_signal()
+    tnx_history   = fetcher.get_tnx_history(10)
+    tlt_history   = fetcher.get_tlt_history(10)
+    vix_recent    = fetcher.get_vix_recent_history(10)
+    spy_recent    = fetcher.get_spy_recent_history(10)
+    signal_result = engine.analyze(
+        spy_price=spy_price, vix=vix, vix_iv_rank=iv_rank, vvix=vvix,
+        tnx=tnx, fvx=fvx, tlt=tlt, spy_ma_signal=spy_ma,
+        open_positions=[], tnx_history=tnx_history, tlt_history=tlt_history,
+        available_expiries=[], vix_recent=vix_recent, spy_recent=spy_recent,
+    )
+    total_score = signal_result.get("total_score", 0)
+
+    # Deduplicate tickers preserving insertion order
+    seen: dict = {}
+    for h in all_holdings:
+        t = h.get("ticker", "").upper()
+        if t:
+            seen[t] = True
+    tickers = list(seen.keys())
+
+    today = date.today()
+    dots: List[dict] = []
+    recs: List[dict] = []
+
+    for ticker in tickers:
+        # ── Share ownership gate ──────────────────────────────────────────────
+        # All rows in the holdings table represent stock ownership (no category
+        # column in schema). Filter only by ticker.
+        ticker_holdings   = [h for h in all_holdings if h.get("ticker", "").upper() == ticker]
+        total_shares      = sum(h.get("shares", 0) for h in ticker_holdings)
+        total_contracts   = int(total_shares // 100)
+
+        # Only count explicitly tracked short calls as written contracts.
+        # Avoid including None-type positions which could be any position type.
+        open_calls        = [
+            p for p in open_positions
+            if p.get("ticker", "").upper() == ticker
+            and p.get("type") in ("short_call", "covered_call")
+        ]
+        written_contracts = sum(int(p.get("contracts", 0)) for p in open_calls)
+        free_contracts    = max(0, total_contracts - written_contracts)
+
+        # Spot price — add ineligible dot on failure so ticker is always visible
+        try:
+            spot = fetcher.get_price_for(ticker)
+        except Exception:
+            spot = 0.0
+        if spot <= 0:
+            dots.append({
+                "id": f"dot_{ticker}", "sym": ticker,
+                "x": 0, "y": 0, "delta": 0, "ivr": 0,
+                "eligible": False,
+                "total_shares": int(total_shares),
+                "free_contracts": free_contracts,
+                "sub_label": "Price unavailable",
+            })
+            continue
+
+        # Select target expiry: nearest expiry within strategy DTE window
+        expiries = fetcher.get_screener_expiries_for(ticker, dte_window[1])
+        lo_dte, hi_dte = dte_window
+        valid = []
+        for exp in expiries:
+            d = (datetime.strptime(exp, "%Y-%m-%d").date() - today).days
+            if lo_dte <= d <= hi_dte:
+                valid.append((d, exp))
+
+        if not valid:
+            if total_shares > 0:
+                dots.append({
+                    "id": f"dot_{ticker}", "sym": ticker,
+                    "x": 0, "y": 0, "delta": 0, "ivr": 0,
+                    "eligible": False,
+                    "total_shares": int(total_shares),
+                    "free_contracts": free_contracts,
+                    "sub_label": f"No expiry in {lo_dte}–{hi_dte} DTE",
+                })
+            continue
+
+        target_dte, target_expiry = min(valid, key=lambda v: v[0])
+
+        # Fetch chain
+        try:
+            chain = fetcher.get_options_chain_for(ticker, target_expiry)
+        except Exception:
+            chain = []
+        if not chain:
+            dots.append({
+                "id": f"dot_{ticker}", "sym": ticker,
+                "x": 0, "y": 0, "delta": 0, "ivr": 0,
+                "eligible": False,
+                "total_shares": int(total_shares),
+                "free_contracts": free_contracts,
+                "sub_label": "No options data",
+            })
+            continue
+
+        # Find best strike: OTM call closest to maxDelta without exceeding it
+        best_row       = None
+        best_delta_diff = float("inf")
+        for row in chain:
+            d = row.get("delta")
+            s = row.get("strike")
+            if d is None or s is None:
+                continue
+            if float(s) <= spot or float(d) > max_delta:
+                continue
+            diff = abs(float(d) - max_delta)
+            if diff < best_delta_diff:
+                best_delta_diff = diff
+                best_row = row
+
+        if best_row is None:
+            if total_shares > 0:
+                dots.append({
+                    "id": f"dot_{ticker}", "sym": ticker,
+                    "x": 0, "y": 0, "delta": 0, "ivr": 0,
+                    "eligible": False,
+                    "total_shares": int(total_shares),
+                    "free_contracts": free_contracts,
+                    "sub_label": f"No strike ≤ {max_delta}Δ found",
+                })
+            continue
+
+        # Compute metrics
+        delta    = float(best_row.get("delta", 0))
+        strike   = float(best_row.get("strike", 0))
+        bid      = float(best_row.get("bid") or 0)
+        ask      = float(best_row.get("ask") or 0)
+        mid      = round((bid + ask) / 2, 2) if (bid or ask) else 0
+        if mid <= 0:
+            dots.append({
+                "id": f"dot_{ticker}", "sym": ticker,
+                "x": 0, "y": 0, "delta": round(delta, 4), "ivr": round(float(best_row.get("impliedVolatility") or 0) * 100, 1),
+                "eligible": False,
+                "total_shares": int(total_shares),
+                "free_contracts": free_contracts,
+                "sub_label": "Market closed",
+            })
+            continue
+        iv_raw   = float(best_row.get("impliedVolatility") or 0)
+        iv_pct   = iv_raw * 100
+        dte      = target_dte
+
+        raw_yield_pct = (mid / spot * 100) if spot > 0 else 0
+        ann_yield     = round((mid / spot) * (365 / dte) * 100, 2) if spot > 0 and dte > 0 else 0
+        pop           = round((1 - delta) * 100)
+        distance_pct  = round((strike - spot) / spot * 100, 1) if spot > 0 else 0
+        premium_per_contract = round(mid * 100, 2)
+        premium_total        = round(mid * free_contracts * 100, 2) if free_contracts > 0 else 0
+
+        # Eligibility — for "available", only free_contracts > 0 matters
+        if strategy == "available":
+            eligible = free_contracts > 0
+        else:
+            eligible = (
+                free_contracts > 0
+                and delta <= max_delta
+                and iv_pct >= min_ivr
+                and ann_yield >= min_yield
+            )
+
+        # Dot — always added for every holding ticker
+        dot: dict = {
+            "id": f"dot_{ticker}", "sym": ticker,
+            "x": round(raw_yield_pct, 3),
+            "y": ann_yield,
+            "delta": round(delta, 4),
+            "ivr": round(iv_pct, 1),
+            "eligible": eligible,
+            "total_shares": int(total_shares),
+            "free_contracts": free_contracts,
+            "total_contracts": total_contracts,
+        }
+        if 0 < total_shares < 100:
+            dot["sub_label"] = f"({int(total_shares)} shares — need 100)"
+        elif free_contracts == 0 and total_contracts > 0:
+            dot["sub_label"] = f"{total_contracts}/{total_contracts} written"
+        dots.append(dot)
+
+        if not eligible:
+            continue
+
+        # Score with strategy-specific weights
+        s_signal = max(0.0, total_score) / 12 * weights["signal"]
+        if min_yield > 0:
+            s_yield = min(ann_yield / (min_yield * 2.0), 1.0) * weights["yield"]
+        else:
+            s_yield = min(raw_yield_pct / 0.70, 1.0) * weights["yield"]
+        s_delta         = (1 - delta / max_delta) * weights["delta"]
+        s_dte           = _dte_score(dte, dte_window) * weights["dte"]
+        composite_score = round(s_signal + s_yield + s_delta + s_dte)
+        conviction      = "High" if composite_score >= 80 else "Med" if composite_score >= 60 else "Low"
+
+        # Action string
+        exp_date_obj   = datetime.strptime(target_expiry, "%Y-%m-%d").date()
+        expiry_short   = exp_date_obj.strftime("%b") + " " + str(exp_date_obj.day)
+        strike_display = int(strike) if strike == int(strike) else strike
+        action         = f"Sell {free_contracts}× {expiry_short} ${strike_display} Call"
+
+        # Thesis + tags
+        metrics = {
+            "ticker": ticker, "strike": strike_display,
+            "distance_pct": distance_pct, "dte": dte,
+            "premium_per_contract": premium_per_contract,
+            "premium_total": premium_total,
+            "annYield": ann_yield, "delta": delta,
+            "iv": iv_raw, "above_ma50": None,
+            "total_contracts": total_contracts,
+            "written_contracts": written_contracts,
+            "free_contracts": free_contracts,
+            "expiry_short": expiry_short,
+            "composite_score": composite_score,
+        }
+        thesis = _build_thesis(strategy, metrics)
+        tags   = _derive_tags({
+            **metrics, "expiry": target_expiry,
+            "earnings_date": None, "fifty_two_week_high": None,
+            "days_since_earnings": None,
+            "written_contracts": written_contracts,
+            "total_contracts": total_contracts,
+        }, preset)
+
+        recs.append({
+            "id": f"rec_{ticker}", "sym": ticker,
+            "conviction": conviction, "score": composite_score,
+            "action": action,
+            "premium": premium_total,
+            "annYield": ann_yield,
+            "pop": pop, "delta": round(delta, 4),
+            "strike": strike, "expiry": target_expiry,
+            "expiry_short": expiry_short, "dte": dte,
+            "contracts": free_contracts, "mid": mid,
+            "iv": round(iv_pct, 1),
+            "thesis": thesis, "tags": tags,
+            "score_breakdown": {
+                "signal": round(s_signal, 1), "yield": round(s_yield, 1),
+                "delta": round(s_delta, 1),   "dte_quality": round(s_dte, 1),
+            },
+        })
+
+    recs.sort(key=lambda r: -r["score"])
+
+    return {
+        "meta": {
+            "updatedAt": datetime.utcnow().isoformat() + "Z",
+            "eligibleCount": len(recs),
+            "strategy": strategy,
+            "portfolio_id": pid,
+        },
+        "dots": dots,
+        "recs": recs,
+    }
+
+
 # ── P&L endpoints ─────────────────────────────────────────────────────────────
 
 @app.get("/api/pnl")
@@ -1157,7 +1967,7 @@ def get_macro_context():
     }
 
 @app.post("/api/macro/events")
-def add_macro_event(body: MacroEventIn):
+def add_macro_event(body: MacroEventIn, current_user: User = Depends(auth_module.get_current_user)):
     from datetime import datetime as _dt
     try:
         _dt.strptime(body.date, "%Y-%m-%d")
@@ -1169,7 +1979,11 @@ def add_macro_event(body: MacroEventIn):
     return {"ok": True, "user_events": events}
 
 @app.delete("/api/macro/events")
-def remove_macro_event(event_date: str = Query(...), description: str = Query(...)):
+def remove_macro_event(
+    event_date: str = Query(...),
+    description: str = Query(...),
+    current_user: User = Depends(auth_module.get_current_user),
+):
     events = macro_calendar.remove_user_event(event_date, description)
     return {"ok": True, "user_events": events}
 
@@ -1192,7 +2006,8 @@ class FeedbackConfigIn(BaseModel):
     smtp_pass:                  Optional[str] = None
 
 @app.post("/api/feedback")
-def submit_feedback(body: FeedbackIn):
+@limiter.limit("10/minute")
+def submit_feedback(request: Request, body: FeedbackIn):
     text = (body.free_text or "").strip()
     if len(text) > 280:
         raise HTTPException(status_code=400, detail="free_text must be 280 characters or fewer")
@@ -1226,7 +2041,7 @@ def get_feedback_config():
     }
 
 @app.put("/api/feedback/config")
-def save_feedback_config(body: FeedbackConfigIn):
+def save_feedback_config(body: FeedbackConfigIn, current_user: User = Depends(auth_module.get_current_user)):
     config_file = Path(__file__).parent / "config.json"
     cfg = {}
     if config_file.exists():
@@ -1248,7 +2063,7 @@ def get_recommendation_log(limit: int = Query(100)):
 @app.get("/api/scorecard")
 def get_scorecard(
     portfolio_id: Optional[str] = Query(None),
-    current_user: User = Depends(require_pro),
+    current_user: User = Depends(auth_module.get_current_user),
 ):
     positions = db.get_positions(current_user.id, portfolio_id=portfolio_id)
     rec_log = rec_logger.get_log(500)
@@ -1302,15 +2117,76 @@ def get_scorecard(
 @app.get("/api/oi/chain")
 def get_oi_chain(
     expiry: str = Query(...),
-    current_user: User = Depends(require_pro),
+    capture_date: str = Query(None),
+    current_user: User = Depends(auth_module.get_current_user),
 ):
+    # Always do a live capture so today's snapshot stays fresh (first-write-wins
+    # protects any pre-market cron entry from being overwritten).
     chain = fetcher.get_options_chain(expiry)
     oi_tracker.record_chain_snapshot(expiry, chain)
-    strikes = oi_tracker.get_chain_oi_change(expiry)
+
+    available_dates = oi_tracker.get_capture_dates(expiry)
+    snapshot = oi_tracker.get_chain_at(expiry, capture_date)
+    spot = fetcher.get_spy_price().get("price", 0) or 0
+    today_str = date.today().isoformat()
+    is_live = snapshot["capture_date"] == today_str
+
+    def _mid(bid, ask, last=None):
+        b = bid or 0
+        a = ask or 0
+        if b > 0 and a > 0:
+            return round((b + a) / 2, 2)
+        if b > 0 or a > 0:
+            return round(b or a, 2)
+        if last and last > 0:
+            return round(float(last), 2)
+        return None
+
+    # If viewing today's snapshot, prefer live mids over stored ones so the
+    # chart reflects intraday price moves on top of the morning's OI snapshot.
+    if is_live:
+        live_mids = {}
+        for r in chain:
+            if r.get("strike") is None:
+                continue
+            k = round(float(r["strike"]), 2)
+            live_mids[k] = {
+                "call_mid": _mid(r.get("bid"),     r.get("ask"),     r.get("lastPrice")),
+                "put_mid":  _mid(r.get("put_bid"), r.get("put_ask"), r.get("put_last")),
+            }
+        for s in snapshot["strikes"]:
+            m = live_mids.get(round(float(s["strike"]), 2), {})
+            if m.get("call_mid") is not None:
+                s["call_mid"] = m["call_mid"]
+            if m.get("put_mid") is not None:
+                s["put_mid"] = m["put_mid"]
+
+    # Compute dollar values from each strike's OI × mid (snapshot-resident).
+    # Note: intrinsic/time-premium uses today's spot regardless of capture_date,
+    # which is a minor approximation for historical views.
+    for s in snapshot["strikes"]:
+        strike_f = float(s["strike"])
+        call_intrinsic = max(0.0, spot - strike_f) if spot else 0.0
+        put_intrinsic  = max(0.0, strike_f - spot) if spot else 0.0
+        call_mid = s.get("call_mid") or 0.0
+        put_mid  = s.get("put_mid")  or 0.0
+        call_time_prem = max(0.0, call_mid - call_intrinsic)
+        put_time_prem  = max(0.0, put_mid  - put_intrinsic)
+        s["call_time_prem"]  = round(call_time_prem, 4)
+        s["put_time_prem"]   = round(put_time_prem,  4)
+        s["call_value"]      = round((s.get("call_oi") or 0) * call_mid * 100, 2)
+        s["put_value"]       = round((s.get("put_oi")  or 0) * put_mid  * 100, 2)
+        s["call_time_value"] = round((s.get("call_oi") or 0) * call_time_prem * 100, 2)
+        s["put_time_value"]  = round((s.get("put_oi")  or 0) * put_time_prem  * 100, 2)
+
     return {
-        "expiry":    expiry,
-        "strikes":   strikes,
-        "spy_price": fetcher.get_spy_price().get("price", 0),
+        "expiry":          expiry,
+        "capture_date":    snapshot["capture_date"],
+        "prior_date":      snapshot["prior_date"],
+        "available_dates": available_dates,
+        "is_live":         is_live,
+        "strikes":         snapshot["strikes"],
+        "spy_price":       spot,
     }
 
 @app.post("/api/oi/snapshot")
@@ -1655,9 +2531,17 @@ def snaptrade_import(
             })
     return result
 
+_SNAPTRADE_WEBHOOK_SECRET = os.getenv("SNAPTRADE_WEBHOOK_SECRET", "")
+
 @app.post("/api/snaptrade/webhook")
 async def snaptrade_webhook(request: Request):
+    if not _SNAPTRADE_WEBHOOK_SECRET:
+        # Fail closed: refuse to process webhooks until the secret is configured.
+        raise HTTPException(status_code=503, detail="Webhook not configured")
     payload = await request.json()
+    sent_secret = payload.get("webhookSecret", "")
+    if not hmac.compare_digest(str(sent_secret), _SNAPTRADE_WEBHOOK_SECRET):
+        raise HTTPException(status_code=401, detail="Invalid webhook secret")
     event_type = payload.get("type") or payload.get("eventType", "")
     user_id    = payload.get("userId")
     if event_type in ("CONNECTION_BROKEN", "AUTHORIZATION_DISABLED") and user_id:
@@ -1738,7 +2622,8 @@ class WaitlistEntry(BaseModel):
     email: str
 
 @app.post("/api/waitlist")
-def join_waitlist(entry: WaitlistEntry):
+@limiter.limit("5/minute")
+def join_waitlist(request: Request, entry: WaitlistEntry):
     email = entry.email.strip().lower()
     if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="Invalid email address")
@@ -1751,6 +2636,189 @@ def join_waitlist(entry: WaitlistEntry):
         with open(WAITLIST_FILE, "w") as f:
             json.dump(records, f, indent=2)
     return {"ok": True}
+
+
+# ── Markets endpoints (PIPE-MARKETS-01, Pro-gated) ───────────────────────────
+# Powers the Markets tab: market-cap-weighted S&P 500 volume composite,
+# per-ticker volume series, and SPY/QQQ overlay.
+
+ALLOWED_ETF_TICKERS = {"SPY", "QQQ"}
+
+def _require_pro(current_user: User) -> None:
+    if current_user.tier != "pro":
+        raise HTTPException(
+            status_code=402,
+            detail={"code": "PRO_FEATURE", "message": "Markets is a Pro feature."},
+        )
+
+
+def _parse_range(start: Optional[str], end: Optional[str]) -> tuple:
+    today = date.today()
+    if not end:
+        e = today
+    else:
+        try:
+            e = datetime.strptime(end, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"invalid end date: {end}")
+    if not start:
+        s = e - timedelta(days=365)
+    else:
+        try:
+            s = datetime.strptime(start, "%Y-%m-%d").date()
+        except ValueError:
+            raise HTTPException(status_code=400, detail=f"invalid start date: {start}")
+    if s > e:
+        raise HTTPException(status_code=400, detail="start must be <= end")
+    return s, e
+
+
+@app.get("/api/markets/composite")
+def get_composite(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    """Pareto-80 market-cap-weighted S&P 500 volume composite."""
+    _require_pro(current_user)
+    s, e = _parse_range(start, end)
+    rows = db.get_sp500_composite(s, e)
+    return {
+        "kind": "composite",
+        "label": "S&P 500 Pareto-80 (cap-weighted)",
+        "dates":           [r["date"] for r in rows],
+        "weighted_volume": [float(r["weighted_volume"]) for r in rows],
+        "total_volume":    [int(r["total_volume"]) for r in rows],
+        "ticker_count":    [int(r["ticker_count"]) for r in rows],
+    }
+
+
+@app.get("/api/markets/ticker/{ticker}")
+def get_ticker_series(
+    ticker: str,
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    """Daily close + volume for a single ticker. Allowed: any ticker that has
+    appeared in S&P 500 membership ever, plus SPY/QQQ."""
+    _require_pro(current_user)
+    s, e = _parse_range(start, end)
+    sym = ticker.upper().strip()
+    if not sym:
+        raise HTTPException(status_code=400, detail="ticker required")
+    if sym in ALLOWED_ETF_TICKERS:
+        rows = db.get_ticker_daily(sym, s, e, source="etf")
+    else:
+        # Membership check — block arbitrary tickers
+        intervals = db.get_membership_intervals()
+        if sym not in intervals:
+            raise HTTPException(status_code=404, detail=f"{sym} not in S&P 500 membership history")
+        rows = db.get_ticker_daily(sym, s, e, source="sp500")
+    return {
+        "kind": "ticker",
+        "ticker": sym,
+        "label": sym,
+        "dates":  [r["date"] for r in rows],
+        "close":  [float(r["close"]) if r.get("close") is not None else None for r in rows],
+        "volume": [int(r["volume"]) if r.get("volume") is not None else None for r in rows],
+    }
+
+
+@app.get("/api/markets/top-n")
+def get_top_n(
+    n: int = Query(10, ge=1, le=500),
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    """Cap-weighted volume composite restricted to the current top-N tickers
+    by market cap. (Membership is current-as-of-today, applied across history.)"""
+    _require_pro(current_user)
+    if n not in (10, 50, 100, 500):
+        raise HTTPException(status_code=400, detail="n must be one of 10, 50, 100, 500")
+    s, e = _parse_range(start, end)
+    members = db.get_top_n_tickers(n)
+    if not members:
+        return {"kind": "top_n", "n": n, "members": [], "dates": [], "weighted_volume": []}
+
+    # Aggregate weighted volume per date over the chosen members. We use the
+    # most recent market_cap as the static weight (point-in-time top-N is a
+    # different feature; out of scope for v1).
+    member_set = set(members)
+    # Pull all daily rows for these members in range, in pages
+    rows: list = []
+    page_size = 1000
+    offset = 0
+    while True:
+        page = (db.sb.table("sp500_daily")
+                  .select("ticker, date, volume, market_cap")
+                  .in_("ticker", members)
+                  .gte("date", s.isoformat())
+                  .lte("date", e.isoformat())
+                  .range(offset, offset + page_size - 1)
+                  .execute())
+        data = page.data or []
+        if not data:
+            break
+        rows.extend(data)
+        if len(data) < page_size:
+            break
+        offset += page_size
+
+    # Group by date, weight volume by market cap on that date
+    by_date: dict = {}
+    for r in rows:
+        d = r["date"]
+        v = r.get("volume")
+        mc = r.get("market_cap")
+        if v is None or mc is None:
+            continue
+        slot = by_date.setdefault(d, {"vol_sum": 0.0, "cap_sum": 0.0, "raw_vol": 0})
+        slot["vol_sum"] += float(v) * float(mc)
+        slot["cap_sum"] += float(mc)
+        slot["raw_vol"] += int(v)
+    sorted_dates = sorted(by_date.keys())
+    return {
+        "kind": "top_n",
+        "n": n,
+        "label": f"Top {n} by market cap (cap-weighted)",
+        "members": members,
+        "dates":           sorted_dates,
+        "weighted_volume": [
+            (by_date[d]["vol_sum"] / by_date[d]["cap_sum"]) if by_date[d]["cap_sum"] else 0.0
+            for d in sorted_dates
+        ],
+        "total_volume":    [by_date[d]["raw_vol"] for d in sorted_dates],
+    }
+
+
+@app.get("/api/markets/etfs")
+def get_etfs(
+    start: Optional[str] = None,
+    end: Optional[str] = None,
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    """SPY + QQQ daily close + volume."""
+    _require_pro(current_user)
+    s, e = _parse_range(start, end)
+    out = {}
+    for sym in ("SPY", "QQQ"):
+        rows = db.get_ticker_daily(sym, s, e, source="etf")
+        out[sym] = {
+            "dates":  [r["date"] for r in rows],
+            "close":  [float(r["close"]) if r.get("close") is not None else None for r in rows],
+            "volume": [int(r["volume"]) if r.get("volume") is not None else None for r in rows],
+        }
+    return out
+
+
+@app.get("/api/markets/membership/current")
+def get_current_membership(current_user: User = Depends(auth_module.get_current_user)):
+    """Current S&P 500 ticker list — drives the typeahead filter UI."""
+    _require_pro(current_user)
+    tickers = db.get_current_sp500_tickers()
+    return {"tickers": tickers, "count": len(tickers)}
 
 
 # ── Static frontend (production only) ────────────────────────────────────────

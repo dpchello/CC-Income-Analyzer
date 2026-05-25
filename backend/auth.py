@@ -4,18 +4,19 @@ from pathlib import Path
 from typing import Optional
 
 from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError, jwt
 import bcrypt as _bcrypt
 from pydantic import BaseModel
 
 import db
+from rate_limit import limiter
 
 load_dotenv(Path(__file__).parent / ".env")
 
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-change-in-production")
-if SECRET_KEY == "dev-secret-change-in-production":
+SECRET_KEY = os.getenv("JWT_SECRET_KEY", "dev-secret-rotated-2026-04-24")
+if SECRET_KEY.startswith("dev-secret"):
     import warnings
     warnings.warn("JWT_SECRET_KEY is not set — using insecure default. Set it before deploying.")
 
@@ -56,8 +57,10 @@ class User:
 
 # ── Password helpers ──────────────────────────────────────────────────────────
 
+_BCRYPT_ROUNDS = 12  # OWASP 2023 minimum. Bump only with a deliberate plan to rehash on next login.
+
 def hash_password(password: str) -> str:
-    return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode()
+    return _bcrypt.hashpw(password.encode(), _bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)).decode()
 
 def verify_password(plain: str, hashed: str) -> bool:
     return _bcrypt.checkpw(plain.encode(), hashed.encode())
@@ -127,7 +130,8 @@ class AuthResponse(BaseModel):
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @router.post("/signup", response_model=AuthResponse)
-def signup(body: SignupRequest):
+@limiter.limit("5/minute")
+def signup(request: Request, body: SignupRequest):
     email = body.email.strip().lower()
     if db.get_user_by_email(email):
         raise HTTPException(status_code=400, detail="Email already registered")
@@ -143,7 +147,8 @@ def signup(body: SignupRequest):
 
 
 @router.post("/login", response_model=AuthResponse)
-def login(body: LoginRequest):
+@limiter.limit("5/minute")
+def login(request: Request, body: LoginRequest):
     email = body.email.strip().lower()
     user_data = db.get_user_by_email(email)
     if not user_data or not verify_password(body.password, user_data["hashed_password"]):

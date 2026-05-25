@@ -48,7 +48,7 @@ These are non-negotiable. Each one is a real exposure if skipped.
 | P3 | ~~Audit endpoints~~ — **audit done 2026-05-25, findings in §15.** 4 critical + 5 should-fix. Fixes themselves still pending. | [backend/main.py](backend/main.py) | Easy to miss one when you've been moving fast |
 | P4 | ~~Move ALL secrets to `.env`~~ — **done.** Sweep on 2026-05-25 found no hardcoded secrets in tree | grep for `os.getenv` to inventory | Secrets in code = secrets in git history |
 | P5 | ~~Decide DB story~~ — **decided 2026-05-25:** already fully on Supabase. Removed dead SQLite-era files in `5c96fa9`-follow-up | [backend/db.py](backend/db.py) | App raises at import time if Supabase env vars are missing; SQLite layer is gone |
-| P6 | Add rate limiting on `/auth/login` and `/auth/register` — use `slowapi` | [backend/auth.py](backend/auth.py) | Brute-force protection. 5 attempts per minute per IP is plenty |
+| P6 | ~~Rate limiting~~ — **done.** slowapi wired via [backend/rate_limit.py](backend/rate_limit.py). 5/min on /auth/signup, /auth/login; 10/min on /api/feedback; 5/min on /api/waitlist | [backend/auth.py](backend/auth.py), [backend/main.py](backend/main.py) | Brute-force protection. 5 attempts per minute per IP is plenty |
 | P7 | ~~Confirm bcrypt cost factor ≥ 12~~ — **done.** Explicit constant `_BCRYPT_ROUNDS = 12` in [backend/auth.py](backend/auth.py) | [backend/auth.py](backend/auth.py) | Standard hardening |
 | P8 | ~~`.gitignore` audit~~ — **done.** Rewrote to cover `.env.*`, `*.db*`, `.DS_Store`, `*.swp`, keys/certs, log dirs | `.gitignore` | DB files contain user data |
 | P9 | ~~Sync `.env.example` with `.env`~~ — **done in `5c96fa9`** (also removed leaked real secrets, see §2.1) | [backend/.env.example](backend/.env.example) | Stale example breaks future setup; also a tell that env hygiene has slipped |
@@ -322,12 +322,12 @@ Audited all 72 routes. 26 mutating, 46 GET. Findings ranked by impact.
 
 ### 🔴 Critical — real vulnerabilities, fix before any public exposure
 
-| Route | Line | Why it matters |
-|---|---|---|
-| `POST /api/macro/events` | [L1963](backend/main.py#L1963) | Anyone can add events to the **global** macro calendar that every user sees. Spam/defacement risk. |
-| `DELETE /api/macro/events` | [L1975](backend/main.py#L1975) | Anyone can delete any event from the global calendar by passing its date + description. |
-| `PUT /api/feedback/config` | [L2032](backend/main.py#L2032) | Anyone can overwrite the **shared** `config.json` — SMTP credentials, SMS webhook URL, notification settings. Attacker can redirect notifications to themselves or inject malicious SMTP config. |
-| `POST /api/snaptrade/webhook` | [L2523](backend/main.py#L2523) | **No HMAC signature verification.** Attacker posts `{"type":"CONNECTION_BROKEN","userId":"<victim-uuid>"}` and the backend disables that user's brokerage connection. DoS against legit users' SnapTrade integration. |
+| Route | Line | Status | Why it mattered |
+|---|---|---|---|
+| `POST /api/macro/events` | L1963 | ✅ Fixed 2026-05-25 — gated behind `get_current_user` | Anyone can add events to the **global** macro calendar that every user sees. Spam/defacement risk. |
+| `DELETE /api/macro/events` | L1975 | ✅ Fixed 2026-05-25 — gated behind `get_current_user` | Anyone can delete any event from the global calendar by passing its date + description. |
+| `PUT /api/feedback/config` | L2032 | ✅ Fixed 2026-05-25 — gated behind `get_current_user` | Anyone can overwrite the **shared** `config.json` — SMTP credentials, SMS webhook URL, notification settings. Attacker can redirect notifications to themselves or inject malicious SMTP config. |
+| `POST /api/snaptrade/webhook` | L2523 | ✅ Fixed 2026-05-25 — verifies `webhookSecret` field against `SNAPTRADE_WEBHOOK_SECRET` env via `hmac.compare_digest`; fail-closed if env unset | **No signature verification.** Attacker posts `{"type":"CONNECTION_BROKEN","userId":"<victim-uuid>"}` and the backend disables that user's brokerage connection. DoS against legit users' SnapTrade integration. |
 
 ### 🟡 Should fix — defense in depth
 
