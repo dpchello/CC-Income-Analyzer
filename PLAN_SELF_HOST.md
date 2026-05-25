@@ -44,13 +44,13 @@ These are non-negotiable. Each one is a real exposure if skipped.
 | # | Item | File | Why |
 |---|------|------|-----|
 | P1 | Set a real `JWT_SECRET_KEY` (32+ random bytes) in a `.env` file, never commit | [backend/auth.py:17](backend/auth.py#L17) | Current fallback is a known dev string — anyone who reads the repo can forge any user's session |
-| P2 | Tighten CORS — replace `allow_origins=["*"]` with your actual domain(s) | [backend/main.py:33](backend/main.py#L33) | Wildcard + credentials would be exploitable; even without creds it broadcasts your API to any origin |
+| P2 | ~~Tighten CORS~~ — **done.** Now reads `ALLOWED_ORIGINS` env var; defaults to localhost dev ports only | [backend/main.py:31](backend/main.py#L31) | Wildcard + credentials would be exploitable; even without creds it broadcasts your API to any origin |
 | P3 | Audit which endpoints require auth — run `grep -n "@app.\\(get\\|post\\|put\\|delete\\)" backend/main.py` and confirm every mutating route has `Depends(check_write_access)` or `get_current_user` | [backend/main.py](backend/main.py) | Easy to miss one when you've been moving fast |
-| P4 | Move ALL secrets to `.env` (JWT, any API keys for AlphaVantage / SnapTrade / etc.), load with `python-dotenv` or systemd-style env file | grep for `os.getenv` to inventory | Secrets in code = secrets in git history |
+| P4 | ~~Move ALL secrets to `.env`~~ — **done.** Sweep on 2026-05-25 found no hardcoded secrets in tree | grep for `os.getenv` to inventory | Secrets in code = secrets in git history |
 | P5 | ~~Decide DB story~~ — **decided 2026-05-25:** already fully on Supabase. Removed dead SQLite-era files in `5c96fa9`-follow-up | [backend/db.py](backend/db.py) | App raises at import time if Supabase env vars are missing; SQLite layer is gone |
 | P6 | Add rate limiting on `/auth/login` and `/auth/register` — use `slowapi` | [backend/auth.py](backend/auth.py) | Brute-force protection. 5 attempts per minute per IP is plenty |
-| P7 | Confirm bcrypt cost factor ≥ 12 | [backend/auth.py](backend/auth.py) | Standard hardening |
-| P8 | Add `.env`, `harvest.db`, `*.db-journal`, `backend/data/`, `backend/av_cache/` to `.gitignore` if not already | `.gitignore` | DB files contain user data |
+| P7 | ~~Confirm bcrypt cost factor ≥ 12~~ — **done.** Explicit constant `_BCRYPT_ROUNDS = 12` in [backend/auth.py](backend/auth.py) | [backend/auth.py](backend/auth.py) | Standard hardening |
+| P8 | ~~`.gitignore` audit~~ — **done.** Rewrote to cover `.env.*`, `*.db*`, `.DS_Store`, `*.swp`, keys/certs, log dirs | `.gitignore` | DB files contain user data |
 | P9 | ~~Sync `.env.example` with `.env`~~ — **done in `5c96fa9`** (also removed leaked real secrets, see §2.1) | [backend/.env.example](backend/.env.example) | Stale example breaks future setup; also a tell that env hygiene has slipped |
 | P10 | **Rotate 4 leaked secrets BEFORE first `git push`** (see §2.1) | external dashboards | `bf9e436` leaks real values into git history — push without rotating = public exposure |
 

@@ -1,24 +1,71 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
+# ── Node / frontend ───────────────────────────────────────────────────────────
 frontend/node_modules/
 frontend/.vite/
 # frontend/dist/ — intentionally committed for Railway deploy
-__pycache__/
-*.pyc
+marketing/node_modules/
+marketing/.next/
+marketing/.vercel/
+.vercel/
+
+# ── Secrets / env ─────────────────────────────────────────────────────────────
 .env
+.env.*
+!.env.example
+!.env.local.example
 backend/.env
+backend/.env.*
+!backend/.env.example
+marketing/.env.local
+marketing/.env.local.*
+
+# ── Databases / journals ──────────────────────────────────────────────────────
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
 backend/harvest.db
+
+# ── Local state (per-deploy, regenerable) ─────────────────────────────────────
 backend/av_cache/
 backend/av_usage.json
 backend/oi_chain_history.json
 backend/oi_history.json
 backend/oi_tracker_data.json
 backend/recommendations_log.json
-marketing/.env.local
-marketing/node_modules/
-marketing/.next/
-marketing/.vercel/
-.vercel/
+backend/.last_oi_snapshot_full
 
-# Options data — large files, not committed to git
+# ── Options data — large files, not committed ─────────────────────────────────
 backend/data/*.duckdb
 backend/data/*.parquet
 backend/data/watchlist.json
+
+# ── OS / editor cruft ─────────────────────────────────────────────────────────
+.DS_Store
+**/.DS_Store
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+~/Library/Logs/harvest/
+
+# ── Keys / certs (defense in depth — never commit these) ──────────────────────
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+secrets/
