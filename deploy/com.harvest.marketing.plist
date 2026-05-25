@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd job for the Harvest marketing site (Next.js on :3001).
+
+  ONE-TIME PRODUCTION BUILD (required before installing this job):
+    cd /Users/leslie/CC-Income-Analyzer/marketing
+    npm install
+    npm run build
+
+  Install:
+    cp deploy/com.harvest.marketing.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.harvest.marketing.plist
+
+  Tail logs:
+    tail -f ~/Library/Logs/harvest/marketing.err.log
+
+  Skip this entire file if you choose Option A (FastAPI serves both
+  marketing and app on one origin). See §5 of PLAN_SELF_HOST.md.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.harvest.marketing</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/leslie/CC-Income-Analyzer/marketing</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/leslie/.nvm/versions/node/v24.14.0/bin/npm</string>
+        <string>run</string>
+        <string>start</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/Users/leslie/.nvm/versions/node/v24.14.0/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>NODE_ENV</key>
+        <string>production</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/leslie/Library/Logs/harvest/marketing.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/leslie/Library/Logs/harvest/marketing.err.log</string>
+</dict>
+</plist>

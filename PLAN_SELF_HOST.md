@@ -183,15 +183,19 @@ You have two options. **Option A is simpler** — FastAPI already imports `Stati
 
 ## 6. Process supervision — launchd
 
-Create `~/Library/LaunchAgents/com.harvest.backend.plist` to run FastAPI under launchd. Key settings:
-- `KeepAlive: true` — restart on crash
-- `RunAtLoad: true` — start at login
-- `StandardOutPath` / `StandardErrorPath` → `~/Library/Logs/harvest/`
-- `EnvironmentVariables` block for `JWT_SECRET_KEY` etc. (or `EnvironmentVariableFile` pointing at `.env`)
+**Templates generated 2026-05-25** in [deploy/](deploy/):
+- [deploy/com.harvest.backend.plist](deploy/com.harvest.backend.plist) — FastAPI uvicorn on 127.0.0.1:8000
+- [deploy/com.harvest.marketing.plist](deploy/com.harvest.marketing.plist) — Next.js marketing on 127.0.0.1:3001 (skip for Option A)
+- [deploy/cloudflared-config.yml](deploy/cloudflared-config.yml) — tunnel ingress template (replace `<TUNNEL_ID>` + your domain)
+- [deploy/README.md](deploy/README.md) — full installation runbook with verify steps and upgrade procedure
 
-`launchctl load ~/Library/LaunchAgents/com.harvest.backend.plist` and it survives reboots.
+Key design choices:
+- App loads secrets from `backend/.env` via python-dotenv — no env vars in the plist itself (keeps secrets out of `~/Library/LaunchAgents/`).
+- Bind to `127.0.0.1`, not `0.0.0.0`. Cloudflare Tunnel connects locally; nothing should listen on a public interface.
+- `KeepAlive` is conditional: restarts on crash, not on clean exits. So a deliberate `kill` during upgrades doesn't fight you.
+- `ThrottleInterval: 10` to avoid crash-restart-loops eating CPU.
 
-I'll generate the exact plist files when you're ready to execute.
+`cloudflared` registers itself as a launchd service via its own installer (`sudo cloudflared service install`) — no manual plist needed for that one.
 
 ---
 

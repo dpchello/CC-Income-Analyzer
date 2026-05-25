@@ -1,0 +1,48 @@
+# Cloudflare Tunnel ingress config for Harvest.
+#
+# Install location after editing:
+#   ~/.cloudflared/config.yml
+#
+# Setup sequence:
+#   brew install cloudflared
+#   cloudflared tunnel login                  # opens browser, authorizes
+#   cloudflared tunnel create harvest         # prints <TUNNEL_ID>
+#   # Edit this file: replace <TUNNEL_ID> below in two places
+#   cp deploy/cloudflared-config.yml ~/.cloudflared/config.yml
+#   cloudflared tunnel route dns harvest harvestoptions.com
+#   cloudflared tunnel route dns harvest www.harvestoptions.com
+#   cloudflared tunnel route dns harvest app.harvestoptions.com
+#   sudo cloudflared service install          # registers as launchd service
+#
+# Verify:
+#   cloudflared tunnel info harvest
+#   curl -I https://app.harvestoptions.com    # should TLS-terminate via CF
+#
+# This template assumes §5 Option B (split origins):
+#   harvestoptions.com  → marketing on :3001
+#   app.harvestoptions.com → FastAPI on :8000 (serves frontend/dist + /api/*)
+#
+# For Option A (single origin), point both hostnames to :8000.
+
+tunnel: <TUNNEL_ID>
+credentials-file: /Users/leslie/.cloudflared/<TUNNEL_ID>.json
+
+# Origin request defaults — reasonable timeouts for a single-Mac backend.
+originRequest:
+  connectTimeout: 10s
+  noTLSVerify: true   # local origin is HTTP — TLS is handled by Cloudflare
+
+ingress:
+  # ── App (FastAPI + React SPA) ────────────────────────────────────────────
+  - hostname: app.harvestoptions.com
+    service: http://localhost:8000
+
+  # ── Marketing site (Next.js) ─────────────────────────────────────────────
+  - hostname: harvestoptions.com
+    service: http://localhost:3001
+
+  - hostname: www.harvestoptions.com
+    service: http://localhost:3001
+
+  # ── Catch-all — required, must be last ───────────────────────────────────
+  - service: http_status:404

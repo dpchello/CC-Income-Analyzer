@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd job for the Harvest FastAPI backend.
+
+  Install:
+    cp deploy/com.harvest.backend.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.harvest.backend.plist
+
+  Verify:
+    launchctl list | grep harvest
+    curl http://127.0.0.1:8000/api/dashboard
+
+  Tail logs:
+    tail -f ~/Library/Logs/harvest/backend.err.log
+
+  Unload (for upgrades):
+    launchctl unload ~/Library/LaunchAgents/com.harvest.backend.plist
+
+  Notes:
+    - The app loads secrets from backend/.env via python-dotenv on startup.
+      No env vars needed in this plist.
+    - Bind 127.0.0.1, not 0.0.0.0. Cloudflare Tunnel connects locally; nothing
+      needs to listen on a public interface.
+    - KeepAlive restarts only on crash, not on clean exits — so a deliberate
+      `kill` during an upgrade won't fight you.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.harvest.backend</string>
+
+    <key>WorkingDirectory</key>
+    <string>/Users/leslie/CC-Income-Analyzer/backend</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3</string>
+        <string>-m</string>
+        <string>uvicorn</string>
+        <string>main:app</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <string>8000</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/usr/local/bin:/usr/bin:/bin:/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/bin</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+        <key>Crashed</key>
+        <true/>
+    </dict>
+
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+
+    <key>StandardOutPath</key>
+    <string>/Users/leslie/Library/Logs/harvest/backend.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/leslie/Library/Logs/harvest/backend.err.log</string>
+</dict>
+</plist>
