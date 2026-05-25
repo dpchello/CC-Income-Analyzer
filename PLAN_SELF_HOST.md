@@ -45,7 +45,7 @@ These are non-negotiable. Each one is a real exposure if skipped.
 |---|------|------|-----|
 | P1 | Set a real `JWT_SECRET_KEY` (32+ random bytes) in a `.env` file, never commit | [backend/auth.py:17](backend/auth.py#L17) | Current fallback is a known dev string — anyone who reads the repo can forge any user's session |
 | P2 | ~~Tighten CORS~~ — **done.** Now reads `ALLOWED_ORIGINS` env var; defaults to localhost dev ports only | [backend/main.py:31](backend/main.py#L31) | Wildcard + credentials would be exploitable; even without creds it broadcasts your API to any origin |
-| P3 | Audit which endpoints require auth — run `grep -n "@app.\\(get\\|post\\|put\\|delete\\)" backend/main.py` and confirm every mutating route has `Depends(check_write_access)` or `get_current_user` | [backend/main.py](backend/main.py) | Easy to miss one when you've been moving fast |
+| P3 | ~~Audit endpoints~~ — **audit done 2026-05-25, findings in §15.** 4 critical + 5 should-fix. Fixes themselves still pending. | [backend/main.py](backend/main.py) | Easy to miss one when you've been moving fast |
 | P4 | ~~Move ALL secrets to `.env`~~ — **done.** Sweep on 2026-05-25 found no hardcoded secrets in tree | grep for `os.getenv` to inventory | Secrets in code = secrets in git history |
 | P5 | ~~Decide DB story~~ — **decided 2026-05-25:** already fully on Supabase. Removed dead SQLite-era files in `5c96fa9`-follow-up | [backend/db.py](backend/db.py) | App raises at import time if Supabase env vars are missing; SQLite layer is gone |
 | P6 | Add rate limiting on `/auth/login` and `/auth/register` — use `slowapi` | [backend/auth.py](backend/auth.py) | Brute-force protection. 5 attempts per minute per IP is plenty |
@@ -311,6 +311,46 @@ Free tier is enough for v1:
 10. **Hardening pass** (§8 checklist). ~1 hr.
 
 **Total green-field time: ~6 hours of focused work**, spread across 2 sessions.
+
+---
+
+## 15. P3 audit — auth gaps in backend/main.py (2026-05-25)
+
+Audited all 72 routes. 26 mutating, 46 GET. Findings ranked by impact.
+
+### 🔴 Critical — real vulnerabilities, fix before any public exposure
+
+| Route | Line | Why it matters |
+|---|---|---|
+| `POST /api/macro/events` | [L1963](backend/main.py#L1963) | Anyone can add events to the **global** macro calendar that every user sees. Spam/defacement risk. |
+| `DELETE /api/macro/events` | [L1975](backend/main.py#L1975) | Anyone can delete any event from the global calendar by passing its date + description. |
+| `PUT /api/feedback/config` | [L2032](backend/main.py#L2032) | Anyone can overwrite the **shared** `config.json` — SMTP credentials, SMS webhook URL, notification settings. Attacker can redirect notifications to themselves or inject malicious SMTP config. |
+| `POST /api/snaptrade/webhook` | [L2523](backend/main.py#L2523) | **No HMAC signature verification.** Attacker posts `{"type":"CONNECTION_BROKEN","userId":"<victim-uuid>"}` and the backend disables that user's brokerage connection. DoS against legit users' SnapTrade integration. |
+
+### 🟡 Should fix — defense in depth
+
+| Route | Line | Concern |
+|---|---|---|
+| `POST /api/feedback` | [L1998](backend/main.py#L1998) | Anonymous by intent? No rate limit — attacker can flood the feedback log. |
+| `GET /api/feedback` | [L2009](backend/main.py#L2009) | Returns the global feedback log to anyone. If it contains user emails or sensitive position data, that's a leak. |
+| `GET /api/feedback/config` | [L2013](backend/main.py#L2013) | Exposes feedback config (email, phone, sms webhook URL, smtp_host/port/user) anonymously. Not catastrophic; unnecessary. |
+| `POST /api/waitlist` | [L2605](backend/main.py#L2605) | Public signup by intent. Needs rate limiting (P6) to prevent flood. |
+| 5 routes using `get_current_user` but not `check_write_access` | L1454, L2181, L2324, L2372, L2419 | Won't be blocked by the freemium profit gate. Mostly `/api/admin/*` and `/api/snaptrade/*` mutations. |
+
+### 🟢 Informational — intentional, no action
+
+17 GET routes have no auth dep. Spot-checked the suspicious ones; all return public market data: `/api/dashboard`, `/api/signals` (wait, this DOES have auth), `/api/options/*`, `/api/iv-rank`, `/api/dividends`, `/api/history/spy`, `/api/alpha/*`, `/api/macro`, `/api/strategies`, plus the SPA catch-all `/{full_path:path}`. Intentional and fine.
+
+### Architectural smell to fix post-launch, not in pre-flight
+
+The `/api/feedback/config` endpoint reads/writes a **shared** `config.json` file on disk. This is single-tenant thinking — in a multi-user app, feedback config (especially SMTP creds) should be per-user in Supabase, or moved entirely out of user-configurable scope and into env vars. Not blocking launch, but flag for cleanup.
+
+### Recommended fix order
+
+1. Add `Depends(get_current_user)` to all 4 critical routes — but `POST /api/snaptrade/webhook` needs HMAC verification instead (it's called by SnapTrade, not by users).
+2. Rate-limit `POST /api/feedback` and `POST /api/waitlist` with slowapi (P6 covers this).
+3. Either auth-gate or stop exposing `GET /api/feedback/config` to anonymous clients.
+4. Switch the 5 mutating routes from `get_current_user` to `check_write_access` if you want them subject to the freemium gate.
 
 ---
 
