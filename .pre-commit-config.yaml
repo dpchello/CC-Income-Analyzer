@@ -1,0 +1,44 @@
+# Pre-commit hooks for Harvest.
+#
+# Install once after cloning:
+#   pip install pre-commit detect-secrets
+#   pre-commit install
+#
+# After install, hooks run automatically on `git commit`. To run manually
+# against all files: `pre-commit run --all-files`.
+#
+# When detect-secrets flags a legitimate non-secret (e.g. a placeholder, a
+# hash, a public token), audit it with:
+#   detect-secrets audit .secrets.baseline
+# and mark it as a false positive there.
+
+repos:
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+            .*\.lock$|
+            .*\.lockb$|
+            package-lock\.json$|
+            frontend/dist/.*|
+            marketing/\.next/.*|
+            backend/data/.*\.parquet$|
+            backend/av_cache/.*
+          )$
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=2000']
+      - id: check-merge-conflict
+      - id: check-yaml
+        exclude: ^deploy/com\.harvest\..*\.plist$   # plists are XML not YAML
+      - id: check-json
+      - id: end-of-file-fixer
+        exclude: ^(frontend/dist/|marketing/\.next/)
+      - id: trailing-whitespace
+        exclude: ^(frontend/dist/|marketing/\.next/)
