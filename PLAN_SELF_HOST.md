@@ -98,16 +98,20 @@ Any key found there that isn't in `.env.example` is either dead code or a missin
 
 **Fix applied:** Commit `5c96fa9` (on top of `bf9e436`) sanitizes `.env.example` to empty placeholders. **HEAD is clean.** History is not — `bf9e436` still contains the secrets in local git.
 
-**Decision (2026-05-23):** Do NOT rewrite history. Accept that `bf9e436` will exist in the public repo's git log once pushed, but make it harmless by rotating the keys first.
+**Decision (2026-05-23):** ~~Do NOT rewrite history. Accept that `bf9e436` will exist in the public repo's git log once pushed, but make it harmless by rotating the keys first.~~
 
-**Rotation checklist — MUST complete before first `git push`:**
-- [ ] Supabase service-role JWT — Project Settings → API → Reset
-- [ ] SnapTrade consumer key — developer dashboard → regenerate
-- [ ] Alpha Vantage key — support ticket or sign up fresh
-- [ ] JWT_SECRET_KEY in `backend/.env` — regenerate locally: `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`
-- [ ] Update `backend/.env` with the new values for all of the above
-- [ ] Restart backend, confirm it still works
-- [ ] THEN `git push` is safe
+**Decision reversed (2026-05-25):** Rotation as the sole damage-control isn't viable for these specific keys — Supabase legacy `service_role` isn't self-service rotatable, SnapTrade free tier limits to 1 key, Alpha Vantage free tier limits to 1 key. New plan: **scrub the local history with `git filter-repo`** so the secrets never reach GitHub at all. Repo is kept private as defense in depth.
+
+**Status (2026-05-25):**
+- [x] JWT_SECRET_KEY regenerated locally (48-byte token_urlsafe); backend reloaded
+- [x] `git filter-repo --replace-text` run; verified 0 occurrences of any leaked literal across all of history; `REDACTED-*` markers in their place
+- [x] All commit hashes from `bf9e436` forward rewritten — `bf9e436` no longer exists; equivalent content lives at a different SHA with redacted blob
+- [x] Repo kept private on GitHub
+- [x] Pre-commit hooks with `detect-secrets` (so this can't happen again)
+- [ ] (Defense in depth, optional) Supabase new revocable-secret-key migration when feasible
+- [ ] (Defense in depth, optional) SnapTrade in-place rotation if/when dashboard exposes it
+
+**Residual risk acknowledged:** The Alpha Vantage key remains valid in the wild on this Mac's `.env` — but Alpha Vantage's worst-case is "someone exhausts your 25 free calls/day," not data loss. Acceptable.
 
 ---
 

@@ -1,6 +1,6 @@
 import { MetadataRoute } from 'next'
 
-const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://harvestoptions.com'
+const BASE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://harvestoptions.net'
 
 const learnSlugs = [
   'what-is-a-covered-call',

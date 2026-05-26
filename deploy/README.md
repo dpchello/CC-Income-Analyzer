@@ -8,7 +8,7 @@ Files for running Harvest on this Mac in production. See `PLAN_SELF_HOST.md` for
 |---|---|---|
 | `com.harvest.backend.plist` | launchd job for FastAPI on `127.0.0.1:8000` | None if user is `leslie` and path is `/Users/leslie/CC-Income-Analyzer` |
 | `com.harvest.marketing.plist` | launchd job for Next.js marketing on `127.0.0.1:3001` (only if §5 Option B) | None, same assumptions |
-| `cloudflared-config.yml` | Cloudflare Tunnel ingress template | Replace `<TUNNEL_ID>` (×2) and `harvestoptions.com` if your domain differs |
+| `cloudflared-config.yml` | Cloudflare Tunnel ingress template | Replace `<TUNNEL_ID>` (×2) and `harvestoptions.net` if your domain differs |
 
 ## Installation order
 
@@ -40,16 +40,16 @@ cloudflared tunnel create harvest       # note the TUNNEL_ID it prints
 
 ### 2. Wire the tunnel config
 
-Edit `deploy/cloudflared-config.yml` — replace `<TUNNEL_ID>` (two places) with the ID from step 1. Replace `harvestoptions.com` if your domain is different.
+Edit `deploy/cloudflared-config.yml` — replace `<TUNNEL_ID>` (two places) with the ID from step 1. Replace `harvestoptions.net` if your domain is different.
 
 ```bash
 mkdir -p ~/.cloudflared
 cp deploy/cloudflared-config.yml ~/.cloudflared/config.yml
 
 # Wire DNS — this creates the CNAMEs in Cloudflare automatically
-cloudflared tunnel route dns harvest harvestoptions.com
-cloudflared tunnel route dns harvest www.harvestoptions.com
-cloudflared tunnel route dns harvest app.harvestoptions.com
+cloudflared tunnel route dns harvest harvestoptions.net
+cloudflared tunnel route dns harvest www.harvestoptions.net
+cloudflared tunnel route dns harvest app.harvestoptions.net
 ```
 
 ### 3. Install launchd jobs
@@ -83,7 +83,7 @@ cloudflared tunnel info harvest
 
 # Public reachable? (Disable Wi-Fi → use cellular → run from phone or another
 # network to actually test the public path)
-curl -I https://app.harvestoptions.com
+curl -I https://app.harvestoptions.net
 ```
 
 ### 5. Mac stays awake
@@ -122,7 +122,7 @@ No tunnel restart needed unless you edit `~/.cloudflared/config.yml`.
 | Symptom | Likely cause | Fix |
 |---|---|---|
 | `launchctl list` shows status `78` for backend | Python or dep missing | `tail ~/Library/Logs/harvest/backend.err.log` — usually a missing pip install |
-| 502 from `https://app.harvestoptions.com` | Backend not running, or wrong port in `config.yml` | `curl http://127.0.0.1:8000/api/dashboard` to confirm origin is alive |
+| 502 from `https://app.harvestoptions.net` | Backend not running, or wrong port in `config.yml` | `curl http://127.0.0.1:8000/api/dashboard` to confirm origin is alive |
 | Tunnel "DOWN" in `cloudflared tunnel info` | Daemon crashed or network blip | `launchctl kickstart -k system/com.cloudflare.cloudflared` |
 | `curl` from same Mac works, but phone on cellular gets timeout | DNS not propagated | Wait 60s, or check Cloudflare dashboard → DNS for the records |
 | Process keeps restarting in a loop | `ThrottleInterval` is 10s — keep tailing logs to see why | `tail -f ~/Library/Logs/harvest/backend.err.log` |

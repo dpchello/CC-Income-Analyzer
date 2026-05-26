@@ -9,23 +9,23 @@
 #   cloudflared tunnel create harvest         # prints <TUNNEL_ID>
 #   # Edit this file: replace <TUNNEL_ID> below in two places
 #   cp deploy/cloudflared-config.yml ~/.cloudflared/config.yml
-#   cloudflared tunnel route dns harvest harvestoptions.com
-#   cloudflared tunnel route dns harvest www.harvestoptions.com
-#   cloudflared tunnel route dns harvest app.harvestoptions.com
+#   cloudflared tunnel route dns harvest harvestoptions.net
+#   cloudflared tunnel route dns harvest www.harvestoptions.net
+#   cloudflared tunnel route dns harvest app.harvestoptions.net
 #   sudo cloudflared service install          # registers as launchd service
 #
 # Verify:
 #   cloudflared tunnel info harvest
-#   curl -I https://app.harvestoptions.com    # should TLS-terminate via CF
+#   curl -I https://app.harvestoptions.net    # should TLS-terminate via CF
 #
 # This template assumes §5 Option B (split origins):
-#   harvestoptions.com  → marketing on :3001
-#   app.harvestoptions.com → FastAPI on :8000 (serves frontend/dist + /api/*)
+#   harvestoptions.net  → marketing on :3001
+#   app.harvestoptions.net → FastAPI on :8000 (serves frontend/dist + /api/*)
 #
 # For Option A (single origin), point both hostnames to :8000.
 
-tunnel: <TUNNEL_ID>
-credentials-file: /Users/leslie/.cloudflared/<TUNNEL_ID>.json
+tunnel: d20386cc-b4d0-452b-a05e-c8d42a5685a4
+credentials-file: /Users/leslie/.cloudflared/d20386cc-b4d0-452b-a05e-c8d42a5685a4.json
 
 # Origin request defaults — reasonable timeouts for a single-Mac backend.
 originRequest:
@@ -34,14 +34,14 @@ originRequest:
 
 ingress:
   # ── App (FastAPI + React SPA) ────────────────────────────────────────────
-  - hostname: app.harvestoptions.com
+  - hostname: app.harvestoptions.net
     service: http://localhost:8000
 
   # ── Marketing site (Next.js) ─────────────────────────────────────────────
-  - hostname: harvestoptions.com
+  - hostname: harvestoptions.net
     service: http://localhost:3001
 
-  - hostname: www.harvestoptions.com
+  - hostname: www.harvestoptions.net
     service: http://localhost:3001
 
   # ── Catch-all — required, must be last ───────────────────────────────────
