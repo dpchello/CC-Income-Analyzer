@@ -979,26 +979,52 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
 
 // ── OI Chart inner (Visx) ─────────────────────────────────────────────────────
 
-function OIChartInner({ data, width, height, spyPrice, ticker }) {
+function OIChartInner({ data, width, height, spyPrice, ticker, mode }) {
   const { showTooltip, hideTooltip, tooltipData, tooltipLeft, tooltipTop, tooltipOpen } = useTooltip()
-  const MARGIN = { top: 8, right: 16, left: 44, bottom: 22 }
+  const MARGIN = { top: 12, right: 16, left: 54, bottom: 22 }
   const innerW = Math.max(0, width - MARGIN.left - MARGIN.right)
   const innerH = Math.max(0, height - MARGIN.top - MARGIN.bottom)
   const BAR_MAX = 14
+  const isDollars = mode === 'dollars'
+
+  // Selected metric per side: OI counts, or speculative dollars (OI × mid × 100).
+  const callOf = d => (isDollars ? d.call_value : d.call_oi) || 0
+  const putOf  = d => (isDollars ? d.put_value  : d.put_oi)  || 0
 
   const strikes = data.map(d => String(d.strike))
   const xScale = scaleBand({ domain: strikes, range: [0, innerW], padding: 0.15 })
-  const maxOI = Math.max(...data.flatMap(d => [d.call_oi, d.put_oi]), 1)
-  const yScale = scaleLinear({ domain: [0, maxOI * 1.1], range: [innerH, 0] })
+  // Diverging axis: puts grow up from a centered zero line, calls grow down.
+  const maxAbs = Math.max(...data.map(d => Math.max(callOf(d), putOf(d))), 1)
+  const yScale = scaleLinear({ domain: [-maxAbs * 1.1, maxAbs * 1.1], range: [innerH, 0] })
+  const zeroY = yScale(0)
   const barW = Math.min(xScale.bandwidth() / 2, BAR_MAX)
+
+  const fmtAxis = v => {
+    const n = Math.abs(Number(v) || 0)
+    if (isDollars) {
+      if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`
+      if (n >= 1e6) return `$${(n / 1e6).toFixed(0)}M`
+      if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}k`
+      return n === 0 ? '$0' : `$${n.toFixed(0)}`
+    }
+    return n === 0 ? '0' : `${(n / 1000).toFixed(0)}k`
+  }
+  const fmtTip = v => {
+    const n = Math.abs(Number(v) || 0)
+    if (!isDollars) return n.toLocaleString()
+    if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`
+    if (n >= 1e6) return `$${(n / 1e6).toFixed(2)}M`
+    if (n >= 1e3) return `$${(n / 1e3).toFixed(1)}k`
+    return `$${n.toFixed(0)}`
+  }
 
   const handleMouseMove = (d, e) => {
     const rect = e.currentTarget.closest('svg').getBoundingClientRect()
     const x = e.clientX - rect.left
-    showTooltip({ tooltipData: d, tooltipLeft: x, tooltipTop: yScale(Math.max(d.call_oi, d.put_oi)) + MARGIN.top - 8 })
+    showTooltip({ tooltipData: d, tooltipLeft: x, tooltipTop: yScale(Math.max(callOf(d), putOf(d))) + MARGIN.top - 8 })
   }
 
-  // Find the nearest strike index for SPY price reference line
+  // Find the nearest strike index for the spot price reference line
   const spyLineX = spyPrice > 0
     ? (() => {
         const sorted = [...data].sort((a, b) => Math.abs(a.strike - spyPrice) - Math.abs(b.strike - spyPrice))
@@ -1014,21 +1040,23 @@ function OIChartInner({ data, width, height, spyPrice, ticker }) {
           <GridRows scale={yScale} width={innerW} stroke="var(--border)" strokeDasharray="3 3" strokeOpacity={0.5} />
           {data.map(d => {
             const x = xScale(String(d.strike)) ?? 0
-            const putH = innerH - yScale(d.put_oi)
-            const callH = innerH - yScale(d.call_oi)
+            const putY  = yScale(putOf(d))      // puts above the zero line
+            const callY = yScale(-callOf(d))    // calls mirrored below the zero line
             return (
               <Group key={d.strike}>
-                <Bar x={x} y={yScale(d.put_oi)} width={barW} height={putH}
+                <Bar x={x} y={putY} width={barW} height={Math.max(0, zeroY - putY)}
                   fill="var(--green)" opacity={0.7}
                   onMouseMove={e => handleMouseMove(d, e)} onMouseLeave={hideTooltip}
                 />
-                <Bar x={x + barW} y={yScale(d.call_oi)} width={barW} height={callH}
+                <Bar x={x + barW} y={zeroY} width={barW} height={Math.max(0, callY - zeroY)}
                   fill="var(--red)" opacity={0.7}
                   onMouseMove={e => handleMouseMove(d, e)} onMouseLeave={hideTooltip}
                 />
               </Group>
             )
           })}
+          {/* Zero baseline separating puts (up) from calls (down) */}
+          <line x1={0} x2={innerW} y1={zeroY} y2={zeroY} stroke="var(--border)" strokeWidth={1} />
           {spyLineX !== null && (
             <line
               x1={spyLineX} x2={spyLineX} y1={0} y2={innerH}
@@ -1053,9 +1081,9 @@ function OIChartInner({ data, width, height, spyPrice, ticker }) {
             stroke="transparent"
             tickStroke="transparent"
             tickLabelProps={() => ({ fill: 'var(--muted)', fontSize: 10, textAnchor: 'end', dx: -4 })}
-            tickFormat={v => v === 0 ? '0' : `${(Math.abs(Number(v)) / 1000).toFixed(0)}k`}
-            numTicks={4}
-            width={42}
+            tickFormat={fmtAxis}
+            numTicks={6}
+            width={50}
           />
         </Group>
       </svg>
@@ -1072,8 +1100,12 @@ function OIChartInner({ data, width, height, spyPrice, ticker }) {
           }}
         >
           <div style={{ color: 'var(--muted)', marginBottom: 2 }}>${tooltipData.strike} Strike</div>
-          <div style={{ color: 'var(--green)' }}>Put OI: {tooltipData.put_oi.toLocaleString()}</div>
-          <div style={{ color: 'var(--red)' }}>Call OI: {tooltipData.call_oi.toLocaleString()}</div>
+          <div style={{ color: 'var(--green)' }}>
+            Put {isDollars ? 'value' : 'OI'}: {isDollars && !putOf(tooltipData) ? 'n/a' : fmtTip(putOf(tooltipData))}
+          </div>
+          <div style={{ color: 'var(--red)' }}>
+            Call {isDollars ? 'value' : 'OI'}: {fmtTip(callOf(tooltipData))}
+          </div>
         </TooltipWithBounds>
       )}
     </div>
@@ -1086,6 +1118,8 @@ export function OIChart() {
   const { apiFetch } = useAuth()
   const [expiries, setExpiries] = useState([])
   const [selectedExpiry, setSelectedExpiry] = useState(null)
+  const [captureDate, setCaptureDate] = useState(null)   // null = latest snapshot
+  const [viewMode, setViewMode] = useState('oi')         // 'oi' | 'dollars'
   const [oiData, setOiData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -1106,55 +1140,115 @@ export function OIChart() {
     let cancelled = false
     setLoading(true)
     setError(null)
-    apiFetch(`/api/oi/chain?expiry=${selectedExpiry}`)
+    const params = new URLSearchParams({ expiry: selectedExpiry })
+    if (captureDate) params.set('capture_date', captureDate)
+    apiFetch(`/api/oi/chain?${params}`)
       .then(r => r.json())
       .then(data => { if (!cancelled) setOiData(data) })
       .catch(() => { if (!cancelled) setError('Could not load OI data.') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [selectedExpiry])
+  }, [selectedExpiry, captureDate])
+
+  function selectExpiry(exp) {
+    setSelectedExpiry(exp)
+    setCaptureDate(null)   // reset the scrubber to "latest" when switching expiry
+  }
 
   const spyPrice = oiData?.spy_price || 0
   const oiTicker = oiData?.ticker || ''
+  const isDollars = viewMode === 'dollars'
 
-  // Filter to ±15% around spot, transform for chart (puts above zero, calls below)
+  const availableDates = oiData?.available_dates || []
+  const currentDate = oiData?.capture_date
+  const isLive = oiData?.is_live
+  const dateIdx = Math.max(0, availableDates.indexOf(currentDate))
+
+  const fmtDateLabel = d => d
+    ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+    : ''
+
+  // Filter to ±15% around spot (raw values — OIChartInner mirrors calls below zero)
   const chartData = (oiData?.strikes || [])
     .filter(r => spyPrice === 0 || (r.strike >= spyPrice * 0.85 && r.strike <= spyPrice * 1.15))
     .map(r => ({
-      strike: r.strike,
-      put_oi:   r.put_oi  != null ? r.put_oi  : 0,
-      call_oi:  r.call_oi != null ? -r.call_oi : 0,  // negative so it goes below axis
+      strike:      r.strike,
+      put_oi:      r.put_oi  || 0,
+      call_oi:     r.call_oi || 0,
+      put_value:   r.put_value  || 0,
+      call_value:  r.call_value || 0,
       put_change:  r.put_change_1d,
       call_change: r.call_change_1d,
     }))
 
-  const totalCallOI = (oiData?.strikes || []).reduce((s, r) => s + (r.call_oi || 0), 0)
-  const totalPutOI  = (oiData?.strikes || []).reduce((s, r) => s + (r.put_oi  || 0), 0)
+  const allStrikes  = oiData?.strikes || []
+  const totalCallOI = allStrikes.reduce((s, r) => s + (r.call_oi || 0), 0)
+  const totalPutOI  = allStrikes.reduce((s, r) => s + (r.put_oi  || 0), 0)
+  const totalCallVal = allStrikes.reduce((s, r) => s + (r.call_value || 0), 0)
+  const totalPutVal  = allStrikes.reduce((s, r) => s + (r.put_value  || 0), 0)
+
+  const fmtDollars = v => {
+    const n = Math.abs(Number(v) || 0)
+    if (n >= 1e9) return `$${(n / 1e9).toFixed(2)}B`
+    if (n >= 1e6) return `$${(n / 1e6).toFixed(1)}M`
+    if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}k`
+    return `$${n.toFixed(0)}`
+  }
+
+  const toggleBtn = (active, extra = {}) => ({
+    color: active ? 'var(--blue)' : 'var(--muted)',
+    backgroundColor: active ? 'rgba(74,158,255,0.08)' : 'transparent',
+    ...extra,
+  })
 
   return (
     <div className="border" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}>
-      <div className="px-5 py-3 border-b flex flex-wrap items-center justify-between gap-3" style={{ borderColor: 'var(--border)' }}>
-        <div>
-          <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Open Interest by Strike</h2>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
-            Green bars above = Put OI · Red bars below = Call OI · Dashed line = spot price · ±15% around spot
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-1.5">
-          {expiries.map(exp => (
-            <button
-              key={exp}
-              onClick={() => setSelectedExpiry(exp)}
-              className="text-xs px-2.5 py-1 border transition-colors"
-              style={{
-                borderColor: selectedExpiry === exp ? 'var(--blue)' : 'var(--border)',
-                color: selectedExpiry === exp ? 'var(--blue)' : 'var(--muted)',
-                backgroundColor: selectedExpiry === exp ? 'rgba(74,158,255,0.08)' : 'transparent',
-              }}
-            >
-              {exp}
-            </button>
-          ))}
+      <div className="px-5 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+              {isDollars ? 'Speculative Dollars by Strike' : 'Open Interest by Strike'}
+            </h2>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+              {isDollars
+                ? 'Green above = Put $ · Red below = Call $ (open interest × mid price) · dashed line = spot · ±15% around spot'
+                : 'Green above = Put OI · Red below = Call OI · dashed line = spot price · ±15% around spot'}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {/* View toggle: OI counts vs speculative dollars */}
+            <div className="flex border" style={{ borderColor: 'var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
+              {[
+                { id: 'oi',      label: 'Open Interest' },
+                { id: 'dollars', label: 'Speculative $' },
+              ].map(v => (
+                <button
+                  key={v.id}
+                  onClick={() => setViewMode(v.id)}
+                  className="text-xs px-2.5 py-1 transition-colors"
+                  style={toggleBtn(viewMode === v.id)}
+                >
+                  {v.label}
+                </button>
+              ))}
+            </div>
+            {/* Expiry selector */}
+            <div className="flex flex-wrap gap-1.5">
+              {expiries.map(exp => (
+                <button
+                  key={exp}
+                  onClick={() => selectExpiry(exp)}
+                  className="text-xs px-2.5 py-1 border transition-colors"
+                  style={{
+                    borderColor: selectedExpiry === exp ? 'var(--blue)' : 'var(--border)',
+                    ...toggleBtn(selectedExpiry === exp),
+                  }}
+                >
+                  {exp}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -1180,14 +1274,66 @@ export function OIChart() {
                   height={height}
                   spyPrice={spyPrice}
                   ticker={oiTicker}
+                  mode={viewMode}
                 />
               )}
             </ParentSize>
           </div>
-          <div className="px-5 py-2 border-t flex gap-6 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
-            <span><Term id="OpenInterest">Total Call OI</Term>: <span style={{ color: 'var(--red)' }}>{totalCallOI.toLocaleString()}</span></span>
-            <span><Term id="OpenInterest">Total Put OI</Term>: <span style={{ color: 'var(--green)' }}>{totalPutOI.toLocaleString()}</span></span>
-            {totalCallOI > 0 && <span><Term id="PutCallRatio">Put/Call ratio</Term>: <span style={{ color: 'var(--text)' }}>{(totalPutOI / totalCallOI).toFixed(2)}</span></span>}
+
+          {/* Date scrubber — replay OI/value as it built over time */}
+          {availableDates.length > 0 && (
+            <div className="px-5 py-3 border-t" style={{ borderColor: 'var(--border)' }}>
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-xs uppercase tracking-wider font-mono" style={{ color: 'var(--muted)' }}>History</span>
+                <span className="text-xs font-mono flex items-center gap-2" style={{ color: 'var(--text)' }}>
+                  {fmtDateLabel(currentDate)}
+                  {isLive && (
+                    <span className="text-[10px] px-1.5 py-0.5" style={{ color: 'var(--green)', backgroundColor: 'rgba(62,207,142,0.12)', borderRadius: 'var(--radius-sm)' }}>● LIVE</span>
+                  )}
+                </span>
+              </div>
+              {availableDates.length > 1 ? (
+                <>
+                  <input
+                    type="range"
+                    min={0}
+                    max={availableDates.length - 1}
+                    value={dateIdx}
+                    onChange={e => setCaptureDate(availableDates[Number(e.target.value)])}
+                    className="w-full"
+                    style={{ accentColor: 'var(--blue)' }}
+                  />
+                  <div className="flex justify-between text-[10px] font-mono mt-0.5" style={{ color: 'var(--muted)' }}>
+                    <span>{fmtDateLabel(availableDates[0])}</span>
+                    <span>{availableDates.length} snapshots</span>
+                    <span>{fmtDateLabel(availableDates[availableDates.length - 1])}</span>
+                  </div>
+                </>
+              ) : (
+                <p className="text-[11px]" style={{ color: 'var(--muted)' }}>
+                  Only one snapshot captured so far — the scrubber unlocks as daily history builds (one snapshot per trading day).
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Totals footer */}
+          <div className="px-5 py-2 border-t flex flex-wrap gap-x-6 gap-y-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
+            {isDollars ? (
+              <>
+                <span>Total Call $: <span style={{ color: 'var(--red)' }}>{fmtDollars(totalCallVal)}</span></span>
+                <span>Total Put $: <span style={{ color: 'var(--green)' }}>{totalPutVal > 0 ? fmtDollars(totalPutVal) : 'n/a'}</span></span>
+                {totalPutVal === 0 && (
+                  <span style={{ opacity: 0.8 }}>Put $ unavailable — source provides put open interest but not put quotes.</span>
+                )}
+              </>
+            ) : (
+              <>
+                <span><Term id="OpenInterest">Total Call OI</Term>: <span style={{ color: 'var(--red)' }}>{totalCallOI.toLocaleString()}</span></span>
+                <span><Term id="OpenInterest">Total Put OI</Term>: <span style={{ color: 'var(--green)' }}>{totalPutOI.toLocaleString()}</span></span>
+                {totalCallOI > 0 && <span><Term id="PutCallRatio">Put/Call ratio</Term>: <span style={{ color: 'var(--text)' }}>{(totalPutOI / totalCallOI).toFixed(2)}</span></span>}
+              </>
+            )}
           </div>
         </>
       )}
