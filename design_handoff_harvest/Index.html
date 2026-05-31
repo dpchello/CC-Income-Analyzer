@@ -1,0 +1,103 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Harvest — Index</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" />
+<link rel="stylesheet" href="styles/tokens.css" />
+<style>
+html, body { margin: 0; padding: 0; background: var(--bg); color: var(--fg); font-family: "Inter", sans-serif; }
+a { color: inherit; text-decoration: none; }
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); }
+.tile { background: var(--bg); padding: 56px 48px; min-height: 280px; display: flex; flex-direction: column; justify-content: space-between; }
+.tile:hover { background: var(--bg-card); }
+.eyebrow { font-family: var(--mono); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--fg-mute); }
+.title { font-family: var(--serif); font-size: 48px; font-style: italic; letter-spacing: -0.02em; color: var(--fg); margin: 8px 0 12px; line-height: 1; }
+.sub { color: var(--fg-dim); font-size: 14px; line-height: 1.55; max-width: 52ch; }
+.meta { font-family: var(--mono); font-size: 11px; color: var(--fg-faint); letter-spacing: 0.08em; text-transform: uppercase; margin-top: 20px; }
+.arrow { color: var(--acid-strong); font-family: var(--mono); font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; }
+</style>
+</head>
+<body>
+<div style="max-width: 1160px; margin: 0 auto; padding: 96px 48px 120px;">
+
+  <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 64px;">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+      <path d="M14 4 V24" stroke="var(--acid-strong)" stroke-width="1.5"/>
+      <path d="M14 9 Q9 8 8 12 Q13 13 14 11" fill="var(--acid-strong)" stroke="none"/>
+      <path d="M14 12 Q19 11 20 15 Q15 16 14 14" fill="var(--acid-strong)" stroke="none"/>
+      <path d="M14 16 Q10 15 9 19 Q13 20 14 18" fill="var(--acid-strong)" stroke="none"/>
+    </svg>
+    <div style="font-family: var(--sans-tight); font-size: 18px; font-weight: 600; letter-spacing: -0.01em;">Harvest</div>
+    <div style="flex: 1;"></div>
+    <div class="eyebrow">Design review · v0.3</div>
+  </div>
+
+  <div style="margin-bottom: 64px;">
+    <div class="eyebrow" style="margin-bottom: 12px;">Covered-call platform for long-term holders</div>
+    <h1 style="font-family: var(--serif); font-style: italic; font-size: 72px; letter-spacing: -0.025em; line-height: 0.95; margin: 0 0 24px; max-width: 18ch;">
+      Income from the <span style="color: var(--acid-strong);">shares</span> you already own.
+    </h1>
+    <p style="font-size: 16px; color: var(--fg-dim); line-height: 1.6; max-width: 64ch; margin: 0;">
+      Two deliverables in this review. The design canvas presents marketing directions, dashboard variations, and app screens as static frames — for comparison and comment. The prototype is a working app you can navigate.
+    </p>
+  </div>
+
+  <div class="grid">
+    <a href="Harvest.html" class="tile">
+      <div>
+        <div class="eyebrow">01 · Design canvas</div>
+        <div class="title">Frames</div>
+        <div class="sub">Three marketing landing directions, full-scroll of the editorial direction, pricing, features, research index, three dashboard directions, chart-forward screener, journal, and a mobile briefing.</div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="meta">Static · comparable · comment-ready</div>
+        <div class="arrow">Open →</div>
+      </div>
+    </a>
+    <a href="App.html" class="tile">
+      <div>
+        <div class="eyebrow">02 · Clickable prototype</div>
+        <div class="title">App</div>
+        <div class="sub">Full nav: dashboard → positions → recommendations → trade ticket → performance → journal → onboarding. Pick any sidebar item; state persists across reloads.</div>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="meta">Interactive · ~11 screens</div>
+        <div class="arrow">Open →</div>
+      </div>
+    </a>
+  </div>
+
+  <div style="margin-top: 96px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 48px; border-top: 1px solid var(--line); padding-top: 48px;">
+    <div>
+      <div class="eyebrow" style="margin-bottom: 12px;">System</div>
+      <div style="color: var(--fg-dim); font-size: 13px; line-height: 1.6;">
+        Paper white <span class="num" style="color: var(--fg-mute);">#faf8f3</span><br/>
+        Forest accent <span class="num" style="color: var(--acid-strong);">#2f5233</span><br/>
+        Rust <span class="num" style="color: var(--danger);">#a64a2e</span>
+      </div>
+    </div>
+    <div>
+      <div class="eyebrow" style="margin-bottom: 12px;">Type</div>
+      <div style="color: var(--fg-dim); font-size: 13px; line-height: 1.6;">
+        Inter Tight · UI &amp; numerals<br/>
+        Instrument Serif · editorial display<br/>
+        JetBrains Mono · data &amp; codes
+      </div>
+    </div>
+    <div>
+      <div class="eyebrow" style="margin-bottom: 12px;">Next</div>
+      <div style="color: var(--fg-dim); font-size: 13px; line-height: 1.6;">
+        Pick a landing direction<br/>
+        Pick a dashboard direction<br/>
+        Real copy · onboarding content · brand mark
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

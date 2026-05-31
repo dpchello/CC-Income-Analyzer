@@ -1,0 +1,2756 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Harvest — App</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" />
+<style>
+/* Harvest — design tokens */
+:root {
+  /* Paper-white premium palette. Warm off-white with forest/olive accent. */
+  --bg: #faf8f3;
+  --bg-elev: #f3f0e7;
+  --bg-elev-2: #ebe7db;
+  --bg-card: #ffffff;
+  --line: rgba(24, 28, 20, 0.10);
+  --line-strong: rgba(24, 28, 20, 0.18);
+  --line-soft: rgba(24, 28, 20, 0.06);
+
+  --fg: #1a1e16;
+  --fg-dim: #4a4f44;
+  --fg-mute: #6e7166;
+  --fg-faint: #9a9a90;
+
+  /* 'acid' token kept — now remapped to a deep forest/olive so every existing
+     reference carries the new accent without component edits. */
+  --acid: #2f5233;
+  --acid-dim: #3f6844;
+  --acid-deep: #1e3621;
+  --acid-faint: rgba(47, 82, 51, 0.08);
+  --acid-line: rgba(47, 82, 51, 0.28);
+
+  --warn: #b8502e;
+  --warn-faint: rgba(184, 80, 46, 0.10);
+  --down: #c14a35;
+
+  --olive: #6a7648;
+  --olive-dim: #4a5436;
+
+  --serif: "Instrument Serif", "Cormorant Garamond", Georgia, serif;
+  --sans: "Inter Tight", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+
+  --r-1: 2px;
+  --r-2: 4px;
+  --r-3: 8px;
+  --r-4: 12px;
+}
+
+* { box-sizing: border-box; }
+
+.h-root {
+  font-family: var(--body);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
+}
+
+.h-root .num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.h-root .display { font-family: var(--sans); letter-spacing: -0.03em; font-weight: 500; }
+.h-root .serif { font-family: var(--serif); font-weight: 400; letter-spacing: -0.01em; }
+
+/* subtle grain */
+.h-grain::before {
+  content: "";
+  position: absolute; inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.4 0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.5'/></svg>");
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.h-hair { border: 0; border-top: 1px solid var(--line); margin: 0; }
+
+.h-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 36px; padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--body);
+  font-size: 13px; font-weight: 500;
+  letter-spacing: -0.005em;
+  border-radius: var(--r-2);
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.h-btn:hover { background: rgba(24,28,20,0.04); }
+.h-btn.primary {
+  background: var(--acid);
+  color: #faf8f3;
+  border-color: var(--acid);
+  font-weight: 600;
+}
+.h-btn.primary:hover { background: var(--acid-deep); }
+.h-btn.ghost { border-color: transparent; color: var(--fg-dim); }
+.h-btn.ghost:hover { color: var(--fg); background: rgba(24,28,20,0.04); }
+.h-btn.sm { height: 28px; padding: 0 10px; font-size: 12px; }
+
+.h-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 22px; padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-family: var(--mono); font-size: 11px;
+  color: var(--fg-dim);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.h-chip.acid { color: var(--acid); border-color: var(--acid-line); background: var(--acid-faint); }
+.h-chip.warn { color: var(--warn); border-color: rgba(240,112,74,0.3); background: var(--warn-faint); }
+.h-chip.solid { background: var(--bg-elev); }
+
+.h-eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+}
+
+.h-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--acid); }
+
+.h-up { color: var(--acid); }
+.h-down { color: var(--down); }
+
+/* scrollbar */
+.h-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.h-scroll::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
+
+/* loading bar texture for placeholder imagery */
+.h-placeholder {
+  background:
+    repeating-linear-gradient(135deg,
+      rgba(24,28,20,0.02) 0 8px,
+      rgba(24,28,20,0.05) 8px 16px);
+  border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--fg-faint);
+  font-family: var(--mono); font-size: 10px;
+  letter-spacing: 0.12em; text-transform: uppercase;
+}
+
+html, body { margin: 0; padding: 0; background: var(--bg); }
+body { font-family: "Inter", -apple-system, sans-serif; color: var(--fg); }
+a { color: inherit; text-decoration: none; cursor: pointer; }
+select, input { font-family: inherit; }
+input[type="checkbox"] { accent-color: var(--acid); }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script id="jsx-source" type="text/plain">
+
+// ===== components/Logo.jsx =====
+// Harvest logo — tiny wheat-bundle glyph + wordmark
+function HarvestMark({ size = 18, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" fill="none" stroke={color} strokeWidth="1.2" strokeLinecap="round">
+      {/* wheat stem */}
+      <path d="M9 2 L9 16" />
+      {/* grain */}
+      <path d="M9 5 Q6 5 5 3.5 Q6 2 9 2.5" />
+      <path d="M9 5 Q12 5 13 3.5 Q12 2 9 2.5" />
+      <path d="M9 8 Q6 8 5 6.5 Q6 5 9 5.5" />
+      <path d="M9 8 Q12 8 13 6.5 Q12 5 9 5.5" />
+      <path d="M9 11 Q6 11 5 9.5 Q6 8 9 8.5" />
+      <path d="M9 11 Q12 11 13 9.5 Q12 8 9 8.5" />
+    </svg>
+  );
+}
+
+function HarvestLogo({ size = 18, color, tone = "full" }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, color: color || "inherit" }}>
+      <HarvestMark size={size} color={color} />
+      {tone === "full" && (
+        <span style={{
+          fontFamily: 'var(--sans)', fontWeight: 600,
+          fontSize: size * 0.95, letterSpacing: "-0.03em",
+        }}>Harvest</span>
+      )}
+    </span>
+  );
+}
+
+Object.assign(window, { HarvestMark, HarvestLogo });
+
+
+// ===== components/Charts.jsx =====
+// Harvest — shared data-viz primitives (no external deps)
+
+// Deterministic seeded random so charts don't reflow on re-render
+function seedRand(seed) {
+  let s = seed;
+  return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+}
+
+// Generate a plausible price path
+function genPath(n, startPrice, vol = 0.012, trend = 0.0005, seed = 7) {
+  const r = seedRand(seed);
+  const out = [startPrice];
+  for (let i = 1; i < n; i++) {
+    const step = (r() - 0.5) * 2 * vol + trend;
+    out.push(Math.max(0.1, out[i - 1] * (1 + step)));
+  }
+  return out;
+}
+
+// Sparkline — tiny line chart for rows and cards
+function Sparkline({ points, width = 80, height = 22, color = "var(--acid)", fill = false, strokeWidth = 1.25 }) {
+  if (!points || points.length < 2) return null;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const range = max - min || 1;
+  const step = width / (points.length - 1);
+  const coords = points.map((p, i) => [i * step, height - ((p - min) / range) * (height - 2) - 1]);
+  const d = coords.map(([x, y], i) => (i ? `L${x.toFixed(2)} ${y.toFixed(2)}` : `M${x.toFixed(2)} ${y.toFixed(2)}`)).join(" ");
+  const area = fill ? `${d} L${width} ${height} L0 ${height} Z` : null;
+  return (
+    <svg width={width} height={height} style={{ display: "block", overflow: "visible" }}>
+      {fill && <path d={area} fill={color} opacity={0.12} />}
+      <path d={d} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Chart with axes, optional shaded region, optional markers
+function LineChart({
+  points, width = 600, height = 220, color = "var(--acid)",
+  fill = true, padding = 24, yTicks = 4, xLabels = [], markers = [], strike, dashedFrom,
+}) {
+  const min = Math.min(...points) * 0.985;
+  const max = Math.max(...points) * 1.015;
+  const range = max - min || 1;
+  const plotW = width - padding * 2;
+  const plotH = height - padding * 2;
+  const step = plotW / (points.length - 1);
+
+  const toXY = (i, v) => [padding + i * step, padding + plotH - ((v - min) / range) * plotH];
+  const d = points.map((p, i) => { const [x, y] = toXY(i, p); return (i ? "L" : "M") + x.toFixed(2) + " " + y.toFixed(2); }).join(" ");
+
+  const solidPts = dashedFrom != null ? points.slice(0, dashedFrom + 1) : points;
+  const dashPts = dashedFrom != null ? points.slice(dashedFrom) : [];
+  const solidD = solidPts.map((p, i) => { const [x, y] = toXY(i, p); return (i ? "L" : "M") + x.toFixed(2) + " " + y.toFixed(2); }).join(" ");
+  const dashD = dashPts.map((p, i) => { const [x, y] = toXY(i + (dashedFrom || 0), p); return (i ? "L" : "M") + x.toFixed(2) + " " + y.toFixed(2); }).join(" ");
+
+  const areaD = solidD + ` L${padding + (solidPts.length - 1) * step} ${padding + plotH} L${padding} ${padding + plotH} Z`;
+
+  const ticks = [];
+  for (let i = 0; i <= yTicks; i++) {
+    const v = min + (range * i) / yTicks;
+    const y = padding + plotH - (plotH * i) / yTicks;
+    ticks.push({ v, y });
+  }
+
+  return (
+    <svg width={width} height={height} style={{ display: "block" }}>
+      {ticks.map((t, i) => (
+        <g key={i}>
+          <line x1={padding} x2={width - padding} y1={t.y} y2={t.y} stroke="var(--line-soft)" />
+          <text x={width - padding + 6} y={t.y + 3} fontSize="9" fill="var(--fg-faint)" fontFamily="var(--mono)">
+            {t.v.toFixed(t.v < 10 ? 2 : 0)}
+          </text>
+        </g>
+      ))}
+      {strike != null && (() => {
+        const y = padding + plotH - ((strike - min) / range) * plotH;
+        return (
+          <g>
+            <line x1={padding} x2={width - padding} y1={y} y2={y} stroke="var(--acid)" strokeWidth="1" strokeDasharray="3 3" opacity="0.6" />
+            <text x={padding + 4} y={y - 3} fontSize="9" fill="var(--acid)" fontFamily="var(--mono)">STRIKE {strike}</text>
+          </g>
+        );
+      })()}
+      {fill && <path d={areaD} fill={color} opacity={0.08} />}
+      <path d={solidD} fill="none" stroke={color} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      {dashD && <path d={dashD} fill="none" stroke={color} strokeWidth="1.2" strokeDasharray="3 3" opacity="0.7" />}
+      {markers.map((m, i) => {
+        const [x, y] = toXY(m.i, points[m.i]);
+        return (
+          <g key={i}>
+            <circle cx={x} cy={y} r="3.5" fill="var(--bg)" stroke={m.color || color} strokeWidth="1.4" />
+            {m.label && <text x={x + 7} y={y - 6} fontSize="9" fill="var(--fg-dim)" fontFamily="var(--mono)">{m.label}</text>}
+          </g>
+        );
+      })}
+      {xLabels.map((x, i) => (
+        <text key={i} x={padding + (i * plotW) / (xLabels.length - 1)} y={height - 6} fontSize="9"
+          fill="var(--fg-faint)" fontFamily="var(--mono)" textAnchor={i === 0 ? "start" : i === xLabels.length - 1 ? "end" : "middle"}>{x}</text>
+      ))}
+    </svg>
+  );
+}
+
+// Premium-vs-yield scatter for screener
+function Scatter({ points, width = 600, height = 300, padding = 36, highlightId, onHover }) {
+  const xs = points.map(p => p.x), ys = points.map(p => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const plotW = width - padding * 1.5;
+  const plotH = height - padding * 1.5;
+  const toX = v => padding + ((v - minX) / (maxX - minX)) * plotW;
+  const toY = v => padding + plotH - ((v - minY) / (maxY - minY)) * plotH;
+  return (
+    <svg width={width} height={height} style={{ display: "block" }}>
+      <defs>
+        <pattern id="grid" width={plotW / 6} height={plotH / 5} patternUnits="userSpaceOnUse">
+          <path d={`M${plotW / 6} 0 L0 0 L0 ${plotH / 5}`} fill="none" stroke="var(--line-soft)" />
+        </pattern>
+      </defs>
+      <rect x={padding} y={padding} width={plotW} height={plotH} fill="url(#grid)" />
+      {/* axis ticks */}
+      {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
+        <text key={"x" + i} x={padding + t * plotW} y={padding + plotH + 16} fontSize="9"
+          fill="var(--fg-faint)" fontFamily="var(--mono)" textAnchor="middle">
+          {(minX + t * (maxX - minX)).toFixed(1)}%
+        </text>
+      ))}
+      {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
+        <text key={"y" + i} x={padding - 6} y={padding + plotH - t * plotH + 3} fontSize="9"
+          fill="var(--fg-faint)" fontFamily="var(--mono)" textAnchor="end">
+          {(minY + t * (maxY - minY)).toFixed(0)}%
+        </text>
+      ))}
+      {/* axis labels */}
+      <text x={padding + plotW / 2} y={height - 4} fontSize="10" fill="var(--fg-mute)" fontFamily="var(--mono)" textAnchor="middle">PREMIUM (% of price)</text>
+      <text x={12} y={padding + plotH / 2} fontSize="10" fill="var(--fg-mute)" fontFamily="var(--mono)"
+        textAnchor="middle" transform={`rotate(-90, 12, ${padding + plotH / 2})`}>ANNUALIZED YIELD</text>
+      {points.map(p => {
+        const hi = p.id === highlightId;
+        return (
+          <g key={p.id} onMouseEnter={() => onHover && onHover(p.id)}
+            style={{ cursor: "pointer" }}>
+            <circle cx={toX(p.x)} cy={toY(p.y)} r={hi ? 6 : 4}
+              fill={hi ? "var(--acid)" : "var(--acid-faint)"} stroke="var(--acid)" strokeWidth={hi ? 1.5 : 0.8} />
+            {hi && <text x={toX(p.x) + 10} y={toY(p.y) - 6} fontSize="10" fontFamily="var(--mono)" fill="var(--fg)">{p.label}</text>}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+Object.assign(window, { Sparkline, LineChart, Scatter, genPath, seedRand });
+
+
+// ===== components/Data.jsx =====
+// Sample data for Harvest mockups
+const HARVEST_POSITIONS = [
+  { sym: "AAPL", name: "Apple Inc.", shares: 400, avg: 162.40, price: 194.32, day: 1.18, week: 2.4, ivr: 28, cc: { strike: 200, exp: "May 16", premium: 2.45, delta: 0.28, cover: 400 } },
+  { sym: "MSFT", name: "Microsoft Corp.", shares: 200, avg: 342.10, price: 428.15, day: -0.42, week: -1.1, ivr: 22, cc: { strike: 440, exp: "May 16", premium: 4.20, delta: 0.32, cover: 200 } },
+  { sym: "NVDA", name: "NVIDIA Corp.", shares: 100, avg: 480.00, price: 892.40, day: 2.81, week: 5.9, ivr: 58, cc: { strike: 920, exp: "May 09", premium: 18.60, delta: 0.34, cover: 100 } },
+  { sym: "AMD", name: "Adv. Micro Devices", shares: 300, avg: 148.20, price: 168.90, day: 0.94, week: -2.8, ivr: 41, cc: { strike: 180, exp: "May 16", premium: 3.10, delta: 0.26, cover: 300 } },
+  { sym: "GOOG", name: "Alphabet Inc.", shares: 250, avg: 138.00, price: 174.25, day: 0.61, week: 3.2, ivr: 19, cc: { strike: 180, exp: "May 23", premium: 2.80, delta: 0.30, cover: 200 } },
+  { sym: "F", name: "Ford Motor Co.", shares: 1000, avg: 11.80, price: 13.42, day: -0.78, week: 1.1, ivr: 35, cc: { strike: 14, exp: "May 16", premium: 0.38, delta: 0.38, cover: 1000 } },
+  { sym: "SOFI", name: "SoFi Technologies", shares: 800, avg: 7.40, price: 9.18, day: 2.12, week: 6.4, ivr: 62, cc: { strike: 10, exp: "May 09", premium: 0.42, delta: 0.35, cover: 800 } },
+  { sym: "T", name: "AT&T Inc.", shares: 500, avg: 17.20, price: 18.94, day: 0.28, week: 0.9, ivr: 14, cc: null },
+];
+
+const HARVEST_RECS = [
+  {
+    id: "r1", sym: "AAPL", conviction: "High", score: 88,
+    action: "Sell 4x May 16 $200 Call", premium: 980, annYield: 18.4, pop: 72, delta: 0.28,
+    thesis: "IV rank at 28 offers reasonable premium. $200 strike sits above 1σ range and two prior rejection points. Earnings are post-expiration; event risk avoided.",
+    tags: ["above-cost-basis", "no-earnings", "iv-rank-median"],
+  },
+  {
+    id: "r2", sym: "NVDA", conviction: "Med", score: 74,
+    action: "Sell 1x May 09 $920 Call", premium: 1860, annYield: 31.2, pop: 64, delta: 0.34,
+    thesis: "Elevated IVR of 58 captures rich premium. Short 2-week tenor reduces assignment risk. Strike is 3% OTM but trend momentum is strong — consider rolling.",
+    tags: ["high-iv", "short-dte", "trend-risk"],
+  },
+  {
+    id: "r3", sym: "AMD", conviction: "Med", score: 69,
+    action: "Sell 3x May 16 $180 Call", premium: 930, annYield: 22.0, pop: 70, delta: 0.26,
+    thesis: "Consolidation band between $160 and $180. Selling at resistance. Premium covers 3.3 weeks of portfolio drag.",
+    tags: ["range-bound", "at-resistance"],
+  },
+  {
+    id: "r4", sym: "SOFI", conviction: "Low", score: 52,
+    action: "Hold — await IV cooldown",
+    thesis: "IVR at 62 is attractive, but price is trending into earnings. Wait for post-event IV crush before initiating.",
+    tags: ["earnings-soon", "watch"],
+  },
+];
+
+const HARVEST_HISTORY = [
+  { id: "h1", date: "Apr 18", sym: "AAPL", action: "STO", strike: 190, exp: "Apr 18", premium: 2.10, qty: 4, outcome: "expired", pnl: 840, ret: 1.24 },
+  { id: "h2", date: "Apr 18", sym: "MSFT", action: "STO", strike: 420, exp: "Apr 18", premium: 3.80, qty: 2, outcome: "expired", pnl: 760, ret: 0.91 },
+  { id: "h3", date: "Apr 11", sym: "NVDA", action: "BTC", strike: 880, exp: "Apr 18", premium: 12.40, qty: 1, outcome: "closed-early", pnl: 620, ret: 0.82 },
+  { id: "h4", date: "Apr 04", sym: "AMD", action: "STO", strike: 175, exp: "Apr 18", premium: 2.80, qty: 3, outcome: "assigned", pnl: 1240, ret: 1.62 },
+  { id: "h5", date: "Mar 28", sym: "AAPL", action: "STO", strike: 185, exp: "Apr 18", premium: 1.90, qty: 4, outcome: "rolled", pnl: 0, ret: 0 },
+  { id: "h6", date: "Mar 28", sym: "F", action: "STO", strike: 13, exp: "Apr 18", premium: 0.28, qty: 10, outcome: "expired", pnl: 280, ret: 2.24 },
+];
+
+const HARVEST_SCREENER = [
+  { id: "s1", sym: "TSLA", label: "TSLA", x: 2.8, y: 38, delta: 0.30, ivr: 68 },
+  { id: "s2", sym: "NVDA", label: "NVDA", x: 2.1, y: 31, delta: 0.34, ivr: 58 },
+  { id: "s3", sym: "AAPL", label: "AAPL", x: 1.3, y: 18, delta: 0.28, ivr: 28 },
+  { id: "s4", sym: "MSFT", label: "MSFT", x: 1.0, y: 14, delta: 0.32, ivr: 22 },
+  { id: "s5", sym: "AMD", label: "AMD", x: 1.9, y: 22, delta: 0.26, ivr: 41 },
+  { id: "s6", sym: "SOFI", label: "SOFI", x: 4.6, y: 52, delta: 0.35, ivr: 62 },
+  { id: "s7", sym: "F", label: "F", x: 2.8, y: 30, delta: 0.38, ivr: 35 },
+  { id: "s8", sym: "GOOG", label: "GOOG", x: 1.6, y: 19, delta: 0.30, ivr: 19 },
+  { id: "s9", sym: "META", label: "META", x: 2.0, y: 26, delta: 0.28, ivr: 38 },
+  { id: "s10", sym: "PLTR", label: "PLTR", x: 3.4, y: 42, delta: 0.32, ivr: 55 },
+  { id: "s11", sym: "INTC", label: "INTC", x: 2.2, y: 28, delta: 0.31, ivr: 44 },
+  { id: "s12", sym: "COIN", label: "COIN", x: 4.1, y: 46, delta: 0.33, ivr: 60 },
+  { id: "s13", sym: "KO", label: "KO", x: 0.7, y: 9, delta: 0.24, ivr: 12 },
+  { id: "s14", sym: "JPM", label: "JPM", x: 1.0, y: 13, delta: 0.27, ivr: 18 },
+  { id: "s15", sym: "XOM", label: "XOM", x: 1.4, y: 17, delta: 0.29, ivr: 26 },
+];
+
+Object.assign(window, { HARVEST_POSITIONS, HARVEST_RECS, HARVEST_HISTORY, HARVEST_SCREENER });
+
+
+// ===== components/Dashboard.jsx =====
+// Harvest — Dashboard / App screens
+
+// ─────────────────────────────────────────────────────────────
+// App chrome
+// ─────────────────────────────────────────────────────────────
+function AppSidebar({ active = "dashboard" }) {
+  const nav = [
+    { id: "dashboard", label: "Dashboard", icon: <path d="M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z" /> },
+    { id: "positions", label: "Positions", icon: <path d="M2 3h12M2 8h12M2 13h8" /> },
+    { id: "recs", label: "Recommendations", icon: <path d="M8 1.5L9.6 5.6l4.4.3-3.4 2.9 1 4.3L8 10.8l-3.6 2.3 1-4.3L2 5.9l4.4-.3z" /> },
+    { id: "screener", label: "Screener", icon: <path d="M2 2h12v3H2zM2 6h7v8H2zM10 6h4v4h-4z" /> },
+    { id: "history", label: "Journal", icon: <path d="M4 2v12M4 2l8 3v7l-8 3" /> },
+    { id: "research", label: "Research", icon: <circle cx="7" cy="7" r="5" /> },
+  ];
+  const sub = [
+    { id: "settings", label: "Settings" },
+    { id: "help", label: "Help & docs" },
+  ];
+  return (
+    <div style={{
+      width: 216, borderRight: "1px solid var(--line)", background: "var(--bg)",
+      padding: "16px 12px", display: "flex", flexDirection: "column", gap: 4, flexShrink: 0,
+    }}>
+      <div style={{ padding: "10px 12px 20px" }}>
+        <HarvestLogo size={16} />
+      </div>
+      <div className="h-eyebrow" style={{ padding: "8px 12px 6px" }}>Workspace</div>
+      {nav.map(n => {
+        const isActive = n.id === active;
+        return (
+          <div key={n.id} style={{
+            padding: "7px 12px", borderRadius: 4, display: "flex", alignItems: "center", gap: 10,
+            color: isActive ? "var(--fg)" : "var(--fg-dim)", fontSize: 13, cursor: "pointer",
+            background: isActive ? "rgba(24,28,20,0.05)" : "transparent",
+            borderLeft: isActive ? "1px solid var(--acid)" : "1px solid transparent",
+          }}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">{n.icon}</svg>
+            {n.label}
+          </div>
+        );
+      })}
+      <div style={{ flex: 1 }} />
+      <div className="h-eyebrow" style={{ padding: "8px 12px 6px" }}>Account</div>
+      {sub.map(n => (
+        <div key={n.id} style={{ padding: "6px 12px", fontSize: 13, color: "var(--fg-mute)" }}>{n.label}</div>
+      ))}
+      <div style={{ marginTop: 12, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 4, fontSize: 12 }}>
+        <div style={{ color: "var(--fg)", fontSize: 12, fontWeight: 500 }}>M. Howell</div>
+        <div style={{ color: "var(--fg-mute)", fontSize: 11, marginTop: 2 }}>Fidelity · connected</div>
+      </div>
+    </div>
+  );
+}
+
+function AppTopbar({ title = "Dashboard", breadcrumb = ["Workspace"] }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "12px 24px", borderBottom: "1px solid var(--line)", background: "var(--bg)", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+        <span style={{ color: "var(--fg-faint)", fontSize: 12 }}>{breadcrumb.join(" / ")} /</span>
+        <span style={{ color: "var(--fg)", fontSize: 14, fontWeight: 500 }}>{title}</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", border: "1px solid var(--line)", borderRadius: 4, color: "var(--fg-mute)", fontSize: 11, fontFamily: "var(--mono)" }}>
+          <span className="h-dot" style={{ background: "var(--acid)" }} />
+          Market open · 14:22 ET
+        </div>
+        <button className="h-btn sm">⌘K Search</button>
+        <button className="h-btn sm primary">+ New idea</button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// VARIATION A — Dense, column-heavy. Positions list as primary surface,
+// recommendations open as an inline drawer beneath each row.
+// ─────────────────────────────────────────────────────────────
+function DashboardDense({ openSym = "AAPL" }) {
+  const [open, setOpen] = React.useState(openSym);
+  const equity = 284520;
+  const dayPnL = 1842;
+  const eligible = 4320;
+  const path = genPath(120, 240000, 0.008, 0.0015, 9);
+
+  return (
+    <div className="h-root" style={{ display: "flex", width: "100%", height: "100%", background: "var(--bg)" }}>
+      <AppSidebar active="dashboard" />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <AppTopbar title="Dashboard" />
+        <div style={{ flex: 1, overflow: "auto" }} className="h-scroll">
+          {/* header metrics */}
+          <div style={{ padding: "24px 24px 16px", display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", gap: 24, borderBottom: "1px solid var(--line)" }}>
+            <div>
+              <div className="h-eyebrow">Portfolio equity</div>
+              <div className="num" style={{ fontSize: 32, color: "var(--fg)", letterSpacing: "-0.025em", marginTop: 4 }}>
+                ${equity.toLocaleString()}.42
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 6, fontSize: 12, fontFamily: "var(--mono)" }}>
+                <span className="h-up">+${dayPnL.toLocaleString()} · +0.65%</span>
+                <span style={{ color: "var(--fg-faint)" }}>today</span>
+              </div>
+            </div>
+            <Stat k="Income captured" v="$12,840" sub="past 90 days" acc />
+            <Stat k="Eligible this cycle" v={`${eligible.toLocaleString()}`} sub="6 opportunities" />
+            <Stat k="Open contracts" v="4" sub="next expiry May 16" />
+          </div>
+
+          {/* equity chart + sidebars */}
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 0, borderBottom: "1px solid var(--line)" }}>
+            <div style={{ padding: "24px 24px 20px", borderRight: "1px solid var(--line)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 16 }}>
+                <span className="h-eyebrow">Equity · last 120 days</span>
+                <div style={{ display: "flex", gap: 2 }}>
+                  {["1M", "3M", "YTD", "1Y", "All"].map((r, i) => (
+                    <span key={r} className="h-chip" style={{ color: r === "3M" ? "var(--acid)" : undefined, borderColor: r === "3M" ? "var(--acid-line)" : undefined }}>{r}</span>
+                  ))}
+                </div>
+              </div>
+              <LineChart points={path} width={680} height={180} color="var(--acid)" padding={24} yTicks={4}
+                xLabels={["Jan", "Feb", "Mar", "Apr"]} markers={[{ i: 10, label: "AAPL 4×" }, { i: 48, label: "NVDA rolled" }, { i: 90, label: "expired" }]} />
+            </div>
+            <div style={{ padding: "24px" }}>
+              <span className="h-eyebrow">Open contracts</span>
+              <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+                {[
+                  { sym: "AAPL", detail: "4× May 16 200C", prem: 980, pop: 72 },
+                  { sym: "MSFT", detail: "2× May 16 440C", prem: 840, pop: 68 },
+                  { sym: "NVDA", detail: "1× May 09 920C", prem: 1860, pop: 64 },
+                  { sym: "AMD", detail: "3× May 16 180C", prem: 930, pop: 70 },
+                ].map(o => (
+                  <div key={o.sym} style={{ padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 2, display: "grid", gridTemplateColumns: "1fr auto", gap: 4 }}>
+                    <div>
+                      <div className="num" style={{ fontSize: 12, color: "var(--fg)" }}>{o.sym} <span style={{ color: "var(--fg-mute)" }}> · {o.detail}</span></div>
+                      <div style={{ fontSize: 10.5, color: "var(--fg-faint)", fontFamily: "var(--mono)", marginTop: 2, textTransform: "uppercase", letterSpacing: "0.08em" }}>PoP {o.pop}% · 26 DTE</div>
+                    </div>
+                    <div className="num" style={{ color: "var(--acid)", fontSize: 12 }}>+${o.prem}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* positions list */}
+          <div style={{ padding: "24px 24px 48px" }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14 }}>
+              <div>
+                <span className="h-eyebrow">Positions</span>
+                <span style={{ color: "var(--fg-mute)", marginLeft: 12, fontSize: 12 }}>8 holdings · click a row for recommendations</span>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="h-btn sm">Filter</button>
+                <button className="h-btn sm">Sort · eligible</button>
+              </div>
+            </div>
+            <PositionsTable open={open} setOpen={setOpen} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Positions table + expanding recommendation drawer
+// ─────────────────────────────────────────────────────────────
+function PositionsTable({ open, setOpen }) {
+  return (
+    <div style={{ border: "1px solid var(--line)", borderRadius: 2, overflow: "hidden" }}>
+      <div style={{
+        display: "grid", gridTemplateColumns: "70px 1fr 90px 110px 110px 90px 90px 110px 24px",
+        padding: "10px 16px", gap: 16, background: "var(--bg-elev)", borderBottom: "1px solid var(--line)",
+      }} className="h-eyebrow">
+        <span>Symbol</span><span>Name</span><span style={{ textAlign: "right" }}>Shares</span>
+        <span style={{ textAlign: "right" }}>Avg cost</span><span style={{ textAlign: "right" }}>Last</span>
+        <span style={{ textAlign: "right" }}>Day</span><span style={{ textAlign: "right" }}>IV rank</span>
+        <span style={{ textAlign: "right" }}>Eligible</span><span />
+      </div>
+      {HARVEST_POSITIONS.map((p, i) => {
+        const up = p.day >= 0;
+        const isOpen = open === p.sym;
+        const eligible = p.cc ? (p.cc.premium * p.cc.cover).toFixed(0) : null;
+        return (
+          <React.Fragment key={p.sym}>
+            <div onClick={() => setOpen(isOpen ? null : p.sym)}
+              style={{
+                display: "grid", gridTemplateColumns: "70px 1fr 90px 110px 110px 90px 90px 110px 24px",
+                padding: "14px 16px", gap: 16, fontSize: 13,
+                borderTop: i === 0 ? "none" : "1px solid var(--line-soft)", alignItems: "center",
+                cursor: "pointer", background: isOpen ? "var(--acid-faint)" : "transparent",
+                borderLeft: isOpen ? "1px solid var(--acid)" : "1px solid transparent", marginLeft: -1,
+              }}>
+              <span className="num" style={{ color: "var(--fg)", fontSize: 13 }}>{p.sym}</span>
+              <span style={{ color: "var(--fg-dim)" }}>{p.name}</span>
+              <span className="num" style={{ textAlign: "right", color: "var(--fg)" }}>{p.shares}</span>
+              <span className="num" style={{ textAlign: "right", color: "var(--fg-dim)" }}>${p.avg.toFixed(2)}</span>
+              <span className="num" style={{ textAlign: "right", color: "var(--fg)" }}>${p.price.toFixed(2)}</span>
+              <span className="num" style={{ textAlign: "right", color: up ? "var(--acid)" : "var(--down)" }}>{up ? "+" : ""}{p.day.toFixed(2)}%</span>
+              <span className="num" style={{ textAlign: "right", color: p.ivr > 40 ? "var(--acid)" : "var(--fg-dim)" }}>{p.ivr}</span>
+              <span className="num" style={{ textAlign: "right", color: eligible ? "var(--acid)" : "var(--fg-faint)" }}>
+                {eligible ? `${eligible}` : "—"}
+              </span>
+              <span style={{ color: "var(--fg-mute)", fontSize: 12, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }}>›</span>
+            </div>
+            {isOpen && <RecommendationDrawer sym={p.sym} pos={p} />}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function RecommendationDrawer({ sym, pos }) {
+  // pick recs for this symbol, fallback to generic 3
+  const recs = HARVEST_RECS.filter(r => r.sym === sym).length
+    ? HARVEST_RECS.filter(r => r.sym === sym)
+    : [
+        { id: "g1", sym, conviction: "Med", score: 66, action: `Sell ${Math.floor(pos.shares / 100)}x May 16 ${Math.round(pos.price * 1.04 / 5) * 5} Call`, premium: Math.round(pos.price * 0.015 * pos.shares), annYield: 12.4, pop: 70, delta: 0.28, thesis: "Moderate IV rank, strike above recent range, no earnings before expiry." , tags: ["above-cost-basis", "no-earnings"] },
+        { id: "g2", sym, conviction: "Low", score: 48, action: `Sell ${Math.floor(pos.shares / 100)}x May 09 ${Math.round(pos.price * 1.02 / 5) * 5} Call`, premium: Math.round(pos.price * 0.008 * pos.shares), annYield: 8.2, pop: 78, delta: 0.22, thesis: "Closer strike, tighter window, lower yield but higher PoP.", tags: ["defensive", "short-dte"] },
+      ];
+  const path = genPath(40, pos.price * 0.96, 0.01, 0.0012, pos.sym.charCodeAt(0) * 3);
+
+  return (
+    <div style={{ padding: "24px 20px", background: "var(--bg-elev)", borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 2fr", gap: 24 }}>
+        <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 2, padding: 18 }}>
+          <span className="h-eyebrow">{sym} · last 40 days</span>
+          <div style={{ marginTop: 12 }}>
+            <LineChart points={path} width={340} height={150} color="var(--acid)" padding={20} yTicks={3}
+              strike={pos.cc?.strike} xLabels={["40d", "30d", "20d", "10d", "Today"]} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line-soft)" }}>
+            <KV k="IV rank" v={pos.ivr} />
+            <KV k="30d range" v={`${(pos.price * 0.94).toFixed(0)}–${(pos.price * 1.05).toFixed(0)}`} />
+            <KV k="Next earnings" v="> 30d" />
+          </div>
+        </div>
+        <div>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
+            <span className="h-eyebrow">{recs.length} covered-call candidates · ranked by score</span>
+            <span style={{ fontSize: 11, color: "var(--fg-mute)", fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Updated 14:22 ET</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {recs.map(r => <RecCard key={r.id} rec={r} />)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecCard({ rec }) {
+  const conv = rec.conviction === "High" ? "acid" : rec.conviction === "Med" ? "solid" : "";
+  return (
+    <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderLeft: `2px solid ${rec.conviction === "High" ? "var(--acid)" : rec.conviction === "Med" ? "var(--olive)" : "var(--line-strong)"}`, padding: "16px 18px", display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr auto", gap: 20, alignItems: "center" }}>
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <span className={`h-chip ${conv}`}>{rec.conviction}</span>
+          <span style={{ color: "var(--fg-mute)", fontSize: 11, fontFamily: "var(--mono)" }}>SCORE {rec.score}</span>
+        </div>
+        <div style={{ color: "var(--fg)", fontSize: 13.5, fontFamily: "var(--mono)", marginBottom: 6 }}>{rec.action}</div>
+        <div style={{ color: "var(--fg-mute)", fontSize: 12, lineHeight: 1.5, maxWidth: 440 }}>{rec.thesis}</div>
+        {rec.tags && (
+          <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+            {rec.tags.map(t => <span key={t} className="h-chip" style={{ height: 18, fontSize: 10 }}>{t}</span>)}
+          </div>
+        )}
+      </div>
+      <Mini k="Premium" v={rec.premium ? `${rec.premium}` : "—"} acid={!!rec.premium} />
+      <Mini k="Ann. yield" v={rec.annYield ? `${rec.annYield}%` : "—"} />
+      <Mini k="PoP" v={rec.pop ? `${rec.pop}%` : "—"} />
+      <Mini k="Delta" v={rec.delta ? rec.delta.toFixed(2) : "—"} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <button className="h-btn sm primary">Preview order</button>
+        <button className="h-btn sm">Save</button>
+      </div>
+    </div>
+  );
+}
+
+function KV({ k, v, acid }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+      <span style={{ color: "var(--fg-mute)", fontSize: 11, fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: "0.06em" }}>{k}</span>
+      <span className="num" style={{ color: acid ? "var(--acid-strong)" : "var(--fg)", fontSize: 12 }}>{v}</span>
+    </div>
+  );
+}
+
+function Mini({ k, v, acid }) {
+  return (
+    <div>
+      <div className="h-eyebrow" style={{ marginBottom: 4 }}>{k}</div>
+      <div className="num" style={{ fontSize: 18, color: acid ? "var(--acid)" : "var(--fg)", letterSpacing: "-0.02em" }}>{v}</div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// VARIATION B — Calm / premium. Big empty canvas, fewer columns,
+// one featured recommendation. Left rail of positions.
+// ─────────────────────────────────────────────────────────────
+function DashboardCalm() {
+  const [selected, setSelected] = React.useState("AAPL");
+  const pos = HARVEST_POSITIONS.find(p => p.sym === selected);
+  const path = genPath(90, pos.price * 0.9, 0.009, 0.0013, pos.sym.charCodeAt(0) * 5);
+  const recs = HARVEST_RECS.filter(r => r.sym === selected);
+  return (
+    <div className="h-root" style={{ display: "flex", width: "100%", height: "100%", background: "var(--bg)" }}>
+      <AppSidebar active="dashboard" />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <AppTopbar title="Dashboard" />
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "320px 1fr", overflow: "hidden" }}>
+          {/* position rail */}
+          <div style={{ borderRight: "1px solid var(--line)", padding: "18px 0", overflow: "auto" }} className="h-scroll">
+            <div style={{ padding: "0 20px 16px" }}>
+              <div className="h-eyebrow">Portfolio · 8</div>
+              <div className="num" style={{ fontSize: 24, color: "var(--fg)", marginTop: 8 }}>$284,520.42</div>
+              <div style={{ fontSize: 12, color: "var(--acid)", fontFamily: "var(--mono)" }}>+$1,842 today</div>
+            </div>
+            <div style={{ borderTop: "1px solid var(--line)" }} />
+            {HARVEST_POSITIONS.map(p => {
+              const isSel = p.sym === selected;
+              const sp = genPath(32, p.price * 0.94, 0.01, 0.001, p.sym.charCodeAt(0));
+              return (
+                <div key={p.sym} onClick={() => setSelected(p.sym)}
+                  style={{
+                    padding: "14px 20px", display: "grid", gridTemplateColumns: "54px 1fr 90px",
+                    alignItems: "center", gap: 12, cursor: "pointer",
+                    background: isSel ? "var(--acid-faint)" : "transparent",
+                    borderLeft: isSel ? "2px solid var(--acid)" : "2px solid transparent",
+                    borderBottom: "1px solid var(--line-soft)",
+                  }}>
+                  <div>
+                    <div className="num" style={{ fontSize: 13, color: "var(--fg)" }}>{p.sym}</div>
+                    <div style={{ fontSize: 10.5, color: "var(--fg-mute)", fontFamily: "var(--mono)", marginTop: 2 }}>{p.shares}sh</div>
+                  </div>
+                  <Sparkline points={sp} width={90} height={20} color={p.day >= 0 ? "var(--acid)" : "var(--down)"} />
+                  <div style={{ textAlign: "right" }}>
+                    <div className="num" style={{ fontSize: 12, color: "var(--fg)" }}>${p.price.toFixed(2)}</div>
+                    <div className="num" style={{ fontSize: 10.5, color: p.day >= 0 ? "var(--acid)" : "var(--down)" }}>{p.day >= 0 ? "+" : ""}{p.day.toFixed(2)}%</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* detail */}
+          <div style={{ overflow: "auto", padding: "40px 48px" }} className="h-scroll">
+            <div style={{ display: "flex", alignItems: "baseline", gap: 16 }}>
+              <div className="serif" style={{ fontSize: 48, color: "var(--fg)", letterSpacing: "-0.03em" }}>{pos.sym}</div>
+              <div style={{ color: "var(--fg-mute)", fontSize: 14 }}>{pos.name}</div>
+              {pos.cc && <span className="h-chip acid">Eligible · ${(pos.cc.premium * pos.cc.cover).toFixed(0)}</span>}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 24, marginTop: 32, paddingBottom: 32, borderBottom: "1px solid var(--line)" }}>
+              <Stat k="Last" v={`${pos.price.toFixed(2)}`} sub={`${pos.day >= 0 ? "+" : ""}${pos.day.toFixed(2)}%`} acc />
+              <Stat k="Position" v={`${pos.shares} sh`} sub={`avg ${pos.avg.toFixed(2)}`} />
+              <Stat k="Market value" v={`${(pos.shares * pos.price).toLocaleString()}`} sub={`${((pos.price - pos.avg) / pos.avg * 100).toFixed(1)}% cost basis`} />
+              <Stat k="IV rank" v={pos.ivr} sub={pos.ivr > 40 ? "elevated" : "moderate"} />
+              <Stat k="Earnings" v="> 30d" sub="no event risk" />
+            </div>
+            <div style={{ marginTop: 40 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 16 }}>
+                <span className="h-eyebrow">Price · 90 days · $200 strike reference</span>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {["1M", "3M", "6M", "1Y"].map(r => <span key={r} className="h-chip" style={r === "3M" ? { color: "var(--acid)", borderColor: "var(--acid-line)" } : {}}>{r}</span>)}
+                </div>
+              </div>
+              <LineChart points={path} width={880} height={220} color="var(--acid)" strike={pos.cc?.strike} padding={28} yTicks={4}
+                xLabels={["90d ago", "60d", "30d", "Today"]} />
+            </div>
+            <div style={{ marginTop: 48 }}>
+              <span className="h-eyebrow">{recs.length || 2} recommendations · ranked</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
+                {(recs.length ? recs : HARVEST_RECS.slice(0, 2)).map(r => <RecCard key={r.id} rec={{ ...r, sym: pos.sym }} />)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// VARIATION C — "Briefing" — daily digest / morning coffee style.
+// Top card is the day's single best idea. Then: watchlist delta,
+// expiries due, portfolio tape.
+// ─────────────────────────────────────────────────────────────
+function DashboardBriefing() {
+  const today = "Monday, April 20";
+  const path = genPath(120, 240000, 0.008, 0.0015, 11);
+  const top = HARVEST_RECS[0];
+  return (
+    <div className="h-root" style={{ display: "flex", width: "100%", height: "100%", background: "var(--bg)" }}>
+      <AppSidebar active="dashboard" />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <AppTopbar title="Today's briefing" breadcrumb={["Workspace", "Dashboard"]} />
+        <div style={{ flex: 1, overflow: "auto", padding: "36px 48px 64px" }} className="h-scroll">
+          <div className="h-eyebrow">{today} · Pre-market close · 14:22 ET</div>
+          <h1 className="serif" style={{ fontSize: 52, letterSpacing: "-0.03em", margin: "12px 0 32px", color: "var(--fg)", fontWeight: 400, maxWidth: 900 }}>
+            Four positions are <em style={{ color: "var(--acid)", fontStyle: "italic" }}>harvest-ready</em>. The best of them sits on your Apple shares.
+          </h1>
+
+          {/* hero rec card */}
+          <div style={{ border: "1px solid var(--line-strong)", background: "var(--bg-elev)", padding: 36, display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 48, borderRadius: 2 }}>
+            <div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                <span className="h-chip acid">High conviction</span>
+                <span className="h-chip">Score 88 / 100</span>
+                <span className="h-chip">AAPL · 400 sh</span>
+              </div>
+              <div className="display" style={{ fontSize: 32, color: "var(--fg)", letterSpacing: "-0.02em", marginBottom: 12, fontWeight: 500 }}>
+                Sell 4 × May 16 $200 calls on AAPL.
+              </div>
+              <p style={{ color: "var(--fg-dim)", fontSize: 15, lineHeight: 1.6, marginBottom: 20 }}>
+                {top.thesis} Premium of <span className="num" style={{ color: "var(--acid)" }}>$980</span> represents
+                an annualized <span className="num" style={{ color: "var(--acid)" }}>18.4%</span> against your cost basis.
+                Probability of profit is <span className="num" style={{ color: "var(--fg)" }}>72%</span>.
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="h-btn primary">Preview order</button>
+                <button className="h-btn">See the math</button>
+                <button className="h-btn ghost">Dismiss</button>
+              </div>
+            </div>
+            <div>
+              <LineChart points={genPath(60, 180, 0.01, 0.0015, 33)} width={380} height={180} color="var(--acid)" strike={200} padding={20} yTicks={3} xLabels={["60d", "30d", "Today"]} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--line)" }}>
+                <Mini k="Premium" v="$980" acid />
+                <Mini k="Yield" v="18.4%" />
+                <Mini k="PoP" v="72%" />
+                <Mini k="Delta" v="0.28" />
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 48, display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 32 }}>
+            <div>
+              <span className="h-eyebrow">Three more to consider</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
+                {HARVEST_RECS.slice(1).map(r => <RecCard key={r.id} rec={r} />)}
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+              <div>
+                <span className="h-eyebrow">Portfolio · 90 days</span>
+                <div style={{ marginTop: 12 }}>
+                  <LineChart points={path} width={420} height={140} color="var(--acid)" padding={20} yTicks={3} xLabels={["Jan", "Feb", "Mar", "Apr"]} />
+                </div>
+              </div>
+              <div style={{ border: "1px solid var(--line)", padding: 20 }}>
+                <span className="h-eyebrow">Expiring this week</span>
+                <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                  {[
+                    { sym: "AAPL", detail: "4 × Apr 18 190C", pop: "now 98%", pnl: "+$840" },
+                    { sym: "MSFT", detail: "2 × Apr 18 420C", pop: "now 96%", pnl: "+$760" },
+                  ].map(x => (
+                    <div key={x.sym} style={{ display: "grid", gridTemplateColumns: "60px 1fr auto", gap: 12, padding: "6px 0", borderBottom: "1px solid var(--line-soft)" }}>
+                      <span className="num" style={{ color: "var(--fg)", fontSize: 13 }}>{x.sym}</span>
+                      <span style={{ color: "var(--fg-mute)", fontSize: 11.5, fontFamily: "var(--mono)" }}>{x.detail} · {x.pop}</span>
+                      <span className="num" style={{ color: "var(--acid)" }}>{x.pnl}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ border: "1px solid var(--line)", padding: 20 }}>
+                <span className="h-eyebrow">Watchlist movers</span>
+                <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                  {[{s:"SOFI",v:"+6.4%",iv:62},{s:"COIN",v:"+3.4%",iv:60},{s:"PLTR",v:"+2.1%",iv:55}].map(x => (
+                    <div key={x.s} style={{ display: "grid", gridTemplateColumns: "60px 1fr auto", gap: 12, padding: "6px 0", borderBottom: "1px solid var(--line-soft)" }}>
+                      <span className="num" style={{ color: "var(--fg)", fontSize: 13 }}>{x.s}</span>
+                      <span style={{ color: "var(--fg-mute)", fontSize: 11.5, fontFamily: "var(--mono)" }}>IV rank {x.iv}</span>
+                      <span className="num" style={{ color: "var(--acid)" }}>{x.v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { DashboardDense, DashboardCalm, DashboardBriefing, AppSidebar, AppTopbar, PositionsTable, RecCard });
+
+// App-shell compatible dashboard content (no sidebar/topbar wrapper — used inside AppShell).
+function DashboardInner({ goto = () => {} }) {
+  const [open, setOpen] = React.useState("AAPL");
+  const equity = 284520, dayPnL = 1842, eligible = 4320;
+  const path = genPath(120, 240000, 0.008, 0.0015, 9);
+  return (
+    <div style={{ overflow: "auto" }} className="h-scroll">
+      <div style={{ padding: "24px 24px 16px", display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", gap: 24, borderBottom: "1px solid var(--line)" }}>
+        <div>
+          <div className="h-eyebrow">Portfolio equity</div>
+          <div className="num" style={{ fontSize: 32, color: "var(--fg)", letterSpacing: "-0.025em", marginTop: 4 }}>
+            ${equity.toLocaleString()}.42
+          </div>
+          <div style={{ display: "flex", gap: 10, marginTop: 6, fontSize: 12, fontFamily: "var(--mono)" }}>
+            <span className="h-up">+${dayPnL.toLocaleString()} · +0.65%</span>
+            <span style={{ color: "var(--fg-faint)" }}>today</span>
+          </div>
+        </div>
+        <Stat k="Income captured" v="$12,840" sub="past 90 days" acc />
+        <Stat k="Eligible this cycle" v={`${eligible.toLocaleString()}`} sub="6 opportunities" />
+        <Stat k="Open contracts" v="4" sub="next expiry May 16" />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 0, borderBottom: "1px solid var(--line)" }}>
+        <div style={{ padding: "24px 24px 20px", borderRight: "1px solid var(--line)" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 16 }}>
+            <span className="h-eyebrow">Equity · last 120 days</span>
+            <div style={{ display: "flex", gap: 2 }}>
+              {["1M", "3M", "YTD", "1Y", "All"].map((r) => (
+                <span key={r} className="h-chip" style={{ color: r === "3M" ? "var(--acid)" : undefined, borderColor: r === "3M" ? "var(--acid-line)" : undefined }}>{r}</span>
+              ))}
+            </div>
+          </div>
+          <LineChart points={path} width={680} height={180} color="var(--acid)" padding={24} yTicks={4}
+            xLabels={["Jan", "Feb", "Mar", "Apr"]} markers={[{ i: 10, label: "AAPL 4×" }, { i: 48, label: "NVDA rolled" }, { i: 90, label: "expired" }]} />
+        </div>
+        <div style={{ padding: "24px" }}>
+          <span className="h-eyebrow">Open contracts</span>
+          <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+            {[
+              { sym: "AAPL", detail: "4× May 16 200C", prem: 980, pop: 72 },
+              { sym: "MSFT", detail: "2× May 16 440C", prem: 840, pop: 68 },
+              { sym: "NVDA", detail: "1× May 09 920C", prem: 1860, pop: 64 },
+              { sym: "AMD", detail: "3× May 16 180C", prem: 930, pop: 70 },
+            ].map(o => (
+              <div key={o.sym} onClick={() => goto("position")} style={{ padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 2, display: "grid", gridTemplateColumns: "1fr auto", gap: 4, cursor: "pointer" }}>
+                <div>
+                  <div className="num" style={{ fontSize: 12, color: "var(--fg)" }}>{o.sym} <span style={{ color: "var(--fg-mute)" }}> · {o.detail}</span></div>
+                  <div style={{ fontSize: 10.5, color: "var(--fg-faint)", fontFamily: "var(--mono)", marginTop: 2, textTransform: "uppercase", letterSpacing: "0.08em" }}>PoP {o.pop}% · 26 DTE</div>
+                </div>
+                <div className="num" style={{ color: "var(--acid)", fontSize: 12 }}>+${o.prem}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div style={{ padding: "24px 24px 48px" }}>
+        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14 }}>
+          <div>
+            <span className="h-eyebrow">Positions</span>
+            <span style={{ color: "var(--fg-mute)", marginLeft: 12, fontSize: 12 }}>8 holdings · click a row for recommendations</span>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button className="h-btn sm">Filter</button>
+            <button className="h-btn sm">Sort · eligible</button>
+          </div>
+        </div>
+        <PositionsTable open={open} setOpen={setOpen} />
+      </div>
+    </div>
+  );
+}
+
+// Positions-only view (re-uses PositionsTable)
+function PositionsView({ goto = () => {} }) {
+  const [open, setOpen] = React.useState(null);
+  return (
+    <div style={{ padding: "28px 32px" }} className="h-scroll">
+      <div style={{ display: "flex", alignItems: "baseline", marginBottom: 16 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 500, margin: 0, letterSpacing: "-0.01em" }}>All positions</h2>
+        <span style={{ color: "var(--fg-mute)", marginLeft: 12, fontSize: 12 }}>8 holdings · $482,400 market value</span>
+        <div style={{ flex: 1 }} />
+        <button className="h-btn sm">Filter</button>
+        <button className="h-btn sm" style={{ marginLeft: 8 }}>Sort · eligible</button>
+      </div>
+      <PositionsTable open={open} setOpen={setOpen} />
+    </div>
+  );
+}
+
+// Recommendations feed (top-level)
+function RecommendationsView({ goto = () => {} }) {
+  return (
+    <div style={{ padding: "28px 32px", maxWidth: 960 }}>
+      <div style={{ display: "flex", alignItems: "baseline", marginBottom: 24 }}>
+        <div>
+          <h2 style={{ fontSize: 20, fontWeight: 500, margin: 0, letterSpacing: "-0.01em" }}>Recommendations from your portfolio</h2>
+          <div style={{ color: "var(--fg-mute)", fontSize: 12, marginTop: 4, fontFamily: "var(--mono)" }}>
+            Updated 14:42 ET · 4 ideas · refreshes when market data moves materially
+          </div>
+        </div>
+        <div style={{ flex: 1 }} />
+        <button className="h-btn sm">Conviction · All</button>
+      </div>
+      <div style={{ display: "grid", gap: 12 }}>
+        {HARVEST_RECS.map(r => (
+          <div key={r.id} style={{ border: "1px solid var(--line)", background: "var(--bg-card)", padding: 20 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
+              <div className="num" style={{ fontSize: 18, color: "var(--fg)" }}>{r.sym}</div>
+              <span className={`h-chip ${r.conviction === "High" ? "acid" : ""}`}>{r.conviction.toUpperCase()} CONVICTION</span>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-mute)" }}>score {r.score}</span>
+              <div style={{ flex: 1 }} />
+              {r.premium && (
+                <div style={{ fontFamily: "var(--mono)", fontSize: 13, color: "var(--acid)" }}>+${r.premium}</div>
+              )}
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8, letterSpacing: "-0.005em" }}>{r.action}</div>
+            {r.premium && (
+              <div style={{ display: "flex", gap: 20, fontSize: 12, fontFamily: "var(--mono)", color: "var(--fg-mute)", marginBottom: 10 }}>
+                <span>Ann. yield <span style={{ color: "var(--fg)" }}>{r.annYield}%</span></span>
+                <span>P.O.P. <span style={{ color: "var(--fg)" }}>{r.pop}%</span></span>
+                <span>Δ {r.delta}</span>
+              </div>
+            )}
+            <p style={{ color: "var(--fg-dim)", fontSize: 13, lineHeight: 1.55, margin: 0 }}>{r.thesis}</p>
+            <div style={{ display: "flex", gap: 6, marginTop: 14, alignItems: "center" }}>
+              {r.tags.map(t => <span key={t} className="h-chip">{t}</span>)}
+              <div style={{ flex: 1 }} />
+              {r.premium && (
+                <>
+                  <button className="h-btn sm" onClick={() => goto("position", { sym: r.sym })}>Details</button>
+                  <button className="h-btn sm primary" onClick={() => goto("ticket", { sym: r.sym })}>Trade →</button>
+                </>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { DashboardInner, PositionsView, RecommendationsView });
+
+
+// ===== components/Screener.jsx =====
+// Harvest — Screener (chart-forward premium vs yield scatter). App-shell compatible.
+// Renders its own content only (no sidebar/topbar — the AppShell provides those).
+
+function Screener({ goto = () => {} }) {
+  const [highlight, setHighlight] = React.useState("s1");
+  const [preset, setPreset] = React.useState(1);
+  const [filters, setFilters] = React.useState({ ivr: 25, yield: 15 });
+  const presets = ["Wheel starters", "High-IV income", "Low-delta conservative", "My watchlist", "Custom"];
+
+  const filtered = HARVEST_SCREENER.filter(s => s.ivr >= filters.ivr && s.y >= filters.yield);
+  const highlighted = filtered.find(s => s.id === highlight) || filtered[0] || HARVEST_SCREENER[0];
+
+  return (
+    <div className="h-root" style={{ display: "grid", gridTemplateColumns: "260px 1fr 300px", minHeight: "calc(100vh - 56px)" }}>
+      {/* filter rail */}
+      <div style={{ borderRight: "1px solid var(--line)", padding: "24px 20px", background: "var(--bg-elev)" }}>
+        <span className="h-eyebrow">Preset</span>
+        <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 10, marginBottom: 24 }}>
+          {presets.map((p, i) => (
+            <div key={p} onClick={() => setPreset(i)} style={{
+              padding: "8px 12px", fontSize: 13, borderRadius: 2, cursor: "pointer",
+              background: i === preset ? "var(--acid-faint)" : "transparent",
+              color: i === preset ? "var(--acid)" : "var(--fg-dim)",
+              border: `1px solid ${i === preset ? "var(--acid-line)" : "var(--line)"}`,
+            }}>{p}</div>
+          ))}
+        </div>
+
+        <span className="h-eyebrow">Filters</span>
+        <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 20 }}>
+          <FilterSlider label="Delta" v="0.20 — 0.40" fill="20% · 60%" />
+          <FilterSlider label="DTE" v="7 — 45" fill="14% · 72%" />
+          <RangeSlider label="IV rank" value={filters.ivr} min={0} max={100} onChange={v => setFilters({ ...filters, ivr: v })} suffix="≥" />
+          <RangeSlider label="Annualized yield" value={filters.yield} min={0} max={60} onChange={v => setFilters({ ...filters, yield: v })} suffix="≥" unit="%" />
+          <FilterSlider label="Earnings before expiry" v="Exclude" fill="0% · 100%" chip />
+          <FilterSlider label="Market cap" v="≥ $1B" fill="12% · 100%" />
+          <FilterSlider label="Sector" v="All" fill="0% · 100%" chip />
+        </div>
+        <button className="h-btn primary sm" style={{ marginTop: 20, width: "100%" }}>Apply</button>
+        <button className="h-btn sm" style={{ marginTop: 8, width: "100%" }}>Save preset</button>
+      </div>
+
+      {/* chart + results */}
+      <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <div style={{ padding: "24px 28px", borderBottom: "1px solid var(--line)" }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16 }}>
+            <div>
+              <span className="h-eyebrow">Premium × Yield · {filtered.length} candidates</span>
+              <div style={{ fontSize: 12, color: "var(--fg-mute)", marginTop: 4, fontFamily: "var(--mono)" }}>Each dot is a ticker's best near-month 0.30-delta call. Hover to select.</div>
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <span className="h-chip">X: Premium %</span>
+              <span className="h-chip">Y: Ann. yield</span>
+              <button className="h-btn sm">Swap axes</button>
+            </div>
+          </div>
+          <Scatter points={filtered} width={760} height={340} highlightId={highlight} onHover={setHighlight} />
+        </div>
+        <div style={{ flex: 1, overflow: "auto" }} className="h-scroll">
+          <div style={{
+            display: "grid", gridTemplateColumns: "60px 1fr 90px 90px 90px 90px 90px",
+            padding: "10px 28px", gap: 12, background: "var(--bg-elev)", borderBottom: "1px solid var(--line)",
+          }} className="h-eyebrow">
+            <span>Sym</span><span>Setup</span>
+            <span style={{ textAlign: "right" }}>Premium</span>
+            <span style={{ textAlign: "right" }}>Ann. yield</span>
+            <span style={{ textAlign: "right" }}>Delta</span>
+            <span style={{ textAlign: "right" }}>IV rank</span>
+            <span />
+          </div>
+          {filtered.map(s => {
+            const isH = s.id === highlight;
+            return (
+              <div key={s.id} onMouseEnter={() => setHighlight(s.id)}
+                onClick={() => goto("ticket")}
+                style={{
+                  display: "grid", gridTemplateColumns: "60px 1fr 90px 90px 90px 90px 90px",
+                  gap: 12, padding: "12px 28px", fontSize: 13, borderBottom: "1px solid var(--line-soft)",
+                  background: isH ? "var(--acid-faint)" : "transparent",
+                  borderLeft: isH ? "1px solid var(--acid)" : "1px solid transparent", marginLeft: -1,
+                  cursor: "pointer", alignItems: "center",
+                }}>
+                <span className="num" style={{ color: "var(--fg)" }}>{s.sym}</span>
+                <span style={{ color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 11.5 }}>May 16 · {(s.delta * 100).toFixed(0)}Δ call</span>
+                <span className="num" style={{ textAlign: "right", color: "var(--acid)" }}>{s.x.toFixed(1)}%</span>
+                <span className="num" style={{ textAlign: "right", color: "var(--fg)" }}>{s.y}%</span>
+                <span className="num" style={{ textAlign: "right", color: "var(--fg-dim)" }}>{s.delta.toFixed(2)}</span>
+                <span className="num" style={{ textAlign: "right", color: s.ivr > 40 ? "var(--acid)" : "var(--fg-dim)" }}>{s.ivr}</span>
+                <button className="h-btn sm" style={{ justifySelf: "end" }} onClick={e => { e.stopPropagation(); goto("ticket"); }}>Trade</button>
+              </div>
+            );
+          })}
+          {filtered.length === 0 && (
+            <div style={{ padding: 48, textAlign: "center", color: "var(--fg-mute)", fontFamily: "var(--mono)", fontSize: 12 }}>
+              No candidates match your filters. Loosen IV rank or yield.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* right inspector */}
+      <div style={{ borderLeft: "1px solid var(--line)", padding: "24px 22px", background: "var(--bg-elev)" }}>
+        <div className="h-eyebrow">Selected</div>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 8 }}>
+          <div className="serif" style={{ fontSize: 36, color: "var(--fg)", letterSpacing: "-0.03em" }}>{highlighted.sym}</div>
+          <span className="h-chip acid">Near-month setup</span>
+        </div>
+        <div style={{ marginTop: 18 }}>
+          <LineChart points={genPath(40, 100, 0.01, 0.0012, highlighted.sym.charCodeAt(0) * 2)} width={260} height={120} color="var(--acid)" padding={16} yTicks={3} />
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 20 }}>
+          <Mini k="Premium" v={`${highlighted.x}%`} acid />
+          <Mini k="Ann. yield" v={`${highlighted.y}%`} />
+          <Mini k="Delta" v={highlighted.delta.toFixed(2)} />
+          <Mini k="IV rank" v={highlighted.ivr} />
+        </div>
+        <div style={{ marginTop: 24, padding: 16, background: "var(--bg)", border: "1px solid var(--line)" }}>
+          <span className="h-eyebrow">Thesis</span>
+          <p style={{ color: "var(--fg-dim)", fontSize: 12.5, lineHeight: 1.6, marginTop: 8 }}>
+            {highlighted.sym} IV rank {highlighted.ivr} sits {highlighted.ivr > 40 ? "above" : "near"} its 12-month median.
+            A {(highlighted.delta * 100).toFixed(0)}-delta May 16 call captures {highlighted.x}% of price as premium,
+            equivalent to {highlighted.y}% annualized against cost of shares.
+          </p>
+        </div>
+        <button className="h-btn primary sm" style={{ marginTop: 18, width: "100%" }} onClick={() => goto("ticket")}>Open order ticket</button>
+        <button className="h-btn sm" style={{ marginTop: 8, width: "100%" }}>Add to watchlist</button>
+      </div>
+    </div>
+  );
+}
+
+function FilterSlider({ label, v, fill, chip }) {
+  const [a, b] = (fill || "0% · 100%").split(" · ");
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--fg-dim)", marginBottom: 6 }}>
+        <span>{label}</span>
+        <span style={{ color: "var(--fg)", fontFamily: "var(--mono)", fontSize: 11 }}>{v}</span>
+      </div>
+      {!chip && (
+        <div style={{ height: 4, background: "var(--bg-elev-2)", borderRadius: 2, position: "relative" }}>
+          <div style={{ position: "absolute", left: a, width: `calc(${b} - ${a})`, top: 0, bottom: 0, background: "var(--acid)", borderRadius: 2 }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RangeSlider({ label, value, min, max, onChange, suffix = "", unit = "" }) {
+  const pct = ((value - min) / (max - min)) * 100;
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--fg-dim)", marginBottom: 6 }}>
+        <span>{label}</span>
+        <span style={{ color: "var(--fg)", fontFamily: "var(--mono)", fontSize: 11 }}>{suffix} {value}{unit}</span>
+      </div>
+      <input type="range" min={min} max={max} value={value} onChange={e => onChange(+e.target.value)}
+        style={{ width: "100%", accentColor: "var(--acid)" }} />
+    </div>
+  );
+}
+
+Object.assign(window, { Screener });
+
+
+// ===== components/AppShell.jsx =====
+// Harvest — App shell. Left nav + top bar + routed content.
+// Used by the clickable prototype (App.html). Screens receive (nav, goto) to jump around.
+
+function AppShell({ initial = "dashboard", children }) {
+  const [route, setRoute] = React.useState(initial);
+
+  const nav = [
+    { section: "Portfolio" },
+    { id: "dashboard", label: "Dashboard", icon: "▦" },
+    { id: "positions", label: "Positions", icon: "≡" },
+    { id: "recommendations", label: "Recommendations", icon: "◆", badge: 3 },
+    { section: "Trade" },
+    { id: "screener", label: "Screener", icon: "◇" },
+    { id: "watchlist", label: "Watchlist", icon: "◉" },
+    { id: "journal", label: "Trade journal", icon: "⌂" },
+    { section: "Research" },
+    { id: "performance", label: "Performance", icon: "◎" },
+    { id: "academy", label: "Academy", icon: "⌘" },
+    { section: "System" },
+    { id: "alerts", label: "Alerts", icon: "!", badge: 2 },
+    { id: "settings", label: "Settings", icon: "◐" },
+  ];
+
+  return (
+    <div className="h-root" style={{ display: "grid", gridTemplateColumns: "240px 1fr", minHeight: "100vh", background: "var(--bg)" }}>
+      {/* Left nav */}
+      <aside style={{
+        borderRight: "1px solid var(--line)", padding: "20px 0", background: "var(--bg-elev)",
+        display: "flex", flexDirection: "column", gap: 2, position: "sticky", top: 0, height: "100vh", overflowY: "auto",
+      }} className="h-scroll">
+        <div style={{ padding: "4px 20px 24px" }}>
+          <HarvestLogo size={18} />
+        </div>
+
+        {nav.map((n, i) => {
+          if (n.section) return (
+            <div key={"s" + i} style={{
+              fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.14em",
+              textTransform: "uppercase", color: "var(--fg-faint)",
+              padding: "18px 20px 6px",
+            }}>{n.section}</div>
+          );
+          const active = route === n.id;
+          return (
+            <div key={n.id} onClick={() => setRoute(n.id)} style={{
+              margin: "0 10px", padding: "8px 12px", borderRadius: 4,
+              display: "flex", alignItems: "center", gap: 12, cursor: "pointer",
+              color: active ? "var(--fg)" : "var(--fg-dim)", fontSize: 13,
+              background: active ? "var(--bg-card)" : "transparent",
+              border: active ? "1px solid var(--line)" : "1px solid transparent",
+              fontWeight: active ? 500 : 400,
+            }}>
+              <span style={{
+                fontFamily: "var(--mono)", fontSize: 12, width: 14, textAlign: "center",
+                color: active ? "var(--acid)" : "var(--fg-mute)",
+              }}>{n.icon}</span>
+              <span style={{ flex: 1 }}>{n.label}</span>
+              {n.badge && (
+                <span className="num" style={{
+                  fontSize: 10, padding: "2px 6px", background: "var(--acid)", color: "var(--bg)",
+                  borderRadius: 2, letterSpacing: 0,
+                }}>{n.badge}</span>
+              )}
+            </div>
+          );
+        })}
+
+        <div style={{ flex: 1 }} />
+
+        {/* Account card */}
+        <div style={{
+          margin: 12, padding: 12, border: "1px solid var(--line)", borderRadius: 4,
+          background: "var(--bg-card)",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{
+              width: 28, height: 28, borderRadius: 4, background: "var(--acid)",
+              color: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center",
+              fontFamily: "var(--sans)", fontWeight: 600, fontSize: 12,
+            }}>JM</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: "var(--fg)" }}>John Meridian</div>
+              <div style={{ fontSize: 10, color: "var(--fg-mute)", fontFamily: "var(--mono)" }}>Schwab · IBKR</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main */}
+      <main style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
+        <AppTopBar route={route} goto={setRoute} />
+        <div style={{ flex: 1, minHeight: 0 }}>
+          {typeof children === "function" ? children({ route, goto: setRoute }) : children}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+function AppTopBar({ route, goto }) {
+  const titleMap = {
+    dashboard: "Dashboard",
+    positions: "Positions",
+    recommendations: "Recommendations",
+    screener: "Screener",
+    watchlist: "Watchlist",
+    journal: "Trade journal",
+    performance: "Performance",
+    academy: "Academy",
+    alerts: "Alerts",
+    settings: "Settings",
+    position: "Position detail",
+    ticket: "New covered call",
+    onboarding: "Get started",
+  };
+  return (
+    <div style={{
+      height: 56, borderBottom: "1px solid var(--line)", background: "var(--bg)",
+      display: "flex", alignItems: "center", padding: "0 28px", gap: 20,
+      position: "sticky", top: 0, zIndex: 10,
+    }}>
+      <div style={{ fontSize: 14, fontWeight: 500, color: "var(--fg)", letterSpacing: "-0.01em" }}>
+        {titleMap[route] || route}
+      </div>
+      <div className="num" style={{ fontSize: 11, color: "var(--fg-mute)", letterSpacing: 0 }}>
+        MON · APR 20 2026 · 14:42 EST · <span style={{ color: "var(--acid)" }}>● MKT OPEN</span>
+      </div>
+      <div style={{ flex: 1 }} />
+
+      {/* search */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 8,
+        height: 32, padding: "0 10px", minWidth: 280,
+        border: "1px solid var(--line)", borderRadius: 4, background: "var(--bg-card)",
+        color: "var(--fg-mute)", fontSize: 12,
+      }}>
+        <span style={{ fontFamily: "var(--mono)" }}>⌕</span>
+        <span>Search tickers, strategies, settings…</span>
+        <div style={{ flex: 1 }} />
+        <span style={{ fontFamily: "var(--mono)", fontSize: 10, padding: "2px 5px", border: "1px solid var(--line)", borderRadius: 2 }}>⌘K</span>
+      </div>
+
+      <button className="h-btn sm" onClick={() => goto("alerts")} style={{ position: "relative" }}>
+        <span style={{ fontFamily: "var(--mono)" }}>!</span> Alerts
+        <span style={{ position: "absolute", top: 4, right: 4, width: 6, height: 6, borderRadius: "50%", background: "var(--warn)" }} />
+      </button>
+      <button className="h-btn primary sm" onClick={() => goto("ticket")}>
+        Sell a call
+      </button>
+    </div>
+  );
+}
+
+Object.assign(window, { AppShell, AppTopBar });
+
+
+// ===== components/AppScreens.jsx =====
+// Journal, Performance, Watchlist, Alerts, Settings, Academy
+
+// ─────────────────────────────── JOURNAL ───────────────────────────────
+function Journal({ goto = () => {} }) {
+  const [filter, setFilter] = React.useState("all");
+  const outcomes = ["all", "expired", "closed-early", "assigned", "rolled"];
+  const rows = [
+    ...HARVEST_HISTORY,
+    { id: "h7", date: "Mar 21", sym: "NVDA", action: "STO", strike: 860, exp: "Mar 28", premium: 14.20, qty: 1, outcome: "expired", pnl: 1420, ret: 1.65 },
+    { id: "h8", date: "Mar 14", sym: "SOFI", action: "STO", strike: 9, exp: "Mar 28", premium: 0.32, qty: 8, outcome: "assigned", pnl: 256, ret: 3.56 },
+    { id: "h9", date: "Mar 07", sym: "T", action: "STO", strike: 18.5, exp: "Mar 28", premium: 0.22, qty: 5, outcome: "expired", pnl: 110, ret: 1.19 },
+    { id: "h10", date: "Feb 28", sym: "MSFT", action: "STO", strike: 430, exp: "Mar 15", premium: 4.10, qty: 2, outcome: "closed-early", pnl: 620, ret: 0.72 },
+  ];
+  const filtered = filter === "all" ? rows : rows.filter(r => r.outcome === filter);
+  const realized = filtered.reduce((s, r) => s + r.pnl, 0);
+  const winRate = Math.round(filtered.filter(r => r.pnl > 0).length / filtered.length * 100);
+
+  return (
+    <div style={{ padding: "28px 32px" }}>
+      {/* summary bar */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 1, background: "var(--line)", border: "1px solid var(--line)", marginBottom: 28 }}>
+        <SummaryCell label="Realized YTD" value="$14,842" sub="premium + assignments" />
+        <SummaryCell label="Trades" value="47" sub="35 closed · 12 open" />
+        <SummaryCell label="Win rate" value="81%" sub="by P&L" />
+        <SummaryCell label="Avg credit" value="$318" sub="per contract" />
+        <SummaryCell label="Avg DTE" value="21d" sub="at entry" />
+      </div>
+
+      {/* filters */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, alignItems: "center" }}>
+        <div className="h-eyebrow">Outcome</div>
+        {outcomes.map(o => (
+          <div key={o} onClick={() => setFilter(o)} style={{
+            padding: "6px 12px", border: "1px solid " + (filter === o ? "var(--acid)" : "var(--line)"),
+            background: filter === o ? "var(--acid-faint)" : "transparent",
+            color: filter === o ? "var(--acid)" : "var(--fg-dim)",
+            fontFamily: "var(--mono)", fontSize: 11, cursor: "pointer", borderRadius: 2, textTransform: "uppercase", letterSpacing: "0.08em",
+          }}>{o}</div>
+        ))}
+        <div style={{ flex: 1 }} />
+        <button className="h-btn sm">Export CSV</button>
+        <button className="h-btn sm">Tax report</button>
+      </div>
+
+      {/* table */}
+      <div style={{ border: "1px solid var(--line)", background: "var(--bg-card)" }}>
+        <div style={{
+          display: "grid", gridTemplateColumns: "80px 60px 60px 70px 80px 90px 1fr 90px 90px 90px",
+          gap: 12, padding: "12px 20px", fontFamily: "var(--mono)", fontSize: 10,
+          textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--fg-mute)",
+          borderBottom: "1px solid var(--line)",
+        }}>
+          <div>Date</div><div>Sym</div><div>Act</div><div>Strike</div><div>Exp</div><div>Qty</div><div>Outcome</div><div style={{ textAlign: "right" }}>Credit</div><div style={{ textAlign: "right" }}>P&L</div><div style={{ textAlign: "right" }}>Return</div>
+        </div>
+        {filtered.map(r => (
+          <div key={r.id} style={{
+            display: "grid", gridTemplateColumns: "80px 60px 60px 70px 80px 90px 1fr 90px 90px 90px",
+            gap: 12, padding: "14px 20px", borderBottom: "1px solid var(--line-soft)",
+            fontFamily: "var(--mono)", fontSize: 12, alignItems: "center",
+          }}>
+            <div style={{ color: "var(--fg-mute)" }}>{r.date}</div>
+            <div style={{ color: "var(--fg)", cursor: "pointer" }} onClick={() => goto("position")}>{r.sym}</div>
+            <div>{r.action}</div>
+            <div>${r.strike}</div>
+            <div style={{ color: "var(--fg-mute)" }}>{r.exp}</div>
+            <div>{r.qty}×</div>
+            <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--fg-mute)" }}>
+              <OutcomeBadge v={r.outcome} />
+            </div>
+            <div style={{ textAlign: "right" }}>${(r.premium * r.qty * 100).toLocaleString()}</div>
+            <div style={{ textAlign: "right", color: r.pnl > 0 ? "var(--acid)" : r.pnl < 0 ? "var(--down)" : "var(--fg-mute)" }}>
+              {r.pnl > 0 ? "+" : ""}${r.pnl}
+            </div>
+            <div style={{ textAlign: "right", color: "var(--fg-dim)" }}>{r.ret.toFixed(2)}%</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function SummaryCell({ label, value, sub }) {
+  return (
+    <div style={{ background: "var(--bg-card)", padding: "18px 20px" }}>
+      <div className="h-eyebrow" style={{ marginBottom: 6 }}>{label}</div>
+      <div className="num" style={{ fontSize: 22, color: "var(--fg)" }}>{value}</div>
+      {sub && <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-mute)", marginTop: 4 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function OutcomeBadge({ v }) {
+  const map = {
+    expired: { c: "var(--acid)", l: "EXPIRED" },
+    "closed-early": { c: "var(--olive)", l: "CLOSED" },
+    assigned: { c: "var(--warn)", l: "ASSIGNED" },
+    rolled: { c: "var(--fg-mute)", l: "ROLLED" },
+  };
+  const m = map[v] || { c: "var(--fg-mute)", l: v };
+  return <span style={{ color: m.c }}>● {m.l}</span>;
+}
+
+// ───────────────────────────── PERFORMANCE ─────────────────────────────
+function Performance() {
+  const path = genPath(240, 100, 0.02, 0.0015, 11);
+  return (
+    <div style={{ padding: "28px 32px" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 1, background: "var(--line)", border: "1px solid var(--line)", marginBottom: 28 }}>
+        <SummaryCell label="Total harvested" value="$48,290" sub="since inception · Aug 2023" />
+        <SummaryCell label="Ann. yield on basis" value="9.4%" sub="above S&P div. 1.4%" />
+        <SummaryCell label="Win rate" value="83%" sub="premium expires worthless" />
+        <SummaryCell label="Assignment rate" value="11%" sub="average of 8 trades/mo" />
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 24 }}>
+        <div>
+          <div className="h-eyebrow" style={{ marginBottom: 10 }}>Cumulative premium · 18 months</div>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--line)", padding: 20, height: 300 }}>
+            <svg viewBox="0 0 240 100" preserveAspectRatio="none" style={{ width: "100%", height: "100%" }}>
+              {[25, 50, 75].map(y => <line key={y} x1="0" y1={y} x2="240" y2={y} stroke="var(--line-soft)" strokeWidth="0.2" />)}
+              <path d={`${path} L 240 100 L 0 100 Z`} fill="var(--acid-faint)" />
+              <path d={path} stroke="var(--acid)" strokeWidth="0.8" fill="none" />
+              {/* event markers */}
+              <circle cx="80" cy="62" r="1" fill="var(--warn)" />
+              <text x="82" y="60" fontFamily="var(--mono)" fontSize="2.4" fill="var(--warn)">NVDA earnings</text>
+              <circle cx="168" cy="40" r="1" fill="var(--warn)" />
+              <text x="170" y="38" fontFamily="var(--mono)" fontSize="2.4" fill="var(--warn)">Rate cut</text>
+            </svg>
+          </div>
+
+          <div className="h-eyebrow" style={{ marginTop: 32, marginBottom: 10 }}>By ticker</div>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--line)" }}>
+            {HARVEST_POSITIONS.slice(0, 6).map((p, i) => {
+              const prem = (2000 + (i + 1) * 800 * (1 - i * 0.12)) | 0;
+              const pct = 100 - i * 12;
+              return (
+                <div key={p.sym} style={{ display: "grid", gridTemplateColumns: "60px 1fr 90px 90px", gap: 12, padding: "14px 20px", borderBottom: "1px solid var(--line-soft)", alignItems: "center" }}>
+                  <div className="num" style={{ fontSize: 13, color: "var(--fg)" }}>{p.sym}</div>
+                  <div style={{ height: 8, background: "var(--bg-elev)", borderRadius: 2, overflow: "hidden" }}>
+                    <div style={{ width: pct + "%", height: "100%", background: "var(--acid)" }} />
+                  </div>
+                  <div style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg)" }}>${prem.toLocaleString()}</div>
+                  <div style={{ textAlign: "right", fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-mute)" }}>{(12 - i * 1.2).toFixed(1)}% yld</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div>
+          <div className="h-eyebrow" style={{ marginBottom: 10 }}>Trade outcomes</div>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--line)", padding: 20 }}>
+            <DonutChart data={[
+              { label: "Expired worthless", v: 83, c: "var(--acid)" },
+              { label: "Assigned", v: 11, c: "var(--warn)" },
+              { label: "Rolled", v: 4, c: "var(--olive)" },
+              { label: "Closed early", v: 2, c: "var(--fg-mute)" },
+            ]} />
+          </div>
+
+          <div className="h-eyebrow" style={{ marginTop: 28, marginBottom: 10 }}>Execution quality</div>
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--line)", fontFamily: "var(--mono)", fontSize: 12 }}>
+            <Line k="Avg slippage" v="$0.02" good />
+            <Line k="Avg fill time" v="2.4s" good />
+            <Line k="Vs. Harvest target" v="+2.1%" good />
+            <Line k="Unfilled orders" v="3 / 47" />
+            <Line k="Early closes saved" v="$840" good />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Line({ k, v, good }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "10px 16px", borderBottom: "1px solid var(--line-soft)" }}>
+      <span style={{ color: "var(--fg-mute)" }}>{k}</span>
+      <span style={{ color: good ? "var(--acid)" : "var(--fg)" }}>{v}</span>
+    </div>
+  );
+}
+
+function DonutChart({ data }) {
+  const total = data.reduce((s, d) => s + d.v, 0);
+  let acc = 0;
+  const r = 40, cx = 50, cy = 50;
+  return (
+    <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
+      <svg viewBox="0 0 100 100" width="120" height="120">
+        {data.map((d, i) => {
+          const start = (acc / total) * Math.PI * 2 - Math.PI / 2;
+          acc += d.v;
+          const end = (acc / total) * Math.PI * 2 - Math.PI / 2;
+          const large = d.v / total > 0.5 ? 1 : 0;
+          const x1 = cx + r * Math.cos(start), y1 = cy + r * Math.sin(start);
+          const x2 = cx + r * Math.cos(end), y2 = cy + r * Math.sin(end);
+          return <path key={i} d={`M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`} fill={d.c} stroke="var(--bg-card)" strokeWidth="1" />;
+        })}
+        <circle cx={cx} cy={cy} r="22" fill="var(--bg-card)" />
+        <text x={cx} y={cy - 2} fontFamily="var(--mono)" fontSize="8" fill="var(--fg)" textAnchor="middle">83%</text>
+        <text x={cx} y={cy + 7} fontFamily="var(--mono)" fontSize="4" fill="var(--fg-mute)" textAnchor="middle">WIN RATE</text>
+      </svg>
+      <div style={{ flex: 1, fontFamily: "var(--mono)", fontSize: 11 }}>
+        {data.map(d => (
+          <div key={d.label} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 0" }}>
+            <div style={{ width: 8, height: 8, background: d.c, borderRadius: 1 }} />
+            <span style={{ flex: 1, color: "var(--fg-dim)" }}>{d.label}</span>
+            <span style={{ color: "var(--fg)" }}>{d.v}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────── WATCHLIST ─────────────────────────────
+function Watchlist() {
+  const list = HARVEST_SCREENER.slice(0, 10).map((s, i) => ({
+    ...s, price: 50 + (s.ivr * 1.6 + i * 12), note: i === 2 ? "IV crush post-earnings" : i === 5 ? "wait for $175 breakout" : "",
+  }));
+  return (
+    <div style={{ padding: "28px 32px" }}>
+      <div style={{ display: "flex", gap: 12, alignItems: "center", marginBottom: 16 }}>
+        <h2 style={{ fontSize: 20, fontWeight: 500, letterSpacing: "-0.01em", margin: 0 }}>Tickers I'm watching</h2>
+        <span className="h-chip">{list.length} SYMBOLS</span>
+        <div style={{ flex: 1 }} />
+        <button className="h-btn sm">+ Add ticker</button>
+      </div>
+      <div style={{ border: "1px solid var(--line)", background: "var(--bg-card)" }}>
+        <div style={{
+          display: "grid", gridTemplateColumns: "80px 1fr 80px 80px 80px 1fr 80px",
+          gap: 12, padding: "12px 20px", fontFamily: "var(--mono)", fontSize: 10,
+          textTransform: "uppercase", letterSpacing: "0.1em", color: "var(--fg-mute)", borderBottom: "1px solid var(--line)",
+        }}>
+          <div>Sym</div><div>Price</div><div>IV rank</div><div>30d Δ</div><div>Target</div><div>Note</div><div></div>
+        </div>
+        {list.map(r => (
+          <div key={r.sym} style={{
+            display: "grid", gridTemplateColumns: "80px 1fr 80px 80px 80px 1fr 80px",
+            gap: 12, padding: "14px 20px", borderBottom: "1px solid var(--line-soft)",
+            fontFamily: "var(--mono)", fontSize: 12, alignItems: "center",
+          }}>
+            <div style={{ color: "var(--fg)" }}>{r.sym}</div>
+            <div>${r.price.toFixed(2)}</div>
+            <div style={{ color: r.ivr > 50 ? "var(--acid)" : "var(--fg-dim)" }}>{r.ivr}</div>
+            <div style={{ color: "var(--fg-mute)" }}>+{(r.x + 2).toFixed(1)}%</div>
+            <div style={{ color: "var(--fg-dim)" }}>${(r.price * 1.08).toFixed(0)}</div>
+            <div style={{ fontFamily: "var(--body)", fontSize: 12, color: "var(--fg-mute)", fontStyle: r.note ? "normal" : "italic" }}>{r.note || "—"}</div>
+            <div style={{ textAlign: "right" }}><button className="h-btn sm">Trade</button></div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────── ALERTS ─────────────────────────────
+function Alerts() {
+  const alerts = [
+    { sev: "warn", t: "NVDA · $920 Call at 0.42Δ — assignment risk rising", d: "Now 62% P.O.P. vs. 64% at entry. Consider rolling to Jun 20 $940.", ts: "12 min ago" },
+    { sev: "warn", t: "MSFT earnings May 2 — position in assigned range", d: "Current call expires 14 days after earnings. Review IV expansion.", ts: "2 hr ago" },
+    { sev: "info", t: "Harvest · New recommendation for AAPL", d: "High-conviction May 16 $200C. 18.4% annualized yield.", ts: "Today · 09:14" },
+    { sev: "info", t: "SOFI IVR now 62 — meets 'high-premium' filter", d: "You follow this ticker but do not hold shares. Consider selling puts.", ts: "Yesterday" },
+    { sev: "ok", t: "AMD · $175C expired worthless — $840 harvested", d: "100% of premium kept. Funds cleared.", ts: "2 days ago" },
+    { sev: "ok", t: "AAPL · April dividend collected — $96", d: "400 shares × $0.24. Next ex-div May 10.", ts: "3 days ago" },
+  ];
+  return (
+    <div style={{ padding: "28px 32px", maxWidth: 900 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+        {["All", "Assignment risk", "Earnings", "Recommendations", "Fills", "Dividends"].map((t, i) => (
+          <div key={t} style={{
+            padding: "6px 12px", border: "1px solid " + (i === 0 ? "var(--fg)" : "var(--line)"),
+            background: i === 0 ? "var(--fg)" : "transparent", color: i === 0 ? "var(--bg)" : "var(--fg-dim)",
+            fontSize: 12, fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: "0.08em", cursor: "pointer", borderRadius: 2,
+          }}>{t}</div>
+        ))}
+      </div>
+      <div style={{ border: "1px solid var(--line)", background: "var(--bg-card)" }}>
+        {alerts.map((a, i) => (
+          <div key={i} style={{ display: "flex", gap: 16, padding: "18px 20px", borderBottom: i < alerts.length - 1 ? "1px solid var(--line-soft)" : "none", alignItems: "flex-start" }}>
+            <div style={{
+              width: 6, height: 6, borderRadius: "50%", marginTop: 7,
+              background: a.sev === "warn" ? "var(--warn)" : a.sev === "ok" ? "var(--acid)" : "var(--olive)",
+            }} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, color: "var(--fg)", fontWeight: 500, letterSpacing: "-0.005em" }}>{a.t}</div>
+              <div style={{ fontSize: 13, color: "var(--fg-mute)", marginTop: 4, lineHeight: 1.5 }}>{a.d}</div>
+            </div>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-faint)" }}>{a.ts}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ───────────────────────────── SETTINGS ─────────────────────────────
+function Settings() {
+  const [tab, setTab] = React.useState("brokers");
+  const tabs = ["brokers", "notifications", "tax lots", "risk", "account", "api"];
+  return (
+    <div style={{ padding: "28px 32px", display: "grid", gridTemplateColumns: "220px 1fr", gap: 40 }}>
+      <div>
+        <div className="h-eyebrow" style={{ marginBottom: 12 }}>Settings</div>
+        {tabs.map(t => (
+          <div key={t} onClick={() => setTab(t)} style={{
+            padding: "10px 12px", fontSize: 13, cursor: "pointer", borderRadius: 3, marginBottom: 2,
+            background: tab === t ? "var(--bg-card)" : "transparent",
+            border: tab === t ? "1px solid var(--line)" : "1px solid transparent",
+            color: tab === t ? "var(--fg)" : "var(--fg-dim)", textTransform: "capitalize",
+          }}>{t}</div>
+        ))}
+      </div>
+      <div>
+        {tab === "brokers" && <BrokerSettings />}
+        {tab === "notifications" && <NotifSettings />}
+        {tab === "risk" && <RiskSettings />}
+        {tab !== "brokers" && tab !== "notifications" && tab !== "risk" && (
+          <div>
+            <h2 style={{ fontSize: 20, fontWeight: 500, margin: "0 0 20px", letterSpacing: "-0.01em", textTransform: "capitalize" }}>{tab}</h2>
+            <div className="h-placeholder" style={{ height: 280 }}>{tab.toUpperCase()} SETTINGS</div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BrokerSettings() {
+  const brokers = [
+    { n: "Charles Schwab", acct: "•••• 4821", synced: "2 min ago", pos: 6, status: "connected" },
+    { n: "Interactive Brokers", acct: "•••• 9104", synced: "18 min ago", pos: 2, status: "connected" },
+    { n: "Fidelity", acct: "—", synced: "—", pos: 0, status: "add" },
+  ];
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 500, margin: "0 0 8px", letterSpacing: "-0.01em" }}>Connected brokers</h2>
+      <p style={{ color: "var(--fg-mute)", fontSize: 13, marginBottom: 24 }}>Harvest reads positions via read-only OAuth. Trades route through your broker.</p>
+      <div style={{ display: "grid", gap: 10 }}>
+        {brokers.map(b => (
+          <div key={b.n} style={{
+            padding: 18, border: "1px solid var(--line)", background: b.status === "add" ? "var(--bg-elev)" : "var(--bg-card)",
+            display: "grid", gridTemplateColumns: "1fr 120px 100px 100px", gap: 16, alignItems: "center",
+          }}>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: "var(--fg)" }}>{b.n}</div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-mute)", marginTop: 4 }}>Account {b.acct}</div>
+            </div>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-mute)" }}>Synced {b.synced}</div>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-dim)" }}>{b.pos} positions</div>
+            <div style={{ textAlign: "right" }}>
+              {b.status === "add"
+                ? <button className="h-btn sm">+ Connect</button>
+                : <button className="h-btn sm">Manage</button>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function NotifSettings() {
+  const groups = [
+    { t: "Assignment risk", d: "Calls you've sold moving ITM", s: ["email", "push"] },
+    { t: "Earnings windows", d: "Holdings approaching earnings", s: ["email"] },
+    { t: "New recommendations", d: "High-conviction ideas from your portfolio", s: ["push"] },
+    { t: "Fills & assignments", d: "Order executions, rolls, assignments", s: ["email", "push", "sms"] },
+    { t: "Daily briefing", d: "9:00 am ET digest of overnight moves", s: ["email"] },
+    { t: "Market anomalies", d: "IV spikes, unusual volume in your names", s: [] },
+  ];
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 500, margin: "0 0 20px", letterSpacing: "-0.01em" }}>Notifications</h2>
+      <div style={{ border: "1px solid var(--line)", background: "var(--bg-card)" }}>
+        {groups.map((g, i) => (
+          <div key={g.t} style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px 80px", gap: 12, padding: "18px 20px", borderBottom: i < groups.length - 1 ? "1px solid var(--line-soft)" : "none", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg)" }}>{g.t}</div>
+              <div style={{ fontSize: 12, color: "var(--fg-mute)", marginTop: 4 }}>{g.d}</div>
+            </div>
+            {["email", "push", "sms"].map(ch => (
+              <Toggle key={ch} label={ch} on={g.s.includes(ch)} />
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Toggle({ label, on }) {
+  return (
+    <div style={{ textAlign: "center" }}>
+      <div style={{
+        margin: "0 auto", width: 36, height: 20, borderRadius: 10, padding: 2,
+        background: on ? "var(--acid)" : "var(--line-strong)", cursor: "pointer", transition: "background .15s",
+      }}>
+        <div style={{ width: 16, height: 16, borderRadius: "50%", background: "var(--bg-card)", marginLeft: on ? 16 : 0, transition: "margin .15s" }} />
+      </div>
+      <div style={{ fontSize: 10, fontFamily: "var(--mono)", letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--fg-mute)", marginTop: 6 }}>{label}</div>
+    </div>
+  );
+}
+
+function RiskSettings() {
+  return (
+    <div>
+      <h2 style={{ fontSize: 20, fontWeight: 500, margin: "0 0 20px", letterSpacing: "-0.01em" }}>Risk preferences</h2>
+      <div style={{ display: "grid", gap: 20 }}>
+        <SliderCard label="Max delta per call" value="0.30" hint="Lower = safer · Lower premium" />
+        <SliderCard label="Min days to expiry" value="14 days" hint="Shorter = faster turnover · Higher gamma risk" />
+        <SliderCard label="Max % of shares called" value="75%" hint="Keep some uncovered for upside" />
+        <SliderCard label="Avoid earnings within" value="7 days" hint="Skip trades near earnings events" />
+      </div>
+    </div>
+  );
+}
+
+function SliderCard({ label, value, hint }) {
+  return (
+    <div style={{ padding: 18, border: "1px solid var(--line)", background: "var(--bg-card)" }}>
+      <div style={{ display: "flex", alignItems: "baseline", marginBottom: 10 }}>
+        <div style={{ fontSize: 13, fontWeight: 500, color: "var(--fg)" }}>{label}</div>
+        <div style={{ flex: 1 }} />
+        <div className="num" style={{ fontSize: 14, color: "var(--acid)" }}>{value}</div>
+      </div>
+      <div style={{ height: 4, background: "var(--bg-elev)", borderRadius: 2, marginBottom: 8, position: "relative" }}>
+        <div style={{ width: "45%", height: "100%", background: "var(--acid)", borderRadius: 2 }} />
+        <div style={{ position: "absolute", left: "45%", top: -4, width: 12, height: 12, borderRadius: "50%", background: "var(--acid)", transform: "translateX(-50%)", border: "2px solid var(--bg-card)" }} />
+      </div>
+      <div style={{ fontSize: 11, fontFamily: "var(--mono)", color: "var(--fg-mute)" }}>{hint}</div>
+    </div>
+  );
+}
+
+// ───────────────────────────── ACADEMY ─────────────────────────────
+function Academy() {
+  const modules = [
+    { n: "01", t: "Why covered calls?", d: "The simplest option strategy. Trade upside for income.", dur: "6 min", done: true },
+    { n: "02", t: "Picking the right strike", d: "Delta, probability of profit, and the 30Δ heuristic.", dur: "9 min", done: true },
+    { n: "03", t: "Choosing an expiration", d: "Time decay, gamma risk, and the 30-45 DTE window.", dur: "8 min", done: true },
+    { n: "04", t: "When to roll", d: "ITM, ATM, and managing assignment risk.", dur: "11 min", done: false, cur: true },
+    { n: "05", t: "Implied volatility & IV rank", d: "Selling premium when volatility is rich.", dur: "10 min", done: false },
+    { n: "06", t: "The wheel strategy", d: "Combining cash-secured puts and covered calls.", dur: "14 min", done: false },
+    { n: "07", t: "Tax treatment of options", d: "Short-term gains, wash sales, qualified covered calls.", dur: "12 min", done: false },
+    { n: "08", t: "Building a call-writing system", d: "Screening, position sizing, discipline.", dur: "16 min", done: false },
+  ];
+  return (
+    <div style={{ padding: "28px 32px", maxWidth: 960 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 200px", gap: 32, marginBottom: 28, alignItems: "end" }}>
+        <div>
+          <div className="h-eyebrow" style={{ marginBottom: 8 }}>Harvest Academy</div>
+          <h2 className="serif" style={{ fontSize: 36, margin: 0, letterSpacing: "-0.01em", fontStyle: "italic" }}>Learn the wheel.</h2>
+          <p style={{ color: "var(--fg-mute)", fontSize: 14, marginTop: 12, maxWidth: 560 }}>
+            Eight short modules. You'll be writing your first covered call by module 04.
+          </p>
+        </div>
+        <div style={{ padding: 14, border: "1px solid var(--line)", background: "var(--bg-card)" }}>
+          <div className="h-eyebrow" style={{ marginBottom: 4 }}>Progress</div>
+          <div className="num" style={{ fontSize: 22, color: "var(--fg)" }}>3 / 8</div>
+          <div style={{ height: 4, background: "var(--bg-elev)", marginTop: 10 }}>
+            <div style={{ width: "37%", height: "100%", background: "var(--acid)" }} />
+          </div>
+        </div>
+      </div>
+      <div style={{ border: "1px solid var(--line)", background: "var(--bg-card)" }}>
+        {modules.map((m, i) => (
+          <div key={m.n} style={{
+            display: "grid", gridTemplateColumns: "50px 1fr 100px 120px", gap: 16, padding: "18px 24px",
+            borderBottom: i < modules.length - 1 ? "1px solid var(--line-soft)" : "none", alignItems: "center", cursor: "pointer",
+            background: m.cur ? "var(--acid-faint)" : "transparent", borderLeft: m.cur ? "2px solid var(--acid)" : "2px solid transparent",
+          }}>
+            <div className="num" style={{ fontSize: 13, color: m.done ? "var(--fg-mute)" : "var(--acid)" }}>{m.n}</div>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 500, color: "var(--fg)", letterSpacing: "-0.005em", textDecoration: m.done ? "line-through" : "none", textDecorationColor: "var(--fg-mute)" }}>{m.t}</div>
+              <div style={{ fontSize: 12, color: "var(--fg-mute)", marginTop: 4 }}>{m.d}</div>
+            </div>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-mute)" }}>{m.dur}</div>
+            <div style={{ textAlign: "right" }}>
+              {m.done ? <span className="h-chip acid">COMPLETED</span> : m.cur ? <button className="h-btn sm primary">Continue →</button> : <button className="h-btn sm">Start</button>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { Journal, Performance, Watchlist, Alerts, Settings, Academy, PositionsView, RecommendationsView });
+
+
+// ===== components/PositionDetail.jsx =====
+// Position detail — single ticker deep-dive. Carries Dashboard A visual language.
+
+function PositionDetail({ sym = "AAPL", goto = () => {} }) {
+  const p = HARVEST_POSITIONS.find(x => x.sym === sym) || HARVEST_POSITIONS[0];
+  const unreal = (p.price - p.avg) * p.shares;
+  const unrealPct = ((p.price - p.avg) / p.avg) * 100;
+
+  const chartPath = genPath(240, 100, 0.03, 0.002, 73);
+
+  const chain = [
+    { strike: 190, exp: "May 16", prem: 5.40, delta: 0.62, pop: 38, yAnn: 8.2 },
+    { strike: 195, exp: "May 16", prem: 3.60, delta: 0.42, pop: 58, yAnn: 12.1 },
+    { strike: 200, exp: "May 16", prem: 2.45, delta: 0.28, pop: 72, yAnn: 18.4, rec: true },
+    { strike: 205, exp: "May 16", prem: 1.55, delta: 0.18, pop: 82, yAnn: 14.6 },
+    { strike: 210, exp: "May 16", prem: 0.92, delta: 0.11, pop: 89, yAnn: 10.3 },
+  ];
+
+  return (
+    <div className="h-root" style={{ padding: "0 0 60px" }}>
+      {/* header */}
+      <div style={{ padding: "28px 32px 20px", borderBottom: "1px solid var(--line)" }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 16, marginBottom: 4 }}>
+          <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-mute)", cursor: "pointer" }} onClick={() => goto("positions")}>
+            ← POSITIONS
+          </span>
+        </div>
+        <div style={{ display: "flex", alignItems: "flex-end", gap: 24 }}>
+          <div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
+              <h1 style={{ fontSize: 40, letterSpacing: "-0.03em", fontWeight: 500, margin: 0 }}>{p.sym}</h1>
+              <span style={{ fontSize: 16, color: "var(--fg-mute)" }}>{p.name}</span>
+            </div>
+          </div>
+          <div style={{ flex: 1 }} />
+          <div style={{ display: "flex", gap: 28, alignItems: "flex-end" }}>
+            <Stat label="Last" value={`${p.price.toFixed(2)}`} delta={p.day} />
+            <Stat label="Position" value={`${p.shares.toLocaleString()} sh`} />
+            <Stat label="Avg cost" value={`${p.avg.toFixed(2)}`} />
+            <Stat label="Market value" value={`${(p.price * p.shares).toLocaleString(undefined, { maximumFractionDigits: 0 })}`} />
+            <Stat label="Unrealized" value={`${unreal >= 0 ? "+" : ""}${Math.abs(unreal).toLocaleString(undefined, { maximumFractionDigits: 0 })}`} sub={`${unrealPct >= 0 ? "+" : ""}${unrealPct.toFixed(1)}%`} positive={unreal >= 0} />
+          </div>
+          <button className="h-btn primary" onClick={() => goto("ticket")}>Sell a call</button>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 360px", gap: 0, minHeight: 640 }}>
+        {/* left column */}
+        <div style={{ padding: "28px 32px", borderRight: "1px solid var(--line)" }}>
+          {/* chart */}
+          <Panel title="Price · 6 months" right={<TimeRangeChips />}>
+            <div style={{ position: "relative", height: 280, padding: "8px 0" }}>
+              <PriceChartLarge path={chartPath} price={p.price} avg={p.avg} />
+            </div>
+          </Panel>
+
+          {/* option chain mini */}
+          <Panel title="Call chain · May 16 expiry" right={<span className="h-chip">RECOMMENDED STRIKE HIGHLIGHTED</span>}>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
+              <div style={{
+                display: "grid", gridTemplateColumns: "80px 80px 80px 80px 80px 1fr", gap: 12,
+                padding: "10px 16px", color: "var(--fg-mute)", fontSize: 10, letterSpacing: "0.1em",
+                textTransform: "uppercase", borderBottom: "1px solid var(--line)",
+              }}>
+                <div>Strike</div><div>Premium</div><div>Δ Delta</div><div>P.O.P.</div><div>Ann. yield</div><div></div>
+              </div>
+              {chain.map(c => (
+                <div key={c.strike} style={{
+                  display: "grid", gridTemplateColumns: "80px 80px 80px 80px 80px 1fr", gap: 12,
+                  padding: "12px 16px", borderBottom: "1px solid var(--line-soft)",
+                  background: c.rec ? "var(--acid-faint)" : "transparent",
+                  borderLeft: c.rec ? "2px solid var(--acid)" : "2px solid transparent",
+                  alignItems: "center",
+                }}>
+                  <div style={{ color: "var(--fg)", fontWeight: 500 }}>${c.strike}</div>
+                  <div>${c.prem.toFixed(2)}</div>
+                  <div style={{ color: "var(--fg-dim)" }}>{c.delta.toFixed(2)}</div>
+                  <div style={{ color: "var(--fg-dim)" }}>{c.pop}%</div>
+                  <div style={{ color: c.rec ? "var(--acid)" : "var(--fg-dim)" }}>{c.yAnn.toFixed(1)}%</div>
+                  <div style={{ textAlign: "right" }}>
+                    <button className="h-btn sm" onClick={() => goto("ticket")}>Trade</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+
+          {/* recent activity */}
+          <Panel title="Option history · AAPL">
+            <div style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
+              {HARVEST_HISTORY.filter(h => h.sym === p.sym).map(h => (
+                <div key={h.id} style={{
+                  display: "grid", gridTemplateColumns: "80px 80px 80px 80px 1fr 90px 80px",
+                  gap: 12, padding: "12px 16px", borderBottom: "1px solid var(--line-soft)", alignItems: "center",
+                }}>
+                  <div style={{ color: "var(--fg-mute)" }}>{h.date}</div>
+                  <div style={{ color: "var(--fg)" }}>{h.action}</div>
+                  <div>${h.strike}</div>
+                  <div>{h.qty}×</div>
+                  <div style={{ color: "var(--fg-mute)" }}>exp. {h.exp}</div>
+                  <div style={{ textAlign: "right", color: h.pnl >= 0 ? "var(--acid)" : "var(--down)" }}>
+                    {h.pnl > 0 ? "+" : ""}${h.pnl}
+                  </div>
+                  <div style={{ textAlign: "right", fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--fg-mute)" }}>
+                    {h.outcome}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Panel>
+        </div>
+
+        {/* right column */}
+        <div style={{ padding: "28px 24px", background: "var(--bg-elev)" }}>
+          <div className="h-eyebrow" style={{ marginBottom: 12 }}>Recommendation</div>
+          <div style={{
+            background: "var(--bg-card)", border: "1px solid var(--line)", padding: 20,
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+              <span className="h-chip acid">HIGH CONVICTION</span>
+              <span className="num" style={{ fontSize: 11, color: "var(--fg-mute)" }}>score 88</span>
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 500, letterSpacing: "-0.01em", marginBottom: 8 }}>
+              Sell 4× May 16 $200 Call
+            </div>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-mute)", marginBottom: 16 }}>
+              Covers all 400 shares · 26 days to expiry
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, background: "var(--line)", border: "1px solid var(--line)", marginBottom: 16 }}>
+              <MiniStat label="Premium" value="$980" sub="2.45 × 400" bg="var(--bg-card)" />
+              <MiniStat label="Ann. yield" value="18.4%" sub="on basis" bg="var(--bg-card)" />
+              <MiniStat label="P.O.P." value="72%" sub="prob. profit" bg="var(--bg-card)" />
+              <MiniStat label="Max loss" value="Capped" sub="if assigned" bg="var(--bg-card)" />
+            </div>
+            <div style={{ fontSize: 12, color: "var(--fg-dim)", lineHeight: 1.55, marginBottom: 16 }}>
+              IV rank at 28 offers reasonable premium. $200 strike sits above 1σ range and two prior rejection points. Earnings are post-expiration — event risk avoided.
+            </div>
+            <button className="h-btn primary" style={{ width: "100%" }} onClick={() => goto("ticket")}>
+              Review & sell
+            </button>
+          </div>
+
+          <div style={{ marginTop: 28 }} className="h-eyebrow">Volatility</div>
+          <div style={{ marginTop: 12, background: "var(--bg-card)", border: "1px solid var(--line)", padding: 16, fontFamily: "var(--mono)", fontSize: 11 }}>
+            <Row k="IV" v="24.2%" />
+            <Row k="IV rank" v="28 / 100" />
+            <Row k="HV (30d)" v="19.4%" />
+            <Row k="IV / HV" v="1.25" />
+            <Row k="Earnings" v="May 2" warn />
+          </div>
+
+          <div style={{ marginTop: 28 }} className="h-eyebrow">Tax lots</div>
+          <div style={{ marginTop: 12, background: "var(--bg-card)", border: "1px solid var(--line)", fontFamily: "var(--mono)", fontSize: 11 }}>
+            {[
+              { date: "Jan 08, 2023", qty: 200, basis: 145.20 },
+              { date: "Aug 14, 2023", qty: 100, basis: 176.00 },
+              { date: "Feb 01, 2024", qty: 100, basis: 184.80 },
+            ].map(l => (
+              <div key={l.date} style={{ display: "grid", gridTemplateColumns: "1fr 50px 70px", gap: 8, padding: "10px 14px", borderBottom: "1px solid var(--line-soft)" }}>
+                <div style={{ color: "var(--fg-mute)" }}>{l.date}</div>
+                <div>{l.qty}</div>
+                <div style={{ textAlign: "right" }}>${l.basis.toFixed(2)}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value, sub, delta, positive }) {
+  const posClass = positive !== undefined ? (positive ? "h-up" : "h-down") : "";
+  return (
+    <div>
+      <div className="h-eyebrow" style={{ marginBottom: 4, fontSize: 10 }}>{label}</div>
+      <div className={`num ${posClass}`} style={{ fontSize: 18, color: posClass ? undefined : "var(--fg)" }}>
+        {value}
+        {delta !== undefined && (
+          <span className={delta >= 0 ? "h-up" : "h-down"} style={{ fontSize: 12, marginLeft: 8 }}>
+            {delta >= 0 ? "+" : ""}{delta.toFixed(2)}%
+          </span>
+        )}
+      </div>
+      {sub && <div className={`num ${posClass}`} style={{ fontSize: 11, opacity: 0.7, marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function MiniStat({ label, value, sub, bg = "var(--bg-card)" }) {
+  return (
+    <div style={{ background: bg, padding: "12px 14px" }}>
+      <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-mute)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>{label}</div>
+      <div className="num" style={{ fontSize: 16, color: "var(--fg)" }}>{value}</div>
+      {sub && <div style={{ fontSize: 10, color: "var(--fg-mute)", fontFamily: "var(--mono)", marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function Row({ k, v, warn }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 0", borderBottom: "1px solid var(--line-soft)" }}>
+      <span style={{ color: "var(--fg-mute)" }}>{k}</span>
+      <span style={{ color: warn ? "var(--warn)" : "var(--fg)" }}>{v}</span>
+    </div>
+  );
+}
+
+function Panel({ title, right, children }) {
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+        <div className="h-eyebrow">{title}</div>
+        <div style={{ flex: 1 }} />
+        {right}
+      </div>
+      <div style={{ background: "var(--bg-card)", border: "1px solid var(--line)" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function TimeRangeChips() {
+  const ranges = ["1M", "3M", "6M", "YTD", "1Y", "5Y"];
+  const [sel, setSel] = React.useState("6M");
+  return (
+    <div style={{ display: "flex", gap: 0, border: "1px solid var(--line)", borderRadius: 2 }}>
+      {ranges.map(r => (
+        <div key={r} onClick={() => setSel(r)} style={{
+          padding: "4px 10px", fontFamily: "var(--mono)", fontSize: 10, cursor: "pointer",
+          background: sel === r ? "var(--acid-faint)" : "transparent",
+          color: sel === r ? "var(--acid)" : "var(--fg-mute)",
+          borderRight: r === ranges[ranges.length - 1] ? "none" : "1px solid var(--line)",
+        }}>{r}</div>
+      ))}
+    </div>
+  );
+}
+
+function PriceChartLarge({ path, price, avg }) {
+  const w = 100, h = 100;
+  // path is SVG path d
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" style={{ width: "100%", height: "100%" }}>
+      {[0.2, 0.4, 0.6, 0.8].map(y => (
+        <line key={y} x1="0" y1={y * h} x2={w} y2={y * h} stroke="var(--line-soft)" strokeWidth="0.2" />
+      ))}
+      <path d={path} stroke="var(--acid)" strokeWidth="0.8" fill="none" />
+      <path d={`${path} L ${w} ${h} L 0 ${h} Z`} fill="var(--acid-faint)" />
+      {/* cost basis line */}
+      <line x1="0" y1="55" x2={w} y2="55" stroke="var(--warn)" strokeWidth="0.3" strokeDasharray="1 1" />
+      <text x="1" y="54" fontFamily="var(--mono)" fontSize="2.4" fill="var(--warn)">avg $162.40</text>
+      {/* current price marker */}
+      <circle cx={w - 0.5} cy={18} r="0.8" fill="var(--acid)" />
+      <text x={w - 14} y={15} fontFamily="var(--mono)" fontSize="2.4" fill="var(--fg)" textAnchor="end">${price.toFixed(2)}</text>
+    </svg>
+  );
+}
+
+Object.assign(window, { PositionDetail });
+
+
+// ===== components/TradeTicket.jsx =====
+// Trade ticket — Simple + Pro toggle. Working strike/expiry selector.
+
+function TradeTicket({ sym = "AAPL", goto = () => {} }) {
+  const [mode, setMode] = React.useState("simple"); // simple | pro
+  const [ticker, setTicker] = React.useState(sym);
+
+  const p = HARVEST_POSITIONS.find(x => x.sym === ticker) || HARVEST_POSITIONS[0];
+
+  const expirations = ["May 02", "May 09", "May 16", "May 23", "Jun 20", "Jul 18", "Sep 19"];
+  const [exp, setExp] = React.useState("May 16");
+
+  const strikes = [185, 190, 195, 200, 205, 210, 215, 220];
+  const [strike, setStrike] = React.useState(200);
+  const [qty, setQty] = React.useState(Math.floor(p.shares / 100));
+
+  // Premium model: distance-from-money × time decay
+  const dte = { "May 02": 12, "May 09": 19, "May 16": 26, "May 23": 33, "Jun 20": 61, "Jul 18": 89, "Sep 19": 152 }[exp] || 26;
+  const moneyness = (p.price - strike) / p.price; // + if ITM
+  const atmBase = p.price * 0.02;
+  const time = Math.sqrt(dte / 30);
+  const otmDecay = Math.exp(-Math.max(0, -moneyness) * 12);
+  const premium = Math.max(0.05, atmBase * time * otmDecay + Math.max(0, moneyness * p.price));
+  const delta = moneyness > 0 ? Math.min(0.95, 0.5 + moneyness * 4) : Math.max(0.05, 0.5 * Math.exp(moneyness * 6));
+  const pop = Math.round(100 * (1 - delta));
+  const total = premium * 100 * qty;
+  const yieldAnn = (premium * 100 * qty) / (p.avg * 100 * qty) * (365 / dte) * 100;
+
+  return (
+    <div className="h-root" style={{ padding: "0 0 60px" }}>
+      {/* header */}
+      <div style={{ padding: "28px 32px 16px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 16 }}>
+        <span style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-mute)", cursor: "pointer" }} onClick={() => goto("recommendations")}>
+          ← BACK
+        </span>
+        <h1 style={{ fontSize: 24, letterSpacing: "-0.02em", fontWeight: 500, margin: 0 }}>New covered call</h1>
+        <div style={{ flex: 1 }} />
+        <div style={{ display: "flex", gap: 0, border: "1px solid var(--line-strong)", borderRadius: 4, padding: 2, background: "var(--bg-elev)" }}>
+          {["simple", "pro"].map(m => (
+            <div key={m} onClick={() => setMode(m)} style={{
+              padding: "6px 16px", fontSize: 12, cursor: "pointer", borderRadius: 3,
+              textTransform: "uppercase", letterSpacing: "0.08em", fontFamily: "var(--mono)", fontSize: 10,
+              background: mode === m ? "var(--bg-card)" : "transparent",
+              color: mode === m ? "var(--fg)" : "var(--fg-mute)",
+              boxShadow: mode === m ? "0 1px 0 var(--line)" : "none",
+            }}>{m}</div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 420px", minHeight: 640 }}>
+        {/* builder */}
+        <div style={{ padding: "32px 40px", borderRight: "1px solid var(--line)" }}>
+          {/* underlying */}
+          <Section label="Underlying">
+            <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+              <select value={ticker} onChange={e => setTicker(e.target.value)} style={selectStyle}>
+                {HARVEST_POSITIONS.filter(x => x.shares >= 100).map(x => (
+                  <option key={x.sym} value={x.sym}>{x.sym} · {x.shares} sh · ${x.price.toFixed(2)}</option>
+                ))}
+              </select>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-mute)" }}>
+                Avg ${p.avg.toFixed(2)} · Last <span style={{ color: "var(--fg)" }}>${p.price.toFixed(2)}</span>
+              </div>
+            </div>
+          </Section>
+
+          {/* expiration */}
+          <Section label="Expiration" hint={`${dte} days to expiry`}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {expirations.map(e => (
+                <div key={e} onClick={() => setExp(e)} style={{
+                  padding: "8px 14px", border: "1px solid " + (exp === e ? "var(--acid)" : "var(--line)"),
+                  background: exp === e ? "var(--acid-faint)" : "transparent",
+                  color: exp === e ? "var(--acid)" : "var(--fg-dim)",
+                  fontFamily: "var(--mono)", fontSize: 12, cursor: "pointer", borderRadius: 3,
+                }}>{e}</div>
+              ))}
+            </div>
+          </Section>
+
+          {/* strike */}
+          <Section label="Strike" hint={moneyness > 0 ? `${(moneyness * 100).toFixed(1)}% ITM` : `${(-moneyness * 100).toFixed(1)}% OTM`}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {strikes.map(s => {
+                const sm = (p.price - s) / p.price;
+                const itm = sm > 0;
+                return (
+                  <div key={s} onClick={() => setStrike(s)} style={{
+                    padding: "8px 14px", border: "1px solid " + (strike === s ? "var(--acid)" : "var(--line)"),
+                    background: strike === s ? "var(--acid-faint)" : (itm ? "var(--warn-faint)" : "transparent"),
+                    color: strike === s ? "var(--acid)" : (itm ? "var(--warn)" : "var(--fg-dim)"),
+                    fontFamily: "var(--mono)", fontSize: 12, cursor: "pointer", borderRadius: 3,
+                  }}>${s}</div>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 11, color: "var(--fg-mute)", fontFamily: "var(--mono)", marginTop: 10 }}>
+              Orange = in-the-money · Grey = out-of-the-money
+            </div>
+          </Section>
+
+          {/* contracts */}
+          <Section label="Contracts" hint={`${qty * 100} / ${p.shares} shares covered`}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <button className="h-btn sm" onClick={() => setQty(Math.max(1, qty - 1))}>−</button>
+              <input type="number" value={qty} onChange={e => setQty(Math.max(1, Math.min(Math.floor(p.shares / 100), +e.target.value || 1)))} style={{
+                ...selectStyle, width: 80, textAlign: "center", fontFamily: "var(--mono)",
+              }} />
+              <button className="h-btn sm" onClick={() => setQty(Math.min(Math.floor(p.shares / 100), qty + 1))}>+</button>
+              <button className="h-btn sm" onClick={() => setQty(Math.floor(p.shares / 100))}>Max</button>
+              <div style={{ flex: 1 }} />
+              <div style={{ fontSize: 11, color: "var(--fg-mute)", fontFamily: "var(--mono)" }}>
+                1 contract = 100 shares
+              </div>
+            </div>
+          </Section>
+
+          {/* pro-only */}
+          {mode === "pro" && (
+            <>
+              <Section label="Greeks & probability">
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 0, border: "1px solid var(--line)", background: "var(--line)" }}>
+                  <Greek label="Δ Delta" value={delta.toFixed(2)} />
+                  <Greek label="Γ Gamma" value={(0.014 + Math.random() * 0.004).toFixed(3)} />
+                  <Greek label="Θ Theta" value={(-premium / dte * 10).toFixed(3)} />
+                  <Greek label="ν Vega" value={(premium * 0.28).toFixed(3)} />
+                  <Greek label="IV" value={(18 + moneyness * 40).toFixed(1) + "%"} />
+                </div>
+              </Section>
+              <Section label="Risk scenarios" hint="at expiration">
+                <div style={{ fontFamily: "var(--mono)", fontSize: 12 }}>
+                  {[
+                    { s: "Stock > $" + strike, label: "Assigned", v: `Sell at ${strike}, keep ${total.toFixed(0)} premium` },
+                    { s: "Stock = $" + strike, label: "Break-even line", v: `Keep shares + ${total.toFixed(0)}` },
+                    { s: "Stock < $" + strike, label: "Expires worthless", v: `Keep shares + ${total.toFixed(0)}` },
+                    { s: "Stock < $" + p.avg, label: "Loss on underlying", v: `Premium offsets loss by ${(premium / p.avg * 100).toFixed(1)}%` },
+                  ].map((row, i) => (
+                    <div key={i} style={{ display: "grid", gridTemplateColumns: "140px 140px 1fr", gap: 16, padding: "10px 14px", borderBottom: "1px solid var(--line-soft)", border: i === 0 ? "1px solid var(--line)" : "", borderBottom: "1px solid var(--line-soft)" }}>
+                      <div style={{ color: "var(--fg-mute)" }}>{row.s}</div>
+                      <div style={{ color: "var(--fg)" }}>{row.label}</div>
+                      <div style={{ color: "var(--fg-dim)" }}>{row.v}</div>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+              <Section label="Order type">
+                <div style={{ display: "flex", gap: 6 }}>
+                  {["Limit", "Market", "Stop-limit", "Trailing"].map((o, i) => (
+                    <div key={o} style={{
+                      padding: "8px 14px", border: "1px solid " + (i === 0 ? "var(--acid)" : "var(--line)"),
+                      background: i === 0 ? "var(--acid-faint)" : "transparent",
+                      color: i === 0 ? "var(--acid)" : "var(--fg-dim)",
+                      fontFamily: "var(--mono)", fontSize: 12, cursor: "pointer", borderRadius: 3,
+                    }}>{o}</div>
+                  ))}
+                </div>
+                <div style={{ marginTop: 14, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+                  <LabeledInput label="Limit price" value={`${premium.toFixed(2)}`} />
+                  <LabeledInput label="Time in force" value="Day" />
+                </div>
+              </Section>
+            </>
+          )}
+        </div>
+
+        {/* ticket summary rail */}
+        <div style={{ padding: "32px 28px", background: "var(--bg-elev)" }}>
+          <div className="h-eyebrow" style={{ marginBottom: 16 }}>Order preview</div>
+
+          <div style={{ background: "var(--bg-card)", border: "1px solid var(--line)", padding: 24 }}>
+            <div style={{ fontFamily: "var(--sans)", fontSize: 22, letterSpacing: "-0.02em", color: "var(--fg)", marginBottom: 6 }}>
+              Sell to open
+            </div>
+            <div style={{ fontFamily: "var(--mono)", fontSize: 14, color: "var(--fg)", marginBottom: 20 }}>
+              {qty}× {ticker} {exp} <span style={{ color: "var(--acid)" }}>${strike}C</span> @ ${premium.toFixed(2)}
+            </div>
+
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 1, background: "var(--line)", border: "1px solid var(--line)", marginBottom: 16 }}>
+              <MiniStat label="Premium received" value={`${total.toFixed(0)}`} sub={`${premium.toFixed(2)} × ${qty * 100}`} bg="var(--bg-card)" />
+              <MiniStat label="Ann. yield" value={`${yieldAnn.toFixed(1)}%`} sub={`on ${ticker} basis`} bg="var(--bg-card)" />
+              <MiniStat label="P.O.P." value={`${pop}%`} sub="prob. profit" bg="var(--bg-card)" />
+              <MiniStat label="If assigned" value={`${(strike * qty * 100).toLocaleString()}`} sub={`+${((strike - p.avg) / p.avg * 100).toFixed(1)}% on shares`} bg="var(--bg-card)" />
+            </div>
+
+            {/* payoff sketch */}
+            <PayoffChart price={p.price} strike={strike} premium={premium} avg={p.avg} />
+
+            <div style={{ fontSize: 11, fontFamily: "var(--mono)", color: "var(--fg-mute)", marginTop: 14, lineHeight: 1.6 }}>
+              Max profit if {ticker} closes above ${strike}: <span style={{ color: "var(--acid)" }}>${((strike - p.avg) * qty * 100 + total).toFixed(0)}</span>.
+              Shares will be called away.
+            </div>
+          </div>
+
+          <div style={{ marginTop: 20, display: "flex", flexDirection: "column", gap: 10 }}>
+            <button className="h-btn primary" style={{ height: 44, fontSize: 14 }}>
+              Review & submit order
+            </button>
+            <button className="h-btn" style={{ height: 36 }} onClick={() => goto("dashboard")}>
+              Save to watchlist
+            </button>
+            <div style={{ fontSize: 10, color: "var(--fg-mute)", fontFamily: "var(--mono)", textAlign: "center", marginTop: 6, lineHeight: 1.6 }}>
+              Executed via connected broker (Schwab).<br/>Subject to broker approval and market hours.
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const selectStyle = {
+  height: 36, padding: "0 12px", border: "1px solid var(--line-strong)", background: "var(--bg-card)",
+  color: "var(--fg)", fontFamily: "var(--body)", fontSize: 13, borderRadius: 3, outline: "none",
+};
+
+function Section({ label, hint, children }) {
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ display: "flex", alignItems: "baseline", marginBottom: 10 }}>
+        <div className="h-eyebrow">{label}</div>
+        <div style={{ flex: 1 }} />
+        {hint && <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-mute)" }}>{hint}</div>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Greek({ label, value }) {
+  return (
+    <div style={{ background: "var(--bg-card)", padding: "12px 14px" }}>
+      <div style={{ fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-mute)", textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</div>
+      <div className="num" style={{ fontSize: 14, color: "var(--fg)", marginTop: 4 }}>{value}</div>
+    </div>
+  );
+}
+
+function LabeledInput({ label, value }) {
+  return (
+    <div>
+      <div className="h-eyebrow" style={{ marginBottom: 6 }}>{label}</div>
+      <input defaultValue={value} style={selectStyle} />
+    </div>
+  );
+}
+
+function PayoffChart({ price, strike, premium, avg }) {
+  const w = 360, h = 90;
+  const xMin = avg * 0.8, xMax = strike * 1.2;
+  const toX = v => ((v - xMin) / (xMax - xMin)) * w;
+  const payoff = v => v < strike ? (v - avg) * 100 + premium * 100 : (strike - avg) * 100 + premium * 100;
+  const maxP = payoff(strike) + 50;
+  const minP = (xMin - avg) * 100 + premium * 100;
+  const toY = v => h - ((v - minP) / (maxP - minP)) * h;
+  const pts = [];
+  for (let v = xMin; v <= xMax; v += (xMax - xMin) / 60) pts.push([toX(v), toY(payoff(v))]);
+  const d = pts.map((p, i) => (i === 0 ? "M" : "L") + p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" ");
+  return (
+    <div>
+      <div className="h-eyebrow" style={{ marginBottom: 8 }}>Payoff at expiry</div>
+      <svg viewBox={`0 0 ${w} ${h}`} style={{ width: "100%", height: h, border: "1px solid var(--line-soft)" }}>
+        <line x1="0" y1={toY(0)} x2={w} y2={toY(0)} stroke="var(--line)" strokeDasharray="2 3" />
+        <line x1={toX(strike)} y1="0" x2={toX(strike)} y2={h} stroke="var(--acid-line)" strokeDasharray="2 3" />
+        <line x1={toX(avg)} y1="0" x2={toX(avg)} y2={h} stroke="var(--warn)" strokeDasharray="2 3" opacity="0.7" />
+        <path d={d} stroke="var(--acid)" strokeWidth="1.4" fill="none" />
+        <text x={toX(strike) + 4} y="10" fontFamily="var(--mono)" fontSize="9" fill="var(--acid)">strike ${strike}</text>
+        <text x={toX(avg) + 4} y="22" fontFamily="var(--mono)" fontSize="9" fill="var(--warn)">basis ${avg.toFixed(2)}</text>
+      </svg>
+    </div>
+  );
+}
+
+Object.assign(window, { TradeTicket });
+
+
+// ===== components/Onboarding.jsx =====
+// Onboarding flow — 4 steps. Signup → Connect broker → Import portfolio → Goals.
+
+function Onboarding({ goto = () => {} }) {
+  const [step, setStep] = React.useState(0);
+  const steps = ["Account", "Connect", "Import", "Goals"];
+
+  return (
+    <div className="h-root" style={{ minHeight: "100vh", background: "var(--bg)", display: "flex", flexDirection: "column" }}>
+      {/* top bar */}
+      <div style={{ height: 60, borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", padding: "0 32px", background: "var(--bg)" }}>
+        <HarvestLogo size={18} />
+        <div style={{ flex: 1 }} />
+        <div style={{ fontSize: 12, color: "var(--fg-mute)", fontFamily: "var(--mono)" }}>
+          Step {step + 1} of {steps.length}
+        </div>
+      </div>
+
+      {/* stepper */}
+      <div style={{ padding: "28px 32px 0", display: "flex", gap: 4, maxWidth: 760, margin: "0 auto", width: "100%" }}>
+        {steps.map((s, i) => (
+          <div key={s} style={{ flex: 1 }}>
+            <div style={{ height: 3, background: i <= step ? "var(--acid)" : "var(--line)", marginBottom: 8 }} />
+            <div style={{ fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: i === step ? "var(--fg)" : "var(--fg-mute)" }}>
+              {String(i + 1).padStart(2, "0")} · {s}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* content */}
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
+        <div style={{ width: 560 }}>
+          {step === 0 && <OnbAccount />}
+          {step === 1 && <OnbConnect />}
+          {step === 2 && <OnbImport />}
+          {step === 3 && <OnbGoals />}
+
+          <div style={{ marginTop: 36, display: "flex", gap: 10 }}>
+            {step > 0 && <button className="h-btn" onClick={() => setStep(step - 1)}>Back</button>}
+            <div style={{ flex: 1 }} />
+            {step < steps.length - 1 ? (
+              <button className="h-btn primary" onClick={() => setStep(step + 1)}>Continue →</button>
+            ) : (
+              <button className="h-btn primary" onClick={() => goto("dashboard")}>Enter Harvest →</button>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function OnbAccount() {
+  return (
+    <div>
+      <div className="h-eyebrow" style={{ marginBottom: 12 }}>Create your account</div>
+      <h2 style={{ fontSize: 32, letterSpacing: "-0.02em", fontWeight: 500, margin: "0 0 12px" }}>Let's plant the first row.</h2>
+      <p style={{ color: "var(--fg-dim)", fontSize: 14, lineHeight: 1.6, marginBottom: 28 }}>
+        Harvest is read-only by default. We never move money or place trades unless you explicitly authorize it.
+      </p>
+      <div style={{ display: "grid", gap: 14 }}>
+        <Input label="Email" placeholder="jane@meridian.co" />
+        <Input label="Password" placeholder="••••••••••••" type="password" />
+        <div style={{ display: "flex", gap: 12 }}>
+          <Input label="First name" placeholder="Jane" />
+          <Input label="Last name" placeholder="Meridian" />
+        </div>
+      </div>
+      <div style={{ marginTop: 20, display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12, color: "var(--fg-mute)", lineHeight: 1.5 }}>
+        <input type="checkbox" defaultChecked />
+        <span>I agree to Harvest's <a style={{ color: "var(--fg)", textDecoration: "underline" }}>Terms</a> and <a style={{ color: "var(--fg)", textDecoration: "underline" }}>Privacy policy</a>. I understand Harvest is educational and not personalized investment advice.</span>
+      </div>
+    </div>
+  );
+}
+
+function OnbConnect() {
+  const brokers = [
+    { n: "Schwab", note: "Full support · instant", rec: true },
+    { n: "Interactive Brokers", note: "Full support · OAuth" },
+    { n: "Fidelity", note: "Read-only via link" },
+    { n: "Robinhood", note: "Read-only via link" },
+    { n: "E*TRADE", note: "Full support · OAuth" },
+    { n: "Vanguard", note: "CSV import only" },
+  ];
+  const [sel, setSel] = React.useState("Schwab");
+  return (
+    <div>
+      <div className="h-eyebrow" style={{ marginBottom: 12 }}>Connect your broker</div>
+      <h2 style={{ fontSize: 32, letterSpacing: "-0.02em", fontWeight: 500, margin: "0 0 12px" }}>Where do your shares live?</h2>
+      <p style={{ color: "var(--fg-dim)", fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
+        Pick one broker to start. You can add more later. We use read-only OAuth — your credentials never touch our servers.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        {brokers.map(b => (
+          <div key={b.n} onClick={() => setSel(b.n)} style={{
+            padding: 16, border: "1px solid " + (sel === b.n ? "var(--acid)" : "var(--line)"),
+            background: sel === b.n ? "var(--acid-faint)" : "var(--bg-card)", cursor: "pointer",
+            borderRadius: 3, position: "relative",
+          }}>
+            {b.rec && <div style={{ position: "absolute", top: 8, right: 8, fontFamily: "var(--mono)", fontSize: 9, letterSpacing: "0.1em", textTransform: "uppercase", color: "var(--acid)" }}>Recommended</div>}
+            <div style={{ fontSize: 14, fontWeight: 500, color: "var(--fg)" }}>{b.n}</div>
+            <div style={{ fontSize: 11, color: "var(--fg-mute)", fontFamily: "var(--mono)", marginTop: 6 }}>{b.note}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 20, padding: 14, border: "1px dashed var(--line-strong)", background: "var(--bg-elev)", borderRadius: 3, fontSize: 11, color: "var(--fg-mute)", fontFamily: "var(--mono)", lineHeight: 1.6 }}>
+        DON'T SEE YOUR BROKER? Upload a CSV of your positions instead — we'll guide you through mapping it.
+      </div>
+    </div>
+  );
+}
+
+function OnbImport() {
+  return (
+    <div>
+      <div className="h-eyebrow" style={{ marginBottom: 12 }}>Import portfolio</div>
+      <h2 style={{ fontSize: 32, letterSpacing: "-0.02em", fontWeight: 500, margin: "0 0 12px" }}>Bringing in your harvest-ready shares.</h2>
+      <p style={{ color: "var(--fg-dim)", fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
+        We found 8 positions with enough shares to write covered calls. Choose which to include.
+      </p>
+      <div style={{ border: "1px solid var(--line)", background: "var(--bg-card)" }}>
+        {HARVEST_POSITIONS.slice(0, 6).map((p, i) => (
+          <div key={p.sym} style={{
+            display: "grid", gridTemplateColumns: "28px 60px 1fr 100px 80px", gap: 12,
+            padding: "12px 16px", borderBottom: i < 5 ? "1px solid var(--line-soft)" : "none", alignItems: "center",
+          }}>
+            <input type="checkbox" defaultChecked />
+            <div className="num" style={{ fontSize: 13, color: "var(--fg)" }}>{p.sym}</div>
+            <div style={{ fontSize: 12, color: "var(--fg-mute)" }}>{p.name}</div>
+            <div className="num" style={{ fontSize: 12, color: "var(--fg-dim)", textAlign: "right" }}>{p.shares.toLocaleString()} sh</div>
+            <div className="num" style={{ fontSize: 12, color: "var(--fg-dim)", textAlign: "right" }}>${(p.price * p.shares / 1000).toFixed(1)}k</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ marginTop: 16, display: "flex", gap: 16, fontSize: 12, color: "var(--fg-mute)", fontFamily: "var(--mono)" }}>
+        <span>6 of 8 selected</span><span>·</span><span>Total value: $482,400</span>
+      </div>
+    </div>
+  );
+}
+
+function OnbGoals() {
+  const [sel, setSel] = React.useState(["income"]);
+  const toggle = v => setSel(sel.includes(v) ? sel.filter(x => x !== v) : [...sel, v]);
+  const goals = [
+    { id: "income", t: "Monthly income", d: "Maximize premium; accept occasional assignment." },
+    { id: "hold", t: "Hold shares long-term", d: "Conservative strikes; prioritize keeping position." },
+    { id: "offset", t: "Offset unrealized losses", d: "Reduce cost basis on underwater positions." },
+    { id: "learn", t: "Learn the wheel", d: "Start small; emphasize education and simulation." },
+  ];
+  return (
+    <div>
+      <div className="h-eyebrow" style={{ marginBottom: 12 }}>Your goals</div>
+      <h2 style={{ fontSize: 32, letterSpacing: "-0.02em", fontWeight: 500, margin: "0 0 12px" }}>What are you harvesting for?</h2>
+      <p style={{ color: "var(--fg-dim)", fontSize: 14, lineHeight: 1.6, marginBottom: 24 }}>
+        Recommendations will prioritize these. You can change them any time.
+      </p>
+      <div style={{ display: "grid", gap: 10 }}>
+        {goals.map(g => (
+          <div key={g.id} onClick={() => toggle(g.id)} style={{
+            padding: 16, border: "1px solid " + (sel.includes(g.id) ? "var(--acid)" : "var(--line)"),
+            background: sel.includes(g.id) ? "var(--acid-faint)" : "var(--bg-card)", cursor: "pointer", borderRadius: 3,
+            display: "flex", gap: 14, alignItems: "flex-start",
+          }}>
+            <div style={{
+              width: 18, height: 18, borderRadius: 3, border: "1px solid " + (sel.includes(g.id) ? "var(--acid)" : "var(--line-strong)"),
+              background: sel.includes(g.id) ? "var(--acid)" : "transparent", display: "flex", alignItems: "center", justifyContent: "center",
+              color: "var(--bg)", fontSize: 11, marginTop: 1,
+            }}>{sel.includes(g.id) ? "✓" : ""}</div>
+            <div>
+              <div style={{ fontSize: 14, fontWeight: 500, color: "var(--fg)" }}>{g.t}</div>
+              <div style={{ fontSize: 12, color: "var(--fg-mute)", marginTop: 4 }}>{g.d}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Input({ label, placeholder, type = "text" }) {
+  return (
+    <div>
+      <div className="h-eyebrow" style={{ marginBottom: 6 }}>{label}</div>
+      <input type={type} placeholder={placeholder} style={{
+        width: "100%", height: 40, padding: "0 12px", border: "1px solid var(--line-strong)",
+        background: "var(--bg-card)", color: "var(--fg)", fontFamily: "var(--body)", fontSize: 14, borderRadius: 3, outline: "none",
+      }} />
+    </div>
+  );
+}
+
+Object.assign(window, { Onboarding });
+
+
+// ===== app-prototype.jsx =====
+// Harvest — clickable app prototype. Single file; AppShell + router.
+
+function HarvestApp() {
+  // Start with onboarding if ?onboard, else dashboard. Persist route.
+  const params = new URLSearchParams(location.search);
+  const startOnboarding = params.get("onboard") === "1";
+  const [route, setRoute] = React.useState(() => {
+    if (startOnboarding) return "onboarding";
+    try { return localStorage.getItem("harvest.route") || "dashboard"; } catch (e) { return "dashboard"; }
+  });
+  const [sym, setSym] = React.useState("AAPL");
+
+  const goto = (r, extra) => {
+    if (r === "position" && extra?.sym) setSym(extra.sym);
+    setRoute(r);
+    try { localStorage.setItem("harvest.route", r); } catch (e) {}
+    window.scrollTo(0, 0);
+  };
+
+  if (route === "onboarding") {
+    return <Onboarding goto={goto} />;
+  }
+
+  return (
+    <AppShellRouted route={route} setRoute={setRoute}>
+      {({ route: r, goto: _g }) => {
+        const g = (to, ex) => { if ((to === "position" || to === "ticket") && ex?.sym) setSym(ex.sym); _g(to); };
+        switch (r) {
+          case "dashboard": return <DashboardInner goto={g} />;
+          case "positions": return <PositionsView goto={g} />;
+          case "recommendations": return <RecommendationsView goto={g} />;
+          case "screener": return <Screener goto={g} />;
+          case "watchlist": return <Watchlist />;
+          case "journal": return <Journal goto={g} />;
+          case "performance": return <Performance />;
+          case "academy": return <Academy />;
+          case "alerts": return <Alerts />;
+          case "settings": return <Settings />;
+          case "position": return <PositionDetail sym={sym} goto={g} />;
+          case "ticket": return <TradeTicket sym={sym} goto={g} />;
+          default: return <DashboardInner goto={g} />;
+        }
+      }}
+    </AppShellRouted>
+  );
+}
+
+// AppShell variant that accepts external route control (for persistence + deep links).
+function AppShellRouted({ route, setRoute, children }) {
+  const nav = [
+    { section: "Portfolio" },
+    { id: "dashboard", label: "Dashboard", icon: "▦" },
+    { id: "positions", label: "Positions", icon: "≡" },
+    { id: "recommendations", label: "Recommendations", icon: "◆", badge: 3 },
+    { section: "Trade" },
+    { id: "screener", label: "Screener", icon: "◇" },
+    { id: "watchlist", label: "Watchlist", icon: "◉" },
+    { id: "journal", label: "Trade journal", icon: "⌂" },
+    { section: "Research" },
+    { id: "performance", label: "Performance", icon: "◎" },
+    { id: "academy", label: "Academy", icon: "⌘" },
+    { section: "System" },
+    { id: "alerts", label: "Alerts", icon: "!", badge: 2 },
+    { id: "settings", label: "Settings", icon: "◐" },
+  ];
+
+  const goto = r => { setRoute(r); try { localStorage.setItem("harvest.route", r); } catch (e) {} };
+
+  const effectiveActive = route === "position" ? "positions" : route === "ticket" ? "recommendations" : route;
+
+  return (
+    <div className="h-root" style={{ display: "grid", gridTemplateColumns: "240px 1fr", minHeight: "100vh", background: "var(--bg)" }}>
+      <aside style={{
+        borderRight: "1px solid var(--line)", padding: "20px 0", background: "var(--bg-elev)",
+        display: "flex", flexDirection: "column", gap: 2, position: "sticky", top: 0, height: "100vh", overflowY: "auto",
+      }} className="h-scroll">
+        <div style={{ padding: "4px 20px 24px", cursor: "pointer" }} onClick={() => goto("dashboard")}>
+          <HarvestLogo size={18} />
+        </div>
+        {nav.map((n, i) => {
+          if (n.section) return (
+            <div key={"s" + i} style={{
+              fontFamily: "var(--mono)", fontSize: 10, letterSpacing: "0.14em",
+              textTransform: "uppercase", color: "var(--fg-faint)", padding: "18px 20px 6px",
+            }}>{n.section}</div>
+          );
+          const active = effectiveActive === n.id;
+          return (
+            <div key={n.id} onClick={() => goto(n.id)} style={{
+              margin: "0 10px", padding: "8px 12px", borderRadius: 4,
+              display: "flex", alignItems: "center", gap: 12, cursor: "pointer",
+              color: active ? "var(--fg)" : "var(--fg-dim)", fontSize: 13,
+              background: active ? "var(--bg-card)" : "transparent",
+              border: active ? "1px solid var(--line)" : "1px solid transparent",
+              fontWeight: active ? 500 : 400,
+            }}>
+              <span style={{ fontFamily: "var(--mono)", fontSize: 12, width: 14, textAlign: "center", color: active ? "var(--acid)" : "var(--fg-mute)" }}>{n.icon}</span>
+              <span style={{ flex: 1 }}>{n.label}</span>
+              {n.badge && (
+                <span className="num" style={{ fontSize: 10, padding: "2px 6px", background: "var(--acid)", color: "var(--bg)", borderRadius: 2, letterSpacing: 0 }}>{n.badge}</span>
+              )}
+            </div>
+          );
+        })}
+        <div style={{ flex: 1 }} />
+        <div style={{ margin: 12, padding: 12, border: "1px solid var(--line)", borderRadius: 4, background: "var(--bg-card)" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 4, background: "var(--acid)", color: "var(--bg)", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "var(--sans)", fontWeight: 600, fontSize: 12 }}>JM</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: "var(--fg)" }}>John Meridian</div>
+              <div style={{ fontSize: 10, color: "var(--fg-mute)", fontFamily: "var(--mono)" }}>Schwab · IBKR</div>
+            </div>
+          </div>
+        </div>
+      </aside>
+
+      <main style={{ minWidth: 0, display: "flex", flexDirection: "column" }}>
+        <AppTopBar route={route} goto={goto} />
+        <div style={{ flex: 1, minHeight: 0 }}>
+          {typeof children === "function" ? children({ route, goto }) : children}
+        </div>
+      </main>
+    </div>
+  );
+}
+
+Object.assign(window, { HarvestApp, AppShellRouted });
+
+
+
+const _root = ReactDOM.createRoot(document.getElementById('root'));
+_root.render(<HarvestApp />);
+</script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script>
+(function(){
+  var src = document.getElementById('jsx-source').textContent;
+  var out;
+  try { out = Babel.transform(src, { presets: ['react'] }).code; }
+  catch(e){ document.body.innerHTML='<pre style="color:#000;background:#faf8f3;padding:20px;font:12px monospace">Babel parse error: '+ (e.message||e) +'</pre>'; throw e; }
+  try { (0, eval)(out); }
+  catch(e){ document.body.innerHTML='<pre style="color:#000;background:#faf8f3;padding:20px;font:12px monospace">Runtime error: '+ (e.message||e) +'\n'+(e.stack||'') +'</pre>'; throw e; }
+})();
+</script>
+</body>
+</html>

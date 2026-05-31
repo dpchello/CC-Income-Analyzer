@@ -1,0 +1,137 @@
+/* Harvest — design tokens */
+:root {
+  /* Paper-white premium palette. Warm off-white with forest/olive accent. */
+  --bg: #faf8f3;
+  --bg-elev: #f3f0e7;
+  --bg-elev-2: #ebe7db;
+  --bg-card: #ffffff;
+  --line: rgba(24, 28, 20, 0.10);
+  --line-strong: rgba(24, 28, 20, 0.18);
+  --line-soft: rgba(24, 28, 20, 0.06);
+
+  --fg: #1a1e16;
+  --fg-dim: #4a4f44;
+  --fg-mute: #6e7166;
+  --fg-faint: #9a9a90;
+
+  /* 'acid' token kept — now remapped to a deep forest/olive so every existing
+     reference carries the new accent without component edits. */
+  --acid: #2f5233;
+  --acid-dim: #3f6844;
+  --acid-deep: #1e3621;
+  --acid-faint: rgba(47, 82, 51, 0.08);
+  --acid-line: rgba(47, 82, 51, 0.28);
+
+  --warn: #b8502e;
+  --warn-faint: rgba(184, 80, 46, 0.10);
+  --down: #c14a35;
+
+  --olive: #6a7648;
+  --olive-dim: #4a5436;
+
+  --serif: "Instrument Serif", "Cormorant Garamond", Georgia, serif;
+  --sans: "Inter Tight", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+
+  --r-1: 2px;
+  --r-2: 4px;
+  --r-3: 8px;
+  --r-4: 12px;
+}
+
+* { box-sizing: border-box; }
+
+.h-root {
+  font-family: var(--body);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
+}
+
+.h-root .num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.h-root .display { font-family: var(--sans); letter-spacing: -0.03em; font-weight: 500; }
+.h-root .serif { font-family: var(--serif); font-weight: 400; letter-spacing: -0.01em; }
+
+/* subtle grain */
+.h-grain::before {
+  content: "";
+  position: absolute; inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.4 0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.5'/></svg>");
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.h-hair { border: 0; border-top: 1px solid var(--line); margin: 0; }
+
+.h-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 36px; padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--body);
+  font-size: 13px; font-weight: 500;
+  letter-spacing: -0.005em;
+  border-radius: var(--r-2);
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.h-btn:hover { background: rgba(24,28,20,0.04); }
+.h-btn.primary {
+  background: var(--acid);
+  color: #faf8f3;
+  border-color: var(--acid);
+  font-weight: 600;
+}
+.h-btn.primary:hover { background: var(--acid-deep); }
+.h-btn.ghost { border-color: transparent; color: var(--fg-dim); }
+.h-btn.ghost:hover { color: var(--fg); background: rgba(24,28,20,0.04); }
+.h-btn.sm { height: 28px; padding: 0 10px; font-size: 12px; }
+
+.h-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 22px; padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-family: var(--mono); font-size: 11px;
+  color: var(--fg-dim);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.h-chip.acid { color: var(--acid); border-color: var(--acid-line); background: var(--acid-faint); }
+.h-chip.warn { color: var(--warn); border-color: rgba(240,112,74,0.3); background: var(--warn-faint); }
+.h-chip.solid { background: var(--bg-elev); }
+
+.h-eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+}
+
+.h-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--acid); }
+
+.h-up { color: var(--acid); }
+.h-down { color: var(--down); }
+
+/* scrollbar */
+.h-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.h-scroll::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
+
+/* loading bar texture for placeholder imagery */
+.h-placeholder {
+  background:
+    repeating-linear-gradient(135deg,
+      rgba(24,28,20,0.02) 0 8px,
+      rgba(24,28,20,0.05) 8px 16px);
+  border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--fg-faint);
+  font-family: var(--mono); font-size: 10px;
+  letter-spacing: 0.12em; text-transform: uppercase;
+}

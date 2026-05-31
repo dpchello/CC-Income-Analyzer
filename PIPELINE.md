@@ -42,15 +42,41 @@
 
 ---
 
+### PIPE-001 · Surface Roll Targets + Defense in Action Cards
+**Status:** `approved`
+**Description:** Wire the EXISTING roll/defense backend into the My Positions action cards so users can see and act on roll suggestions, 3-scenario roll targets, and early-exercise risk. This is surfacing work — the backend already computes everything; the UI just never calls it. (Approved from the 2026-05-31 `/whats-next` memo, recommendation #1 — highest North-Star-per-effort because the value is built but invisible.)
+
+**Use the endpoints that already exist (do NOT build a new roll-suggest endpoint):**
+- `GET /api/positions/roll-candidates` — detects 50%-profit close, ITM roll up-and-out, 21-DTE defensive roll
+- `GET /api/roll-targets/{id}` — DEFENSIVE / BALANCED / INCOME scenarios with net credit, new strike, new expiry, break-even
+- per-position `early_exercise_risk` (NONE→CRITICAL), already on the positions payload
+
+**Tasks:**
+1. On each position's action card (`frontend/src/components/Portfolios.jsx`), fetch and render the roll scenarios (net credit, new strike/expiry, break-even) in plain English per GLOSSARY.
+2. Show the `early_exercise_risk` badge with a one-line "why."
+3. Add a one-click "Roll to this" that PRE-FILLS the close+open trade (reuse the Add Position form / PIPE-REC-06 pattern). Pre-fill only — never auto-execute.
+4. For ITM positions, label the roll-up-and-out scenario "Defend these shares" to tie it to Goal #6 (Position Defense).
+
+**Scope:** `frontend/src/components/Portfolios.jsx` (action cards); read-only use of existing `/api/positions/roll-candidates` and `/api/roll-targets/{id}` — no new backend logic.
+**Rationale:** Lowest-effort, highest-North-Star work available. Moves capture rate AND positions-defended at once, and delivers ~70% of Goal #6 (everything except finance-the-buyback, which is PIPE-036).
+
+---
+
 ### PIPE-029 · Freemium Gate Enforcement + Upgrade UI (Phase 3)
 **Status:** `approved`
 **Description:** Enforce free tier limits in the backend, wire up blur/lock overlays in the frontend, and add the upgrade modal so a free user hitting a limit can convert to Pro.
 
+**Gate model (updated 2026-05-31):** Free tier = **3-position hard cap** + **$1,000
+cumulative-profit gate** (supplemental). **No screener run-limit** — free users get
+unlimited screener runs; the only screener gate is results (free sees the top opportunity,
+Pro sees all).
+
 **Backend changes (`backend/main.py`):**
-- `GET /api/positions` — slice to first 3 positions when `user.tier == "free"`
-- `GET /api/screener` — check `UsageLog` table: if free user has already run screener today, return `403 {"code": "DAILY_LIMIT_REACHED"}`; otherwise log the run
-- `GET /api/scorecard`, `GET /api/oi/chain` — `require_pro` dependency (403 for free users)
-- Add `require_pro` helper: `if user.tier != "pro": raise HTTPException(403, {"code": "UPGRADE_REQUIRED"})`
+- `GET /api/positions` — slice to first 3 positions when `user.tier == "free"` (the hard cap; currently UI-only — enforce it here)
+- **Profit gate — already live, do NOT remove.** `check_write_access` (PROFIT_GATE_THRESHOLD = $1,000) already returns `403 {"code": "PROFIT_GATE_REACHED"}` on all mutating endpoints once a free user's cumulative closed-position profit ≥ $1,000. This is the supplemental gate — leave it in place.
+- **Do NOT add a screener daily-run limit.** Skip `UsageLog` / `DAILY_LIMIT_REACHED` entirely — the 1-run/day limit was removed from strategy 2026-05-31.
+- `GET /api/scorecard`, `GET /api/oi/chain` — `require_pro` dependency (403 for free users); confirm/keep
+- Add `require_pro` helper if missing: `if user.tier != "pro": raise HTTPException(403, {"code": "UPGRADE_REQUIRED"})`
 
 **New frontend components:**
 - `frontend/src/components/UpgradeModal.jsx` — full-screen modal, pricing table (free vs pro, annual/monthly toggle), "Upgrade" CTA (placeholder until Stripe is wired)
@@ -59,8 +85,10 @@
 
 **Wiring:**
 - `App.jsx`: `useUpgrade()` context so any component can trigger the modal with `triggerUpgrade("reason")`
-- `Screener.jsx`: wrap results after index 0 with `<LockedFeature />`
+- `Screener.jsx`: wrap results after index 0 with `<LockedFeature />` (results tease — keep)
 - `Portfolios.jsx`: render `<PositionLimitBanner />` when at free limit
+- **Remove** any "1 screener run per day" copy (e.g. `SignalTracker.jsx`) — that limit no longer exists
+- Upgrade-modal reasons should reference the 3-position cap and the $1,000 profit gate, not screener runs
 
 **Scope:** `backend/main.py`, `frontend/src/components/UpgradeModal.jsx` (new), `LockedFeature.jsx` (new), `PositionLimitBanner.jsx` (new), `App.jsx`, `Screener.jsx`, `Portfolios.jsx`
 **Rationale:** Free tier limits are the core freemium mechanic. Without them, there's no upgrade pressure and no business. Must ship before any real users are invited.
@@ -91,11 +119,32 @@
 
 ---
 
-### PIPE-001 · Roll Recommendation Engine
+### PIPE-036 · Finance-the-Buyback + Runway Forecast (Goal #6 net-new)
+**Status:** `approved`
+**Description:** For a deep-ITM tested position where a roll alone can't fund the close, generate the financing plan from STRATEGY.md "Position Defense / Repair": short-dated, low-delta income trades whose premium buys back the tested call, plus a runway forecast. Builds on PIPE-001 — depends on it, queue after. (Approved from the 2026-05-31 `/whats-next` memo.)
+**Tasks:**
+1. Define "deep ITM" explicitly (e.g. delta ≥ 0.70, or intrinsic ≥ X% of original premium) and flag qualifying positions.
+2. Compute and persist cost-to-close per flagged position (today `close_cost_total` only exists inside roll-targets).
+3. Income-trade scanner: from the user's owned shares / available capital, find short-dated, low-delta (≤ ~0.15) candidates with high probability of expiring worthless, ranked by premium-per-day toward the buyback.
+4. Runway forecast: "at the current premium pace, ~N income cycles to neutralize this position." Surface beside the roll scenarios from PIPE-001.
+5. Plain-English framing; respect Goal #5 (no jargon, show the "why").
+**Scope:** `backend/main.py` (new endpoint(s) for deep-ITM detection + income-trade scan + runway), `frontend/src/components/Portfolios.jsx` (defense panel on the card).
+**Rationale:** The net-new ~30% of Goal #6 and Harvest's clearest wedge — holder tools warn about assignment; none engineer the way out.
+
+---
+
+### PIPE-037 · Stripe Billing (Checkout + Customer Portal + Webhook)
 **Status:** `pending`
-**Description:** When the Portfolio Intelligence Panel shows a ROLL or GAMMA_DANGER action item, surface a specific roll target — the best-scoring screener candidate at the same or higher strike with 30–45 DTE — directly in the action card. Include a one-click "Roll to this" button that closes the current position at market and opens the suggested one.
-**Scope:** `backend/main.py` (new `/api/positions/{id}/roll-suggest` endpoint), `frontend/src/components/Portfolios.jsx` (action card enhancement)
-**Rationale:** Users currently see "Roll Soon" with no guidance on where to roll. This completes the loop.
+**Blocked on:** USER — needs a Stripe account + decided price IDs ($29/mo, $240/yr) before this can be built. Flip to `approved` once keys are in env.
+**Description:** Replace the placeholder "Start Pro" button in `UpgradeModal.jsx` with a real Stripe Checkout flow, handle the webhook to flip `user.tier` to `pro`, and add a Customer Portal link for managing/cancelling. (From the 2026-05-31 `/whats-next` memo, recommendation #3.)
+**Tasks:**
+1. `POST /api/billing/checkout` — create a Stripe Checkout session for the selected plan; return the URL.
+2. `POST /api/billing/webhook` — on `checkout.session.completed` / subscription events, set the user's tier to `pro`; on cancellation, revert to `free`.
+3. `GET /api/billing/portal` — Stripe Customer Portal session for self-serve management.
+4. Wire `UpgradeModal.jsx` "Start Pro" to call checkout; add a "Manage subscription" link for Pro users.
+5. Sequence AFTER PIPE-029 (gates) — otherwise paying users get nothing free users don't.
+**Scope:** `backend/main.py` (billing endpoints + Stripe SDK), `frontend/src/components/UpgradeModal.jsx`, subscription/tier persistence.
+**Rationale:** No paid tier = no business. This is the revenue gate; everything else funds off it.
 
 ---
 

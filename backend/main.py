@@ -935,11 +935,14 @@ def get_holdings_endpoint(
     current_user: User = Depends(auth_module.get_current_user),
 ):
     holdings = db.get_holdings(current_user.id, portfolio_id=portfolio_id)
-    spy_price = fetcher.get_spy_price().get("price", 0)
+    price_cache = {}  # memo within this request so a repeated ticker fetches once
     enriched = []
     for h in holdings:
         row = dict(h)
-        price    = spy_price if h["ticker"] == "SPY" else 0
+        ticker   = h["ticker"]
+        if ticker not in price_cache:
+            price_cache[ticker] = fetcher.get_price_for(ticker)
+        price    = price_cache[ticker]
         shares   = h["shares"]
         avg_cost = h.get("avg_cost") or 0
         row["current_price"]      = price

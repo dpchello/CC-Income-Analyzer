@@ -42,6 +42,7 @@ backend/oi_history.json
 backend/oi_tracker_data.json
 backend/recommendations_log.json
 backend/.last_oi_snapshot_full
+backend/oi_snapshot_sentinel.txt
 
 # ── Options data — large files, not committed ─────────────────────────────────
 backend/data/*.duckdb
@@ -69,3 +70,9 @@ backend/data/watchlist.json
 *.pfx
 *.crt
 secrets/
+
+# ── Local-only / sensitive (never commit — PII + test creds) ──────────────────
+TEST_USERS.md
+backend/waitlist.json
+backend/scripts/seed_test_users.py
+backend/cron/autobot_email.py

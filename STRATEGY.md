@@ -59,15 +59,19 @@ on the same stocks."
 Every free-tier interaction should end with a dollar amount the user can't yet act on.
 
 ### Free Tier
-- Track up to **3 positions**
-- **1 screener run per day** (UsageLog table, backend-enforced)
+- Track up to **3 positions** (hard cap)
+- **$1,000 cumulative-profit gate** — once a free user's banked profit from closed
+  positions reaches $1,000, mutating actions (open / modify / close positions) are blocked
+  until they upgrade. They've proven the value; now they pay.
+  (`check_write_access`, `PROFIT_GATE_THRESHOLD` — backend-enforced, live)
+- **Screener: unlimited runs**; results limited to the top opportunity (Pro unlocks all)
 - Calculator: unlimited (public, no login, email gate at 3 anonymous uses)
 - 7-day history
 - No alerts, no roll targets, no scorecard, no OI chain
 
 ### Pro Tier — $29/month or $240/year ($20/mo effective)
 - Unlimited positions
-- Full screener (all results, unlimited runs)
+- Full screener — all ranked results (free sees only the top opportunity)
 - 12-month history + CSV export
 - Roll targets, scorecard, early exercise signals, tax context
 - Email/push alerts
@@ -100,6 +104,34 @@ Every free-tier interaction should end with a dollar amount the user can't yet a
 
 ---
 
+## Position Defense / Repair
+
+A covered-call writer's worst non-loss outcome is having a winning stock called away below
+where it now trades — capping the upside on shares they wanted to keep. When a short call goes
+**deep in-the-money** and assignment looms, Harvest's job is to hand the holder a concrete
+escape plan, not just a warning. This extends the core promise ("keep the shares you want to
+keep") into the moment it matters most.
+
+**The escape plan, in order of preference:**
+
+1. **Roll up / out / up-and-out** — lift the assignment ceiling, preferring a net credit (or the
+   smallest debit the chain allows). Flag clearly when no roll avoids realizing a loss.
+2. **Finance the buyback** — when a roll alone can't cover the cost to close, surface short-dated,
+   low-delta income trades (high probability of expiring worthless — low chance of being called)
+   whose premium generates the cash to buy back the tested call.
+3. **Track the runway** — show *cost-to-close* and *financing runway*: how many income cycles, at
+   the current premium pace, to neutralize the position.
+
+**Status:** active goal, **not yet built.** Scored as goal #6 in the `/whats-next` strategist
+rubric; leading indicator is *positions defended without a forced assignment* and the trend in
+their cost-to-close.
+
+**Why it's a wedge:** holder-focused tools *warn* you about assignment; none *engineer the way
+out*. A visible "roll-to-credit + finance-the-buyback, with a runway" workflow is differentiated
+and on-brand for the holder, not the trader.
+
+---
+
 ## Current Product State
 
 **Ready for first real user.** Auth gate, freemium limits, upgrade UI, and marketing site are all live.
@@ -111,7 +143,7 @@ Every free-tier interaction should end with a dollar amount the user can't yet a
 - Portfolio management (multi-portfolio, archive, holdings)
 - Covered call calculator — any ticker, IP rate-limited, pro users bypass limit
 - JWT auth backend + frontend gate (`auth.jsx`, `AuthGate.jsx`, `apiFetch()`)
-- Freemium gates — 3-position limit, 1 screener/day, Pro-only scorecard + OI chain
+- Freemium gates — $1,000 cumulative-profit gate (live), Pro-only scorecard + OI chain (live); 3-position hard cap enforced in UI, backend enforcement queued (PIPE-029); screener run-limit removed 2026-05-31
 - Upgrade UI — `UpgradeModal.jsx`, `LockedFeature.jsx`, `PositionLimitBanner.jsx`
 - Marketing site deployed to Vercel: `https://marketing-five-taupe.vercel.app`
   - 15 static pages including `/learn/[slug]` article templates
@@ -161,7 +193,7 @@ Every shipped feature, what it does, and why it exists.
 | CALC | Calculator (any ticker) | Public, rate-limited, pro bypass — top-of-funnel lead gen tool |
 | AUTH-BE | Auth backend | JWT signup/login/me, bcrypt, SQLite User/Subscription/UsageLog |
 | PIPE-028 | Frontend auth gate | AuthProvider + AuthGate + apiFetch — app requires login, token in localStorage |
-| PIPE-029 | Freemium gates + upgrade UI | Backend: 3-position slice, 1 screener/day (UsageLog), Pro-only scorecard + OI chain; Frontend: UpgradeModal, LockedFeature, PositionLimitBanner |
+| PIPE-029 | Freemium gates + upgrade UI | $1,000 profit gate (live) + 3-position hard cap (backend enforcement queued) + Pro-only scorecard + OI chain; Frontend: UpgradeModal, LockedFeature, PositionLimitBanner. Screener run-limit removed 2026-05-31. |
 | MKTG | Marketing site | Next.js, 15 static pages, JSON-LD SEO, calculator widget, pricing, /learn/[slug] — deployed to Vercel |
 | PIPE-034 | SnapTrade Brokerage Import | Full SnapTrade integration: register user, connect portal, account selection, holdings import with dedup (upsert by snaptrade_account_id), category mapping (long_stock/covered_call/options), avg_cost from average_purchase_price |
 | PIPE-035 | Brokerage Portfolio Folders | Auto-creates one portfolio per SnapTrade account on sync, grouped into collapsible brokerage folders in sidebar; starred portfolios float to top; any portfolio renameable inline; dedup fixed with unique index on (user_id, snaptrade_account_id) |
@@ -192,8 +224,12 @@ These are not up for re-discussion without an explicit strategy conversation:
 - **Tagline:** "Find, Track, and Capture Every Covered Call Opportunity."
 - **Pricing:** $29/mo or $240/yr — not lower
 - **Auth stack:** JWT + bcrypt — auth layer stays custom. Database is Supabase (Postgres) with RLS for data isolation. No Supabase Auth.
-- **Free tier primary gate:** 3 positions (hard limit)
-- **Free tier secondary gate:** 1 screener run/day (soft, with upgrade prompt)
+- **Free tier hard cap:** 3 positions (hard limit)
+- **Free tier profit gate:** $1,000 cumulative closed-position profit → mutating actions
+  blocked until upgrade. Supplements the 3-position cap (`check_write_access`,
+  `PROFIT_GATE_THRESHOLD`). Instituted 2026-05-31.
+- **Screener:** unlimited runs for free users; results limited to the top opportunity
+  (Pro unlocks all). The former "1 run/day" limit was removed 2026-05-31.
 - **Calculator gate:** 3 anonymous uses (localStorage), then email — no login required
 - **First acquisition channel:** r/dividends post + Seeking Alpha article
 - **Charts library:** Airbnb Visx — not Recharts (removed)
