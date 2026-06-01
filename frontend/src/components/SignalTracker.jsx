@@ -1123,9 +1123,13 @@ export function OIChart() {
   const [oiData, setOiData] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
+  const [capturing, setCapturing] = useState(false)
+  const [captureMsg, setCaptureMsg] = useState(null)
+  const [reloadKey, setReloadKey] = useState(0)   // bump to force a chart refetch
 
   useEffect(() => {
-    apiFetch('/api/options/expiries')
+    // Near-term daily expiries (next ~7 days) — not the 21–60 DTE entry set.
+    apiFetch('/api/oi/expiries')
       .then(r => r.json())
       .then(data => {
         const list = Array.isArray(data) ? data : []
@@ -1148,11 +1152,32 @@ export function OIChart() {
       .catch(() => { if (!cancelled) setError('Could not load OI data.') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [selectedExpiry, captureDate])
+  }, [selectedExpiry, captureDate, reloadKey])
 
   function selectExpiry(exp) {
     setSelectedExpiry(exp)
     setCaptureDate(null)   // reset the scrubber to "latest" when switching expiry
+  }
+
+  async function captureToday() {
+    setCapturing(true)
+    setCaptureMsg(null)
+    try {
+      const res = await apiFetch('/api/oi/snapshot', { method: 'POST' })
+      const data = await res.json()
+      setCaptureMsg(`Captured ${data.captured}/${data.expiries} expiries for ${data.date}.`)
+      setReloadKey(k => k + 1)   // refetch the chart so today's data shows
+    } catch {
+      setCaptureMsg('Capture failed — try again in a moment.')
+    }
+    setCapturing(false)
+  }
+
+  // Short expiry-button label: "Jun 2 · 1d"
+  const fmtExpiry = exp => {
+    const d = new Date(exp + 'T12:00:00')
+    const dte = Math.max(0, Math.round((d - new Date()) / 86400000))
+    return { label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), dte }
   }
 
   const spyPrice = oiData?.spy_price || 0
@@ -1216,6 +1241,16 @@ export function OIChart() {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            {/* Capture today's snapshot on demand */}
+            <button
+              onClick={captureToday}
+              disabled={capturing}
+              className="text-xs px-2.5 py-1 border transition-colors disabled:opacity-50"
+              style={{ borderColor: 'var(--green)', color: 'var(--green)', backgroundColor: 'rgba(62,207,142,0.08)', borderRadius: 'var(--radius-sm)' }}
+              title="Fetch and store today's open interest for the near-term expiries"
+            >
+              {capturing ? 'Capturing…' : '↻ Capture today'}
+            </button>
             {/* View toggle: OI counts vs speculative dollars */}
             <div className="flex border" style={{ borderColor: 'var(--border)', borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
               {[
@@ -1232,24 +1267,29 @@ export function OIChart() {
                 </button>
               ))}
             </div>
-            {/* Expiry selector */}
-            <div className="flex flex-wrap gap-1.5">
-              {expiries.map(exp => (
-                <button
-                  key={exp}
-                  onClick={() => selectExpiry(exp)}
-                  className="text-xs px-2.5 py-1 border transition-colors"
-                  style={{
-                    borderColor: selectedExpiry === exp ? 'var(--blue)' : 'var(--border)',
-                    ...toggleBtn(selectedExpiry === exp),
-                  }}
-                >
-                  {exp}
-                </button>
-              ))}
-            </div>
           </div>
         </div>
+
+        {/* Expiry selector — daily for the first week, weekly after */}
+        <div className="flex flex-wrap gap-1.5 mt-3">
+          {expiries.map(exp => {
+            const { label, dte } = fmtExpiry(exp)
+            const active = selectedExpiry === exp
+            return (
+              <button
+                key={exp}
+                onClick={() => selectExpiry(exp)}
+                className="text-xs px-2.5 py-1 border transition-colors leading-tight"
+                style={{ borderColor: active ? 'var(--blue)' : 'var(--border)', ...toggleBtn(active) }}
+              >
+                {label}<span className="ml-1 opacity-60">{dte === 0 ? '0DTE' : `${dte}d`}</span>
+              </button>
+            )
+          })}
+        </div>
+        {captureMsg && (
+          <div className="text-[11px] mt-2" style={{ color: 'var(--muted)' }}>{captureMsg}</div>
+        )}
       </div>
 
       {loading && (

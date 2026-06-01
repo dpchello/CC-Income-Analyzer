@@ -2153,6 +2153,36 @@ def get_scorecard(
         "recent_log":                   rec_log[-20:],
     }
 
+@app.get("/api/oi/expiries")
+def get_oi_expiries():
+    """Near-term daily expiries for the OI chart (distinct from the 21–60 DTE
+    set /api/options/expiries returns for the position-entry flow)."""
+    return fetcher.get_oi_chart_expiries()
+
+
+@app.post("/api/oi/snapshot")
+def run_oi_snapshot(current_user: User = Depends(auth_module.get_current_user)):
+    """Capture today's OI snapshot for the near-term chart expiries on demand.
+    Synchronous so the chart can refetch and show data immediately. First-write-
+    wins per day, so this is a no-op for expiries already captured today."""
+    expiries = fetcher.get_oi_chart_expiries()
+    captured, errors = 0, []
+    for exp in expiries:
+        try:
+            chain = fetcher.get_options_chain(exp)
+            if chain:
+                oi_tracker.record_chain_snapshot(exp, chain)
+                captured += 1
+        except Exception as e:
+            errors.append(f"{exp}: {e}")
+    return {
+        "date":      date.today().isoformat(),
+        "expiries":  len(expiries),
+        "captured":  captured,
+        "errors":    errors,
+    }
+
+
 @app.get("/api/oi/chain")
 def get_oi_chain(
     expiry: str = Query(...),

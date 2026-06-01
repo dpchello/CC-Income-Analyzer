@@ -75,4 +75,3 @@ secrets/
 TEST_USERS.md
 backend/waitlist.json
 backend/scripts/seed_test_users.py
-backend/cron/autobot_email.py

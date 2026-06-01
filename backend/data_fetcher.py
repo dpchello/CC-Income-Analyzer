@@ -307,6 +307,29 @@ class DataFetcher:
         _cache.set("expiries", result)
         return result
 
+    def get_oi_chart_expiries(self) -> list:
+        """Near-term expiries for the OI chart: every daily expiry in the next
+        7 days, then a few weeklies/monthlies for longer-dated context. SPY
+        expires daily (M–F) now, so this gives day-by-day granularity up front
+        instead of the 21–60 DTE weeklies get_available_expiries returns."""
+        cached = _cache.get("oi_chart_expiries")
+        if cached:
+            return cached
+        try:
+            t = _ticker("SPY")
+            today = datetime.today().date()
+            dated = [
+                (e, (datetime.strptime(e, "%Y-%m-%d").date() - today).days)
+                for e in t.options
+            ]
+            near    = [e for e, dte in dated if 0 <= dte <= 7]   # dailies, this week
+            further = [e for e, dte in dated if dte > 7][:6]     # weeklies/monthlies after
+            result = near + further
+        except Exception:
+            result = []
+        _cache.set("oi_chart_expiries", result)
+        return result
+
     def get_screener_expiries(self, max_dte: int = 60) -> list:
         cache_key = f"screener_expiries_{max_dte}"
         cached = _cache.get(cache_key)
