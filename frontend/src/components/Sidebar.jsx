@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   LayoutDashboard, Rows3, Sparkle, Scan, Eye,
-  BookOpen, ChartLine, GraduationCap, Bell, Settings,
+  BookOpen, ChartLine, GraduationCap, Bell, Settings, Gauge,
 } from 'lucide-react'
 import { HarvestLogo } from './ui/Logo.jsx'
 import { Badge } from './ui/primitives.jsx'
@@ -15,6 +15,7 @@ const NAV = [
   { id: 'Portfolios',      label: 'Positions',        Icon: Rows3 },
   { id: 'Recommendations', label: 'Recommendations',  Icon: Sparkle,       badge: true },
   { section: 'Trade' },
+  { id: 'Signal Tracker',  label: 'Signals',          Icon: Gauge },
   { id: 'Screener',        label: 'Screener',         Icon: Scan },
   { id: 'Watchlist',       label: 'Watchlist',        Icon: Eye },
   { id: 'Journal',         label: 'Trade journal',    Icon: BookOpen },
