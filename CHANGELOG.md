@@ -4,6 +4,31 @@ All notable changes to Harvest are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.0.0] - 2026-06-01
+
+### Added
+- **Markets tab** published — the S&P 500 cap-weighted volume composite (with
+  SPY/QQQ overlays) is now reachable from the sidebar. Backend + data pipeline
+  were already running; only the nav wiring was missing.
+- **Performance tab** published — historical backtests of each covered-call
+  strategy on SPY (with and without Harvest's signal engine), replacing the
+  placeholder screen.
+- **OI chart: daily expiries** — the chart now shows day-by-day expiries for the
+  next week (0–7 DTE) instead of only 21–60 DTE weeklies, via a dedicated
+  `/api/oi/expiries` endpoint that doesn't affect the position-entry flow.
+- **OI chart: "Capture today" button** — runs the snapshot ingestion for the
+  near-term expiries on demand (`POST /api/oi/snapshot`) and refreshes the chart,
+  so data can be seeded without waiting for the pre-market cron.
+
+### Fixed
+- **OI chart showed no data** — the snapshot store only held expired April/May
+  expiries while the chart requested current ones. Ran the ingestion and pointed
+  the chart at near-term dailies; data now populates.
+- **Autobot email fragility** — the daily-summary cron depended on a gitignored
+  file holding a hardcoded recipient. The recipient now comes from
+  `AUTOBOT_EMAIL_TO` (in `.env`), the file is tracked again, and it skips sending
+  if no recipient is configured.
+
 ## [Unreleased] - 2026-05-31
 
 ### Added

@@ -10,6 +10,8 @@ import AuthGate from './components/AuthGate.jsx'
 import UpgradeModal from './components/UpgradeModal.jsx'
 import PlaceholderScreen from './components/PlaceholderScreen.jsx'
 import Recommendations from './components/Recommendations.jsx'
+import Markets from './components/Markets.jsx'
+import Performance from './components/Performance.jsx'
 import { useAuth } from './auth.jsx'
 
 function computeAlertCount(positions) {
@@ -227,6 +229,8 @@ function Screen({
       )
     case 'Signal Tracker':
       return <SignalTracker signalData={signalData} alphaData={alphaData} />
+    case 'Markets':
+      return <Markets user={user} onUpgrade={onUpgrade} />
     case 'Score Guide':
       return <ScoreGuide />
     case 'Settings':
@@ -246,7 +250,7 @@ function Screen({
     case 'Journal':
       return <PlaceholderScreen id="Journal" label="Trade journal" icon="BookOpen" onNavigate={onNavigate} />
     case 'Performance':
-      return <PlaceholderScreen id="Performance" label="Performance" icon="ChartLine" onNavigate={onNavigate} />
+      return <Performance />
     case 'Academy':
       return <PlaceholderScreen id="Academy" label="Academy" icon="GraduationCap" onNavigate={onNavigate} />
     case 'Alerts':
