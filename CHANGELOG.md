@@ -4,6 +4,18 @@ All notable changes to Harvest are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.1.0] - 2026-06-01
+
+### Fixed
+- **OI chart rendered empty even with snapshots present.** yfinance reports
+  `openInterest` as an end-of-day settlement figure, so an early fetch returns 0
+  across every strike. The snapshot's first-write-wins rule then locked those
+  zeros in for the whole day, so the chart plotted 120 strikes of zero. Now
+  `record_chain_snapshot` self-heals: it overwrites a stored zero-OI snapshot
+  when a fresh chain brings real OI. The "Capture today" button forces a full
+  refresh (`force=True`). Re-captured today's data so the live chart shows real
+  open interest immediately.
+
 ## [0.3.0.0] - 2026-06-01
 
 ### Added
