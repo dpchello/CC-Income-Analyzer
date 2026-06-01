@@ -123,19 +123,38 @@ def _snapshot_row(row: dict) -> dict:
     }
 
 
-def record_chain_snapshot(expiry: str, chain_rows: list):
-    """Store full call+put OI + mid snapshot for an expiry. First-write-wins per
-    date — the cron's pre-market reading stays the canonical record for the day."""
+def _total_oi(strikes: dict) -> int:
+    """Sum of call + put OI across a stored snapshot's strikes."""
+    return sum((v.get("call_oi") or 0) + (v.get("put_oi") or 0) for v in strikes.values())
+
+
+def record_chain_snapshot(expiry: str, chain_rows: list, force: bool = False):
+    """Store a full call+put OI + mid snapshot for an expiry.
+
+    First-write-wins per date so the cron's pre-market reading stays canonical —
+    EXCEPT we overwrite when the stored snapshot has zero total OI but the fresh
+    chain has real OI. yfinance reports openInterest as an end-of-day settlement
+    figure, so an early fetch can land 0 across every strike; without this self-
+    heal that empty reading would lock in for the whole day and the chart would
+    render nothing. force=True always overwrites (the manual 'capture today'
+    button)."""
     today_str = date.today().isoformat()
     cutoff = (date.today() - timedelta(days=_MAX_DAYS)).isoformat()
     with _lock:
         data = _load_chain()
         data.setdefault(expiry, {})
-        if today_str not in data[expiry]:
-            data[expiry][today_str] = {
-                str(round(float(row["strike"]), 2)): _snapshot_row(row)
-                for row in chain_rows if row.get("strike") is not None
-            }
+        new_rows = {
+            str(round(float(row["strike"]), 2)): _snapshot_row(row)
+            for row in chain_rows if row.get("strike") is not None
+        }
+        existing = data[expiry].get(today_str)
+        should_write = (
+            existing is None
+            or force
+            or (_total_oi(existing) == 0 and _total_oi(new_rows) > 0)
+        )
+        if should_write:
+            data[expiry][today_str] = new_rows
             # Prune old dates
             for d in [k for k in data[expiry] if k < cutoff]:
                 del data[expiry][d]

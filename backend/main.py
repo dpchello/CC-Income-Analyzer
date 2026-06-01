@@ -2171,7 +2171,7 @@ def run_oi_snapshot(current_user: User = Depends(auth_module.get_current_user)):
         try:
             chain = fetcher.get_options_chain(exp)
             if chain:
-                oi_tracker.record_chain_snapshot(exp, chain)
+                oi_tracker.record_chain_snapshot(exp, chain, force=True)
                 captured += 1
         except Exception as e:
             errors.append(f"{exp}: {e}")
