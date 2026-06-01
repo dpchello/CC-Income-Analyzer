@@ -86,6 +86,42 @@ fetcher = DataFetcher()
 engine  = SignalEngine()
 
 
+# ── App version ───────────────────────────────────────────────────────────────
+# Source of truth is the repo-root VERSION file. STARTED_AT doubles as the
+# last-deploy timestamp: the self-host upgrade reloads this process, so a fresh
+# started_at confirms the new build is actually live.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _read_app_version() -> str:
+    try:
+        return (_REPO_ROOT / "VERSION").read_text().strip()
+    except OSError:
+        return "unknown"
+
+
+def _read_git_sha() -> Optional[str]:
+    try:
+        import subprocess
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(_REPO_ROOT), stderr=subprocess.DEVNULL, timeout=2,
+        ).decode().strip()
+    except Exception:
+        return None
+
+
+APP_VERSION = _read_app_version()
+GIT_SHA     = _read_git_sha()
+STARTED_AT  = datetime.now().astimezone().isoformat()
+
+
+@app.get("/api/version")
+def get_version():
+    """What build is live. Curl this after a deploy to confirm the reload took."""
+    return {"version": APP_VERSION, "git_sha": GIT_SHA, "started_at": STARTED_AT}
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _dte(expiry_str: str) -> int:
