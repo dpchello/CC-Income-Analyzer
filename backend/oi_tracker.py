@@ -24,6 +24,13 @@ OI_CHAIN_FILE   = _DATA_DIR / "oi_chain_history.json"
 _lock = threading.Lock()
 _MAX_DAYS = 30  # rolling window kept per key
 
+# Sentinel written once per day after a successful capture. Both the cron and
+# the in-app snapshot guard read/write this so they don't double-fetch.
+SNAPSHOT_SENTINEL = _DATA_DIR / "oi_snapshot_sentinel.txt"
+_SNAPSHOT_MAX_DTE = 60          # capture every expiry inside this DTE window
+_snapshot_job_lock = threading.Lock()
+_snapshot_in_progress = False
+
 
 # ── Persistence ───────────────────────────────────────────────────────────────
 
@@ -87,8 +94,38 @@ def _save_chain(data: dict):
         json.dump(data, f, indent=2)
 
 
+def _compute_mid(bid, ask, last=None):
+    """Mid from bid/ask, falling back to last trade. None if nothing usable."""
+    b = bid or 0
+    a = ask or 0
+    if b > 0 and a > 0:
+        return round((b + a) / 2, 2)
+    if b > 0 or a > 0:
+        return round(b or a, 2)
+    if last and last > 0:
+        return round(float(last), 2)
+    return None
+
+
+def _snapshot_row(row: dict) -> dict:
+    """One strike's stored fields: OI + mid price for calls and puts.
+
+    yfinance supplies call quotes plus open interest for both sides, but no put
+    quotes — so put_mid is None and put dollar-values can't be derived from this
+    source. Stored anyway so the shape is forward-compatible if a richer feed
+    starts providing put quotes.
+    """
+    return {
+        "call_oi":  int(row["openInterest"]) if row.get("openInterest") is not None else None,
+        "put_oi":   int(row["put_oi"]) if row.get("put_oi") is not None else None,
+        "call_mid": _compute_mid(row.get("bid"), row.get("ask"), row.get("lastPrice")),
+        "put_mid":  _compute_mid(row.get("put_bid"), row.get("put_ask"), row.get("put_last")),
+    }
+
+
 def record_chain_snapshot(expiry: str, chain_rows: list):
-    """Store full call+put OI snapshot for an expiry. First-write-wins per date."""
+    """Store full call+put OI + mid snapshot for an expiry. First-write-wins per
+    date — the cron's pre-market reading stays the canonical record for the day."""
     today_str = date.today().isoformat()
     cutoff = (date.today() - timedelta(days=_MAX_DAYS)).isoformat()
     with _lock:
@@ -96,10 +133,7 @@ def record_chain_snapshot(expiry: str, chain_rows: list):
         data.setdefault(expiry, {})
         if today_str not in data[expiry]:
             data[expiry][today_str] = {
-                str(round(float(row["strike"]), 2)): {
-                    "call_oi": int(row["openInterest"]) if row.get("openInterest") is not None else None,
-                    "put_oi":  int(row["put_oi"]) if row.get("put_oi") is not None else None,
-                }
+                str(round(float(row["strike"]), 2)): _snapshot_row(row)
                 for row in chain_rows if row.get("strike") is not None
             }
             # Prune old dates
@@ -152,6 +186,55 @@ def get_chain_oi_change(expiry: str) -> list:
 
     result.sort(key=lambda r: r["strike"])
     return result
+
+
+def get_capture_dates(expiry: str) -> list:
+    """All snapshot dates for an expiry, oldest → newest. Drives the date scrubber."""
+    data = _load_chain()
+    return sorted(data.get(expiry, {}).keys())
+
+
+def get_chain_at(expiry: str, capture_date: str = None) -> dict:
+    """Per-strike OI + mids for one capture date (default: latest), with the
+    1-day OI change vs the prior captured date.
+
+    Returns {capture_date, prior_date, strikes:[{strike, call_oi, put_oi,
+    call_mid, put_mid, call_change_1d, put_change_1d}]}. Empty strikes if the
+    expiry has no history yet.
+    """
+    data = _load_chain()
+    expiry_data = data.get(expiry, {})
+    dates = sorted(expiry_data.keys())
+    if not dates:
+        return {"capture_date": None, "prior_date": None, "strikes": []}
+
+    # Resolve requested date; fall back to latest if missing/unspecified.
+    if capture_date not in expiry_data:
+        capture_date = dates[-1]
+    idx = dates.index(capture_date)
+    prior_date = dates[idx - 1] if idx > 0 else None
+
+    current = expiry_data[capture_date]
+    prior = expiry_data.get(prior_date, {}) if prior_date else {}
+
+    strikes = []
+    for strike_str, vals in current.items():
+        call_oi = vals.get("call_oi")
+        put_oi  = vals.get("put_oi")
+        prev = prior.get(strike_str, {})
+        prev_call = prev.get("call_oi")
+        prev_put  = prev.get("put_oi")
+        strikes.append({
+            "strike":         float(strike_str),
+            "call_oi":        call_oi,
+            "put_oi":         put_oi,
+            "call_mid":       vals.get("call_mid"),
+            "put_mid":        vals.get("put_mid"),
+            "call_change_1d": (call_oi - prev_call) if (call_oi is not None and prev_call is not None) else None,
+            "put_change_1d":  (put_oi  - prev_put)  if (put_oi  is not None and prev_put  is not None) else None,
+        })
+    strikes.sort(key=lambda s: s["strike"])
+    return {"capture_date": capture_date, "prior_date": prior_date, "strikes": strikes}
 
 
 def get_changes_batch(keys: list) -> dict:
@@ -228,3 +311,59 @@ def _compute_change(key_data: dict, today: date) -> dict:
         "signal":        signal,
         "signal_label":  label,
     }
+
+
+# ── Daily snapshot guard ──────────────────────────────────────────────────────
+
+def _sentinel_is_today() -> bool:
+    try:
+        return SNAPSHOT_SENTINEL.read_text().strip() == date.today().isoformat()
+    except OSError:
+        return False
+
+
+def maybe_run_daily_snapshot():
+    """Self-healing capture. No-op once today's snapshot is recorded (sentinel).
+
+    The first request of a new day spawns a background thread to capture the
+    OI/mid snapshot in case the OS-level cron didn't fire. Cheap to call on every
+    request: a same-day sentinel short-circuits before any work, and the in-
+    progress guard prevents overlapping jobs. First-write-wins makes a redundant
+    cron+guard run harmless.
+    """
+    global _snapshot_in_progress
+    if _sentinel_is_today():
+        return
+    with _snapshot_job_lock:
+        if _snapshot_in_progress:
+            return
+        _snapshot_in_progress = True
+    threading.Thread(target=_run_snapshot_job, daemon=True).start()
+
+
+def _run_snapshot_job():
+    global _snapshot_in_progress
+    try:
+        # Lazy import: avoids an import cycle (data_fetcher ↔ oi_tracker) at load.
+        from data_fetcher import DataFetcher
+        fetcher = DataFetcher()
+        expiries = fetcher.get_screener_expiries(max_dte=_SNAPSHOT_MAX_DTE) or []
+        ok = 0
+        for exp in expiries:
+            try:
+                chain = fetcher.get_options_chain(exp)
+                if chain:
+                    record_chain_snapshot(exp, chain)
+                    ok += 1
+            except Exception as exc:
+                print(f"[snapshot-job] {exp} failed: {exc}")
+        if ok > 0:
+            try:
+                SNAPSHOT_SENTINEL.write_text(date.today().isoformat())
+            except OSError as exc:
+                print(f"[snapshot-job] sentinel write failed: {exc}")
+        print(f"[snapshot-job] {date.today().isoformat()} — captured {ok}/{len(expiries)} expiries")
+    except Exception as exc:
+        print(f"[snapshot-job] aborted: {exc}")
+    finally:
+        _snapshot_in_progress = False

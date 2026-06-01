@@ -86,6 +86,42 @@ fetcher = DataFetcher()
 engine  = SignalEngine()
 
 
+# ── App version ───────────────────────────────────────────────────────────────
+# Source of truth is the repo-root VERSION file. STARTED_AT doubles as the
+# last-deploy timestamp: the self-host upgrade reloads this process, so a fresh
+# started_at confirms the new build is actually live.
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _read_app_version() -> str:
+    try:
+        return (_REPO_ROOT / "VERSION").read_text().strip()
+    except OSError:
+        return "unknown"
+
+
+def _read_git_sha() -> Optional[str]:
+    try:
+        import subprocess
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=str(_REPO_ROOT), stderr=subprocess.DEVNULL, timeout=2,
+        ).decode().strip()
+    except Exception:
+        return None
+
+
+APP_VERSION = _read_app_version()
+GIT_SHA     = _read_git_sha()
+STARTED_AT  = datetime.now().astimezone().isoformat()
+
+
+@app.get("/api/version")
+def get_version():
+    """What build is live. Curl this after a deploy to confirm the reload took."""
+    return {"version": APP_VERSION, "git_sha": GIT_SHA, "started_at": STARTED_AT}
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _dte(expiry_str: str) -> int:
@@ -935,11 +971,14 @@ def get_holdings_endpoint(
     current_user: User = Depends(auth_module.get_current_user),
 ):
     holdings = db.get_holdings(current_user.id, portfolio_id=portfolio_id)
-    spy_price = fetcher.get_spy_price().get("price", 0)
+    price_cache = {}  # memo within this request so a repeated ticker fetches once
     enriched = []
     for h in holdings:
         row = dict(h)
-        price    = spy_price if h["ticker"] == "SPY" else 0
+        ticker   = h["ticker"]
+        if ticker not in price_cache:
+            price_cache[ticker] = fetcher.get_price_for(ticker)
+        price    = price_cache[ticker]
         shares   = h["shares"]
         avg_cost = h.get("avg_cost") or 0
         row["current_price"]      = price

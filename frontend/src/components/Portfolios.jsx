@@ -771,13 +771,31 @@ function PortfolioTab({ portfolio, active, indent, onClick, onStar, onRename, on
 
 // ── Holdings row ──────────────────────────────────────────────────────────────
 
-function HoldingRow({ holding, coveredShares, onDelete, onEdit }) {
+function HoldingRow({ holding, coveredShares, ccLots = [], onDelete, onEdit }) {
   const shares     = holding.shares ?? 0
   const covered    = Math.min(coveredShares, shares)
   const coveragePct = shares > 0 ? Math.round(covered / shares * 100) : 0
+  const price      = holding.current_price
   const pnl        = holding.unrealized_pnl
   const pnlPct     = holding.unrealized_pnl_pct
   const pnlPos     = (pnl ?? 0) >= 0
+
+  // Weighted-average share value: covered shares are capped at their call strike
+  // (worth the lower of current price or strike); floating shares are worth the
+  // current price. No open calls ⇒ equals current price.
+  let wtdAvgValue = null
+  if (shares > 0 && price != null && price > 0) {
+    let remaining = shares
+    let valueSum  = 0
+    for (const lot of ccLots) {
+      if (remaining <= 0) break
+      const lotShares = Math.min(lot.shares || 0, remaining)
+      valueSum += lotShares * Math.min(price, lot.strike)
+      remaining -= lotShares
+    }
+    if (remaining > 0) valueSum += remaining * price   // floating (uncovered) shares
+    wtdAvgValue = valueSum / shares
+  }
 
   const fmt = (n, dec = 2) => n != null ? `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec })}` : '—'
   const fmtShares = n => n != null ? Number(n).toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—'
@@ -785,7 +803,7 @@ function HoldingRow({ holding, coveredShares, onDelete, onEdit }) {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '44px 1fr 1fr 1fr 1fr 1fr 140px 64px',
+      gridTemplateColumns: '44px 1fr 1fr 1fr 1fr 1fr 1fr 140px 64px',
       alignItems: 'center',
       gap: '0 20px',
       padding: '10px 0',
@@ -803,52 +821,37 @@ function HoldingRow({ holding, coveredShares, onDelete, onEdit }) {
       </div>
 
       {/* Shares */}
-      <div>
-        <div style={{ fontSize: 10, color: 'var(--fg-faint)', marginBottom: 2 }}>Shares</div>
-        <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--fg)' }}>{fmtShares(shares)}</div>
-      </div>
+      <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--fg)' }}>{fmtShares(shares)}</div>
 
       {/* Avg Cost */}
-      <div>
-        <div style={{ fontSize: 10, color: 'var(--fg-faint)', marginBottom: 2 }}>Avg Cost</div>
-        <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--fg)' }}>{fmt(holding.avg_cost)}</div>
-      </div>
+      <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--fg)' }}>{fmt(holding.avg_cost)}</div>
 
       {/* Current */}
-      <div>
-        <div style={{ fontSize: 10, color: 'var(--fg-faint)', marginBottom: 2 }}>Current</div>
-        <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--fg)' }}>{fmt(holding.current_price)}</div>
-      </div>
+      <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--fg)' }}>{fmt(holding.current_price)}</div>
+
+      {/* Weighted avg share value (call-adjusted) */}
+      <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--fg)' }}>{fmt(wtdAvgValue)}</div>
 
       {/* Market Value */}
-      <div>
-        <div style={{ fontSize: 10, color: 'var(--fg-faint)', marginBottom: 2 }}>Mkt Value</div>
-        <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--fg)' }}>
-          {holding.market_value != null ? `$${Math.round(holding.market_value).toLocaleString()}` : '—'}
-        </div>
+      <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: 'var(--fg)' }}>
+        {holding.market_value != null ? `$${Math.round(holding.market_value).toLocaleString()}` : '—'}
       </div>
 
       {/* Unrealized P&L */}
-      <div>
-        <div style={{ fontSize: 10, color: 'var(--fg-faint)', marginBottom: 2 }}>Unreal. P&L</div>
-        <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: pnl != null ? (pnlPos ? 'var(--acid)' : 'var(--red)') : 'var(--fg-mute)' }}>
-          {pnl != null
-            ? `${pnlPos ? '+' : ''}$${Math.abs(Math.round(pnl)).toLocaleString()}${pnlPct != null ? ` (${pnlPct.toFixed(1)}%)` : ''}`
-            : '—'}
-        </div>
+      <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color: pnl != null ? (pnlPos ? 'var(--acid)' : 'var(--red)') : 'var(--fg-mute)' }}>
+        {pnl != null
+          ? `${pnlPos ? '+' : ''}$${Math.abs(Math.round(pnl)).toLocaleString()}${pnlPct != null ? ` (${pnlPct.toFixed(1)}%)` : ''}`
+          : '—'}
       </div>
 
       {/* Call Coverage */}
-      <div>
-        <div style={{ fontSize: 10, color: 'var(--fg-faint)', marginBottom: 4 }}>Call Coverage</div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ flex: 1, height: 4, background: 'var(--line)', borderRadius: 2, minWidth: 48 }}>
-            <div style={{ height: '100%', width: `${coveragePct}%`, background: coveragePct === 100 ? 'var(--acid)' : 'var(--fg-mute)', borderRadius: 2 }} />
-          </div>
-          <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: coveragePct === 100 ? 'var(--acid)' : 'var(--fg-mute)', whiteSpace: 'nowrap' }}>
-            {coveragePct}%
-          </span>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ flex: 1, height: 4, background: 'var(--line)', borderRadius: 2, minWidth: 48 }}>
+          <div style={{ height: '100%', width: `${coveragePct}%`, background: coveragePct === 100 ? 'var(--acid)' : 'var(--fg-mute)', borderRadius: 2 }} />
         </div>
+        <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: coveragePct === 100 ? 'var(--acid)' : 'var(--fg-mute)', whiteSpace: 'nowrap' }}>
+          {coveragePct}%
+        </span>
       </div>
 
       {/* Actions */}
@@ -1320,10 +1323,13 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
   const openPos  = myPositions.filter(p => p.status === 'open')
   const closedPos = myPositions.filter(p => p.status === 'closed')
 
-  // Covered shares per ticker
+  // Covered shares per ticker, plus per-strike lots for weighted-average value math
   const coveredByTicker = {}
+  const ccLotsByTicker = {}
   for (const p of openPos) {
     coveredByTicker[p.ticker] = (coveredByTicker[p.ticker] || 0) + p.contracts * 100
+    if (!ccLotsByTicker[p.ticker]) ccLotsByTicker[p.ticker] = []
+    ccLotsByTicker[p.ticker].push({ strike: p.strike, shares: (p.contracts || 0) * 100 })
   }
 
   const totalPremium = openPos.reduce((s, p) => s + (p.premium_collected || 0), 0)
@@ -1704,14 +1710,24 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                   {/* Column headers */}
                   <div style={{
                     display: 'grid',
-                    gridTemplateColumns: '44px 1fr 1fr 1fr 1fr 1fr 140px 64px',
+                    gridTemplateColumns: '44px 1fr 1fr 1fr 1fr 1fr 1fr 140px 64px',
                     gap: '0 20px',
                     padding: '8px 0 4px',
                     borderBottom: '1px solid var(--line)',
                   }}>
-                    {['', 'Shares', 'Avg Cost', 'Current', 'Mkt Value', 'Unreal. P&L', 'Call Coverage', ''].map((label, i) => (
-                      <div key={i} style={{ fontSize: 10, color: 'var(--fg-faint)', letterSpacing: '0.06em', textTransform: 'uppercase', fontFamily: 'var(--mono)' }}>
-                        {label}
+                    {[
+                      { label: '' },
+                      { label: 'Shares' },
+                      { label: 'Avg Cost' },
+                      { label: 'Current' },
+                      { label: 'Wtd Avg Value', title: 'Average value per share after accounting for your calls. Covered shares are capped at their call strike (the lower of current price or strike); uncovered shares are valued at the current price.' },
+                      { label: 'Mkt Value' },
+                      { label: 'Unreal. P&L' },
+                      { label: 'Call Coverage' },
+                      { label: '' },
+                    ].map((col, i) => (
+                      <div key={i} title={col.title} style={{ fontSize: 10, color: 'var(--fg-faint)', letterSpacing: '0.06em', textTransform: 'uppercase', fontFamily: 'var(--mono)', cursor: col.title ? 'help' : undefined }}>
+                        {col.label}
                       </div>
                     ))}
                   </div>
@@ -1720,6 +1736,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                       key={h.id}
                       holding={h}
                       coveredShares={coveredByTicker[h.ticker] || 0}
+                      ccLots={ccLotsByTicker[h.ticker] || []}
                       onDelete={() => deleteHolding(h.id)}
                       onEdit={() => setEditingHolding(h)}
                     />

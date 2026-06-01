@@ -1,0 +1,28 @@
+name: Release
+
+# Cuts a GitHub Release whenever a version tag (v*) is pushed. Tags are created
+# from the repo-root VERSION file by scripts/release.sh. This is Harvest's
+# version tracker on GitHub — each release shows up under the repo's Releases tab
+# with auto-generated notes from the commits since the previous tag.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true

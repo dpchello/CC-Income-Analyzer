@@ -306,6 +306,11 @@ export function TopBar({ activeTab, alertCount = 0, onNavigate }) {
       <button className="h-btn primary sm" onClick={() => onNavigate('Screener')}>
         Sell a call
       </button>
+
+      {/* Build version — baked in at build time via vite define */}
+      <div style={{ marginTop: 10, textAlign: 'center', fontSize: 10, letterSpacing: '0.04em', color: 'var(--fg-dim)', opacity: 0.55 }}>
+        v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'}
+      </div>
     </div>
   )
 }

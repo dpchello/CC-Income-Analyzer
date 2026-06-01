@@ -1,0 +1,2515 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Harvest — Design Canvas</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Inter+Tight:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=JetBrains+Mono:wght@400;500&display=swap" />
+<style>
+/* Harvest — design tokens */
+:root {
+  /* Paper-white premium palette. Warm off-white with forest/olive accent. */
+  --bg: #faf8f3;
+  --bg-elev: #f3f0e7;
+  --bg-elev-2: #ebe7db;
+  --bg-card: #ffffff;
+  --line: rgba(24, 28, 20, 0.10);
+  --line-strong: rgba(24, 28, 20, 0.18);
+  --line-soft: rgba(24, 28, 20, 0.06);
+
+  --fg: #1a1e16;
+  --fg-dim: #4a4f44;
+  --fg-mute: #6e7166;
+  --fg-faint: #9a9a90;
+
+  /* 'acid' token kept — now remapped to a deep forest/olive so every existing
+     reference carries the new accent without component edits. */
+  --acid: #2f5233;
+  --acid-dim: #3f6844;
+  --acid-deep: #1e3621;
+  --acid-faint: rgba(47, 82, 51, 0.08);
+  --acid-line: rgba(47, 82, 51, 0.28);
+
+  --warn: #b8502e;
+  --warn-faint: rgba(184, 80, 46, 0.10);
+  --down: #c14a35;
+
+  --olive: #6a7648;
+  --olive-dim: #4a5436;
+
+  --serif: "Instrument Serif", "Cormorant Garamond", Georgia, serif;
+  --sans: "Inter Tight", "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --body: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, monospace;
+
+  --r-1: 2px;
+  --r-2: 4px;
+  --r-3: 8px;
+  --r-4: 12px;
+}
+
+* { box-sizing: border-box; }
+
+.h-root {
+  font-family: var(--body);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "ss01", "cv11";
+}
+
+.h-root .num, .mono { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.h-root .display { font-family: var(--sans); letter-spacing: -0.03em; font-weight: 500; }
+.h-root .serif { font-family: var(--serif); font-weight: 400; letter-spacing: -0.01em; }
+
+/* subtle grain */
+.h-grain::before {
+  content: "";
+  position: absolute; inset: 0;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.4 0'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.5'/></svg>");
+  opacity: 0.06;
+  mix-blend-mode: overlay;
+  pointer-events: none;
+}
+
+.h-hair { border: 0; border-top: 1px solid var(--line); margin: 0; }
+
+.h-btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  height: 36px; padding: 0 16px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--body);
+  font-size: 13px; font-weight: 500;
+  letter-spacing: -0.005em;
+  border-radius: var(--r-2);
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.h-btn:hover { background: rgba(24,28,20,0.04); }
+.h-btn.primary {
+  background: var(--acid);
+  color: #faf8f3;
+  border-color: var(--acid);
+  font-weight: 600;
+}
+.h-btn.primary:hover { background: var(--acid-deep); }
+.h-btn.ghost { border-color: transparent; color: var(--fg-dim); }
+.h-btn.ghost:hover { color: var(--fg); background: rgba(24,28,20,0.04); }
+.h-btn.sm { height: 28px; padding: 0 10px; font-size: 12px; }
+
+.h-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  height: 22px; padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  font-family: var(--mono); font-size: 11px;
+  color: var(--fg-dim);
+  text-transform: uppercase; letter-spacing: 0.08em;
+}
+.h-chip.acid { color: var(--acid); border-color: var(--acid-line); background: var(--acid-faint); }
+.h-chip.warn { color: var(--warn); border-color: rgba(240,112,74,0.3); background: var(--warn-faint); }
+.h-chip.solid { background: var(--bg-elev); }
+
+.h-eyebrow {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--fg-mute);
+}
+
+.h-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--acid); }
+
+.h-up { color: var(--acid); }
+.h-down { color: var(--down); }
+
+/* scrollbar */
+.h-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+.h-scroll::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 3px; }
+
+/* loading bar texture for placeholder imagery */
+.h-placeholder {
+  background:
+    repeating-linear-gradient(135deg,
+      rgba(24,28,20,0.02) 0 8px,
+      rgba(24,28,20,0.05) 8px 16px);
+  border: 1px solid var(--line);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--fg-faint);
+  font-family: var(--mono); font-size: 10px;
+  letter-spacing: 0.12em; text-transform: uppercase;
+}
+
+html, body { margin: 0; padding: 0; background: var(--bg); }
+body { font-family: "Inter", -apple-system, sans-serif; color: var(--fg); }
+a { color: inherit; text-decoration: none; cursor: pointer; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script id="jsx-source" type="text/plain">
+
+// ===== design-canvas.jsx =====
+
+// DesignCanvas.jsx — Figma-ish design canvas wrapper
+// Warm gray grid bg + Sections + Artboards + PostIt notes.
+// Artboards are reorderable (grip-drag), labels/titles are inline-editable,
+// and any artboard can be opened in a fullscreen focus overlay (←/→/Esc).
+// State persists to a .design-canvas.state.json sidecar via the host
+// bridge. No assets, no deps.
+//
+// Usage:
+//   <DesignCanvas>
+//     <DCSection id="onboarding" title="Onboarding" subtitle="First-run variants">
+//       <DCArtboard id="a" label="A · Dusk" width={260} height={480}>…</DCArtboard>
+//       <DCArtboard id="b" label="B · Minimal" width={260} height={480}>…</DCArtboard>
+//     </DCSection>
+//   </DesignCanvas>
+
+const DC = {
+  bg: '#f0eee9',
+  grid: 'rgba(0,0,0,0.06)',
+  label: 'rgba(60,50,40,0.7)',
+  title: 'rgba(40,30,20,0.85)',
+  subtitle: 'rgba(60,50,40,0.6)',
+  postitBg: '#fef4a8',
+  postitText: '#5a4a2a',
+  font: '-apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif',
+};
+
+// One-time CSS injection (classes are dc-prefixed so they don't collide with
+// the hosted design's own styles).
+if (typeof document !== 'undefined' && !document.getElementById('dc-styles')) {
+  const s = document.createElement('style');
+  s.id = 'dc-styles';
+  s.textContent = [
+    '.dc-editable{cursor:text;outline:none;white-space:nowrap;border-radius:3px;padding:0 2px;margin:0 -2px}',
+    '.dc-editable:focus{background:#fff;box-shadow:0 0 0 1.5px #c96442}',
+    '[data-dc-slot]{transition:transform .18s cubic-bezier(.2,.7,.3,1)}',
+    '[data-dc-slot].dc-dragging{transition:none;z-index:10;pointer-events:none}',
+    '[data-dc-slot].dc-dragging .dc-card{box-shadow:0 12px 40px rgba(0,0,0,.25),0 0 0 2px #c96442;transform:scale(1.02)}',
+    '.dc-card{transition:box-shadow .15s,transform .15s}',
+    '.dc-card *{scrollbar-width:none}',
+    '.dc-card *::-webkit-scrollbar{display:none}',
+    '.dc-labelrow{display:flex;align-items:center;gap:4px;height:24px}',
+    '.dc-grip{cursor:grab;display:flex;align-items:center;padding:5px 4px;border-radius:4px;transition:background .12s}',
+    '.dc-grip:hover{background:rgba(0,0,0,.08)}',
+    '.dc-grip:active{cursor:grabbing}',
+    '.dc-labeltext{cursor:pointer;border-radius:4px;padding:3px 6px;display:flex;align-items:center;transition:background .12s}',
+    '.dc-labeltext:hover{background:rgba(0,0,0,.05)}',
+    '.dc-expand{position:absolute;bottom:100%;right:0;margin-bottom:5px;z-index:2;opacity:0;transition:opacity .12s,background .12s;',
+    '  width:22px;height:22px;border-radius:5px;border:none;cursor:pointer;padding:0;',
+    '  background:transparent;color:rgba(60,50,40,.7);display:flex;align-items:center;justify-content:center}',
+    '.dc-expand:hover{background:rgba(0,0,0,.06);color:#2a251f}',
+    '[data-dc-slot]:hover .dc-expand{opacity:1}',
+  ].join('\n');
+  document.head.appendChild(s);
+}
+
+const DCCtx = React.createContext(null);
+
+// ─────────────────────────────────────────────────────────────
+// DesignCanvas — stateful wrapper around the pan/zoom viewport.
+// Owns runtime state (per-section order, renamed titles/labels, focused
+// artboard). Order/titles/labels persist to a .design-canvas.state.json
+// sidecar next to the HTML. Reads go via plain fetch() so the saved
+// arrangement is visible anywhere the HTML + sidecar are served together
+// (omelette preview, direct link, downloaded zip). Writes go through the
+// host's window.omelette bridge — editing requires the omelette runtime.
+// Focus is ephemeral.
+// ─────────────────────────────────────────────────────────────
+const DC_STATE_FILE = '.design-canvas.state.json';
+
+function DesignCanvas({ children, minScale, maxScale, style }) {
+  const [state, setState] = React.useState({ sections: {}, focus: null });
+  // Hold rendering until the sidecar read settles so the saved order/titles
+  // appear on first paint (no source-order flash). didRead gates writes until
+  // the read settles so the empty initial state can't clobber a slow read;
+  // skipNextWrite suppresses the one echo-write that would otherwise follow
+  // hydration.
+  const [ready, setReady] = React.useState(false);
+  const didRead = React.useRef(false);
+  const skipNextWrite = React.useRef(false);
+
+  React.useEffect(() => {
+    let off = false;
+    fetch('./' + DC_STATE_FILE)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((saved) => {
+        if (off || !saved || !saved.sections) return;
+        skipNextWrite.current = true;
+        setState((s) => ({ ...s, sections: saved.sections }));
+      })
+      .catch(() => {})
+      .finally(() => { didRead.current = true; if (!off) setReady(true); });
+    const t = setTimeout(() => { if (!off) setReady(true); }, 150);
+    return () => { off = true; clearTimeout(t); };
+  }, []);
+
+  React.useEffect(() => {
+    if (!didRead.current) return;
+    if (skipNextWrite.current) { skipNextWrite.current = false; return; }
+    const t = setTimeout(() => {
+      window.omelette?.writeFile(DC_STATE_FILE, JSON.stringify({ sections: state.sections })).catch(() => {});
+    }, 250);
+    return () => clearTimeout(t);
+  }, [state.sections]);
+
+  // Build registries synchronously from children so FocusOverlay can read
+  // them in the same render. Only direct DCSection > DCArtboard children are
+  // walked — wrapping them in other elements opts out of focus/reorder.
+  const registry = {};     // slotId -> { sectionId, artboard }
+  const sectionMeta = {};  // sectionId -> { title, subtitle, slotIds[] }
+  const sectionOrder = [];
+  React.Children.forEach(children, (sec) => {
+    if (!sec || sec.type !== DCSection) return;
+    const sid = sec.props.id ?? sec.props.title;
+    if (!sid) return;
+    sectionOrder.push(sid);
+    const persisted = state.sections[sid] || {};
+    const srcIds = [];
+    React.Children.forEach(sec.props.children, (ab) => {
+      if (!ab || ab.type !== DCArtboard) return;
+      const aid = ab.props.id ?? ab.props.label;
+      if (!aid) return;
+      registry[`${sid}/${aid}`] = { sectionId: sid, artboard: ab };
+      srcIds.push(aid);
+    });
+    const kept = (persisted.order || []).filter((k) => srcIds.includes(k));
+    sectionMeta[sid] = {
+      title: persisted.title ?? sec.props.title,
+      subtitle: sec.props.subtitle,
+      slotIds: [...kept, ...srcIds.filter((k) => !kept.includes(k))],
+    };
+  });
+
+  const api = React.useMemo(() => ({
+    state,
+    section: (id) => state.sections[id] || {},
+    patchSection: (id, p) => setState((s) => ({
+      ...s,
+      sections: { ...s.sections, [id]: { ...s.sections[id], ...(typeof p === 'function' ? p(s.sections[id] || {}) : p) } },
+    })),
+    setFocus: (slotId) => setState((s) => ({ ...s, focus: slotId })),
+  }), [state]);
+
+  // Esc exits focus; any outside pointerdown commits an in-progress rename.
+  React.useEffect(() => {
+    const onKey = (e) => { if (e.key === 'Escape') api.setFocus(null); };
+    const onPd = (e) => {
+      const ae = document.activeElement;
+      if (ae && ae.isContentEditable && !ae.contains(e.target)) ae.blur();
+    };
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('pointerdown', onPd, true);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('pointerdown', onPd, true);
+    };
+  }, [api]);
+
+  return (
+    <DCCtx.Provider value={api}>
+      <DCViewport minScale={minScale} maxScale={maxScale} style={style}>{ready && children}</DCViewport>
+      {state.focus && registry[state.focus] && (
+        <DCFocusOverlay entry={registry[state.focus]} sectionMeta={sectionMeta} sectionOrder={sectionOrder} />
+      )}
+    </DCCtx.Provider>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// DCViewport — transform-based pan/zoom (internal)
+//
+// Input mapping (Figma-style):
+//   • trackpad pinch  → zoom   (ctrlKey wheel; Safari gesture* events)
+//   • trackpad scroll → pan    (two-finger)
+//   • mouse wheel     → zoom   (notched; distinguished from trackpad scroll)
+//   • middle-drag / primary-drag-on-bg → pan
+//
+// Transform state lives in a ref and is written straight to the DOM
+// (translate3d + will-change) so wheel ticks don't go through React —
+// keeps pans at 60fps on dense canvases.
+// ─────────────────────────────────────────────────────────────
+function DCViewport({ children, minScale = 0.1, maxScale = 8, style = {} }) {
+  const vpRef = React.useRef(null);
+  const worldRef = React.useRef(null);
+  const tf = React.useRef({ x: 0, y: 0, scale: 1 });
+
+  const apply = React.useCallback(() => {
+    const { x, y, scale } = tf.current;
+    const el = worldRef.current;
+    if (el) el.style.transform = `translate3d(${x}px, ${y}px, 0) scale(${scale})`;
+  }, []);
+
+  React.useEffect(() => {
+    const vp = vpRef.current;
+    if (!vp) return;
+
+    const zoomAt = (cx, cy, factor) => {
+      const r = vp.getBoundingClientRect();
+      const px = cx - r.left, py = cy - r.top;
+      const t = tf.current;
+      const next = Math.min(maxScale, Math.max(minScale, t.scale * factor));
+      const k = next / t.scale;
+      // keep the world point under the cursor fixed
+      t.x = px - (px - t.x) * k;
+      t.y = py - (py - t.y) * k;
+      t.scale = next;
+      apply();
+    };
+
+    // Mouse-wheel vs trackpad-scroll heuristic. A physical wheel sends
+    // line-mode deltas (Firefox) or large integer pixel deltas with no X
+    // component (Chrome/Safari, typically multiples of 100/120). Trackpad
+    // two-finger scroll sends small/fractional pixel deltas, often with
+    // non-zero deltaX. ctrlKey is set by the browser for trackpad pinch.
+    const isMouseWheel = (e) =>
+      e.deltaMode !== 0 ||
+      (e.deltaX === 0 && Number.isInteger(e.deltaY) && Math.abs(e.deltaY) >= 40);
+
+    const onWheel = (e) => {
+      e.preventDefault();
+      if (isGesturing) return; // Safari: gesture* owns the pinch — discard concurrent wheels
+      if (e.ctrlKey) {
+        // trackpad pinch (or explicit ctrl+wheel)
+        zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.01));
+      } else if (isMouseWheel(e)) {
+        // notched mouse wheel — fixed-ratio step per click
+        zoomAt(e.clientX, e.clientY, Math.exp(-Math.sign(e.deltaY) * 0.18));
+      } else {
+        // trackpad two-finger scroll — pan
+        tf.current.x -= e.deltaX;
+        tf.current.y -= e.deltaY;
+        apply();
+      }
+    };
+
+    // Safari sends native gesture* events for trackpad pinch with a smooth
+    // e.scale; preferring these over the ctrl+wheel fallback gives a much
+    // better feel there. No-ops on other browsers. Safari also fires
+    // ctrlKey wheel events during the same pinch — isGesturing makes
+    // onWheel drop those entirely so they neither zoom nor pan.
+    let gsBase = 1;
+    let isGesturing = false;
+    const onGestureStart = (e) => { e.preventDefault(); isGesturing = true; gsBase = tf.current.scale; };
+    const onGestureChange = (e) => {
+      e.preventDefault();
+      zoomAt(e.clientX, e.clientY, (gsBase * e.scale) / tf.current.scale);
+    };
+    const onGestureEnd = (e) => { e.preventDefault(); isGesturing = false; };
+
+    // Drag-pan: middle button anywhere, or primary button on canvas
+    // background (anything that isn't an artboard or an inline editor).
+    let drag = null;
+    const onPointerDown = (e) => {
+      const onBg = !e.target.closest('[data-dc-slot], .dc-editable');
+      if (!(e.button === 1 || (e.button === 0 && onBg))) return;
+      e.preventDefault();
+      vp.setPointerCapture(e.pointerId);
+      drag = { id: e.pointerId, lx: e.clientX, ly: e.clientY };
+      vp.style.cursor = 'grabbing';
+    };
+    const onPointerMove = (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      tf.current.x += e.clientX - drag.lx;
+      tf.current.y += e.clientY - drag.ly;
+      drag.lx = e.clientX; drag.ly = e.clientY;
+      apply();
+    };
+    const onPointerUp = (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      vp.releasePointerCapture(e.pointerId);
+      drag = null;
+      vp.style.cursor = '';
+    };
+
+    vp.addEventListener('wheel', onWheel, { passive: false });
+    vp.addEventListener('gesturestart', onGestureStart, { passive: false });
+    vp.addEventListener('gesturechange', onGestureChange, { passive: false });
+    vp.addEventListener('gestureend', onGestureEnd, { passive: false });
+    vp.addEventListener('pointerdown', onPointerDown);
+    vp.addEventListener('pointermove', onPointerMove);
+    vp.addEventListener('pointerup', onPointerUp);
+    vp.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      vp.removeEventListener('wheel', onWheel);
+      vp.removeEventListener('gesturestart', onGestureStart);
+      vp.removeEventListener('gesturechange', onGestureChange);
+      vp.removeEventListener('gestureend', onGestureEnd);
+      vp.removeEventListener('pointerdown', onPointerDown);
+      vp.removeEventListener('pointermove', onPointerMove);
+      vp.removeEventListener('pointerup', onPointerUp);
+      vp.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, [apply, minScale, maxScale]);
+
+  const gridSvg = `url("data:image/svg+xml,%3Csvg width='120' height='120' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M120 0H0v120' fill='none' stroke='${encodeURIComponent(DC.grid)}' stroke-width='1'/%3E%3C/svg%3E")`;
+  return (
+    <div
+      ref={vpRef}
+      className="design-canvas"
+      style={{
+        height: '100vh', width: '100vw',
+        background: DC.bg,
+        overflow: 'hidden',
+        overscrollBehavior: 'none',
+        touchAction: 'none',
+        position: 'relative',
+        fontFamily: DC.font,
+        boxSizing: 'border-box',
+        ...style,
+      }}
+    >
+      <div
+        ref={worldRef}
+        style={{
+          position: 'absolute', top: 0, left: 0,
+          transformOrigin: '0 0',
+          willChange: 'transform',
+          width: 'max-content', minWidth: '100%',
+          minHeight: '100%',
+          padding: '60px 0 80px',
+        }}
+      >
+        <div style={{ position: 'absolute', inset: -6000, backgroundImage: gridSvg, backgroundSize: '120px 120px', pointerEvents: 'none', zIndex: -1 }} />
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// DCSection — editable title + h-row of artboards in persisted order
+// ─────────────────────────────────────────────────────────────
+function DCSection({ id, title, subtitle, children, gap = 48 }) {
+  const ctx = React.useContext(DCCtx);
+  const sid = id ?? title;
+  const all = React.Children.toArray(children);
+  const artboards = all.filter((c) => c && c.type === DCArtboard);
+  const rest = all.filter((c) => !(c && c.type === DCArtboard));
+  const srcOrder = artboards.map((a) => a.props.id ?? a.props.label);
+  const sec = (ctx && sid && ctx.section(sid)) || {};
+
+  const order = React.useMemo(() => {
+    const kept = (sec.order || []).filter((k) => srcOrder.includes(k));
+    return [...kept, ...srcOrder.filter((k) => !kept.includes(k))];
+  }, [sec.order, srcOrder.join('|')]);
+
+  const byId = Object.fromEntries(artboards.map((a) => [a.props.id ?? a.props.label, a]));
+
+  return (
+    <div data-dc-section={sid} style={{ marginBottom: 80, position: 'relative' }}>
+      <div style={{ padding: '0 60px 56px' }}>
+        <DCEditable tag="div" value={sec.title ?? title}
+          onChange={(v) => ctx && sid && ctx.patchSection(sid, { title: v })}
+          style={{ fontSize: 28, fontWeight: 600, color: DC.title, letterSpacing: -0.4, marginBottom: 6, display: 'inline-block' }} />
+        {subtitle && <div style={{ fontSize: 16, color: DC.subtitle }}>{subtitle}</div>}
+      </div>
+      <div style={{ display: 'flex', gap, padding: '0 60px', alignItems: 'flex-start', width: 'max-content' }}>
+        {order.map((k) => (
+          <DCArtboardFrame key={k} sectionId={sid} artboard={byId[k]} order={order}
+            label={(sec.labels || {})[k] ?? byId[k].props.label}
+            onRename={(v) => ctx && ctx.patchSection(sid, (x) => ({ labels: { ...x.labels, [k]: v } }))}
+            onReorder={(next) => ctx && ctx.patchSection(sid, { order: next })}
+            onFocus={() => ctx && ctx.setFocus(`${sid}/${k}`)} />
+        ))}
+      </div>
+      {rest}
+    </div>
+  );
+}
+
+// DCArtboard — marker; rendered by DCArtboardFrame via DCSection.
+function DCArtboard() { return null; }
+
+function DCArtboardFrame({ sectionId, artboard, label, order, onRename, onReorder, onFocus }) {
+  const { id: rawId, label: rawLabel, width = 260, height = 480, children, style = {} } = artboard.props;
+  const id = rawId ?? rawLabel;
+  const ref = React.useRef(null);
+
+  // Live drag-reorder: dragged card sticks to cursor; siblings slide into
+  // their would-be slots in real time via transforms. DOM order only
+  // changes on drop.
+  const onGripDown = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const me = ref.current;
+    // translateX is applied in local (pre-scale) space but pointer deltas and
+    // getBoundingClientRect().left are screen-space — divide by the viewport's
+    // current scale so the dragged card tracks the cursor at any zoom level.
+    const scale = me.getBoundingClientRect().width / me.offsetWidth || 1;
+    const peers = Array.from(document.querySelectorAll(`[data-dc-section="${sectionId}"] [data-dc-slot]`));
+    const homes = peers.map((el) => ({ el, id: el.dataset.dcSlot, x: el.getBoundingClientRect().left }));
+    const slotXs = homes.map((h) => h.x);
+    const startIdx = order.indexOf(id);
+    const startX = e.clientX;
+    let liveOrder = order.slice();
+    me.classList.add('dc-dragging');
+
+    const layout = () => {
+      for (const h of homes) {
+        if (h.id === id) continue;
+        const slot = liveOrder.indexOf(h.id);
+        h.el.style.transform = `translateX(${(slotXs[slot] - h.x) / scale}px)`;
+      }
+    };
+
+    const move = (ev) => {
+      const dx = ev.clientX - startX;
+      me.style.transform = `translateX(${dx / scale}px)`;
+      const cur = homes[startIdx].x + dx;
+      let nearest = 0, best = Infinity;
+      for (let i = 0; i < slotXs.length; i++) {
+        const d = Math.abs(slotXs[i] - cur);
+        if (d < best) { best = d; nearest = i; }
+      }
+      if (liveOrder.indexOf(id) !== nearest) {
+        liveOrder = order.filter((k) => k !== id);
+        liveOrder.splice(nearest, 0, id);
+        layout();
+      }
+    };
+
+    const up = () => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      const finalSlot = liveOrder.indexOf(id);
+      me.classList.remove('dc-dragging');
+      me.style.transform = `translateX(${(slotXs[finalSlot] - homes[startIdx].x) / scale}px)`;
+      // After the settle transition, kill transitions + clear transforms +
+      // commit the reorder in the same frame so there's no visual snap-back.
+      setTimeout(() => {
+        for (const h of homes) { h.el.style.transition = 'none'; h.el.style.transform = ''; }
+        if (liveOrder.join('|') !== order.join('|')) onReorder(liveOrder);
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          for (const h of homes) h.el.style.transition = '';
+        }));
+      }, 180);
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  };
+
+  return (
+    <div ref={ref} data-dc-slot={id} style={{ position: 'relative', flexShrink: 0 }}>
+      <div className="dc-labelrow" style={{ position: 'absolute', bottom: '100%', left: -4, marginBottom: 4, color: DC.label }}>
+        <div className="dc-grip" onPointerDown={onGripDown} title="Drag to reorder">
+          <svg width="9" height="13" viewBox="0 0 9 13" fill="currentColor"><circle cx="2" cy="2" r="1.1"/><circle cx="7" cy="2" r="1.1"/><circle cx="2" cy="6.5" r="1.1"/><circle cx="7" cy="6.5" r="1.1"/><circle cx="2" cy="11" r="1.1"/><circle cx="7" cy="11" r="1.1"/></svg>
+        </div>
+        <div className="dc-labeltext" onClick={onFocus} title="Click to focus">
+          <DCEditable value={label} onChange={onRename} onClick={(e) => e.stopPropagation()}
+            style={{ fontSize: 15, fontWeight: 500, color: DC.label, lineHeight: 1 }} />
+        </div>
+      </div>
+      <button className="dc-expand" onClick={onFocus} onPointerDown={(e) => e.stopPropagation()} title="Focus">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"><path d="M7 1h4v4M5 11H1V7M11 1L7.5 4.5M1 11l3.5-3.5"/></svg>
+      </button>
+      <div className="dc-card"
+        style={{ borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,.08),0 4px 16px rgba(0,0,0,.06)', overflow: 'hidden', width, height, background: '#fff', ...style }}>
+        {children || <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb', fontSize: 13, fontFamily: DC.font }}>{id}</div>}
+      </div>
+    </div>
+  );
+}
+
+// Inline rename — commits on blur or Enter.
+function DCEditable({ value, onChange, style, tag = 'span', onClick }) {
+  const T = tag;
+  return (
+    <T className="dc-editable" contentEditable suppressContentEditableWarning
+      onClick={onClick}
+      onPointerDown={(e) => e.stopPropagation()}
+      onBlur={(e) => onChange && onChange(e.currentTarget.textContent)}
+      onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); e.currentTarget.blur(); } }}
+      style={style}>{value}</T>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Focus mode — overlay one artboard; ←/→ within section, ↑/↓ across
+// sections, Esc or backdrop click to exit.
+// ─────────────────────────────────────────────────────────────
+function DCFocusOverlay({ entry, sectionMeta, sectionOrder }) {
+  const ctx = React.useContext(DCCtx);
+  const { sectionId, artboard } = entry;
+  const sec = ctx.section(sectionId);
+  const meta = sectionMeta[sectionId];
+  const peers = meta.slotIds;
+  const aid = artboard.props.id ?? artboard.props.label;
+  const idx = peers.indexOf(aid);
+  const secIdx = sectionOrder.indexOf(sectionId);
+
+  const go = (d) => { const n = peers[(idx + d + peers.length) % peers.length]; if (n) ctx.setFocus(`${sectionId}/${n}`); };
+  const goSection = (d) => {
+    const ns = sectionOrder[(secIdx + d + sectionOrder.length) % sectionOrder.length];
+    const first = sectionMeta[ns] && sectionMeta[ns].slotIds[0];
+    if (first) ctx.setFocus(`${ns}/${first}`);
+  };
+
+  React.useEffect(() => {
+    const k = (e) => {
+      if (e.key === 'ArrowLeft') { e.preventDefault(); go(-1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); go(1); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); goSection(-1); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); goSection(1); }
+    };
+    document.addEventListener('keydown', k);
+    return () => document.removeEventListener('keydown', k);
+  });
+
+  const { width = 260, height = 480, children } = artboard.props;
+  const [vp, setVp] = React.useState({ w: window.innerWidth, h: window.innerHeight });
+  React.useEffect(() => { const r = () => setVp({ w: window.innerWidth, h: window.innerHeight }); window.addEventListener('resize', r); return () => window.removeEventListener('resize', r); }, []);
+  const scale = Math.max(0.1, Math.min((vp.w - 200) / width, (vp.h - 260) / height, 2));
+
+  const [ddOpen, setDd] = React.useState(false);
+  const Arrow = ({ dir, onClick }) => (
+    <button onClick={(e) => { e.stopPropagation(); onClick(); }}
+      style={{ position: 'absolute', top: '50%', [dir]: 28, transform: 'translateY(-50%)',
+        border: 'none', background: 'rgba(255,255,255,.08)', color: 'rgba(255,255,255,.9)',
+        width: 44, height: 44, borderRadius: 22, fontSize: 18, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'background .15s' }}
+      onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.18)')}
+      onMouseLeave={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.08)')}>
+      <svg width="18" height="18" viewBox="0 0 18 18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+        <path d={dir === 'left' ? 'M11 3L5 9l6 6' : 'M7 3l6 6-6 6'} /></svg>
+    </button>
+  );
+
+  // Portal to body so position:fixed is the real viewport regardless of any
+  // transform on DesignCanvas's ancestors (including the canvas zoom itself).
+  return ReactDOM.createPortal(
+    <div onClick={() => ctx.setFocus(null)}
+      onWheel={(e) => e.preventDefault()}
+      style={{ position: 'fixed', inset: 0, zIndex: 100, background: 'rgba(24,20,16,.6)', backdropFilter: 'blur(14px)',
+        fontFamily: DC.font, color: '#fff' }}>
+
+      {/* top bar: section dropdown (left) · close (right) */}
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 72, display: 'flex', alignItems: 'flex-start', padding: '16px 20px 0', gap: 16 }}>
+        <div style={{ position: 'relative' }}>
+          <button onClick={() => setDd((o) => !o)}
+            style={{ border: 'none', background: 'transparent', color: '#fff', cursor: 'pointer', padding: '6px 8px',
+              borderRadius: 6, textAlign: 'left', fontFamily: 'inherit' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 18, fontWeight: 600, letterSpacing: -0.3 }}>{meta.title}</span>
+              <svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" style={{ opacity: .7 }}><path d="M2 4l3.5 3.5L9 4"/></svg>
+            </span>
+            {meta.subtitle && <span style={{ display: 'block', fontSize: 13, opacity: .6, fontWeight: 400, marginTop: 2 }}>{meta.subtitle}</span>}
+          </button>
+          {ddOpen && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, marginTop: 4, background: '#2a251f', borderRadius: 8,
+              boxShadow: '0 8px 32px rgba(0,0,0,.4)', padding: 4, minWidth: 200, zIndex: 10 }}>
+              {sectionOrder.map((sid) => (
+                <button key={sid} onClick={() => { setDd(false); const f = sectionMeta[sid].slotIds[0]; if (f) ctx.setFocus(`${sid}/${f}`); }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer',
+                    background: sid === sectionId ? 'rgba(255,255,255,.1)' : 'transparent', color: '#fff',
+                    padding: '8px 12px', borderRadius: 5, fontSize: 14, fontWeight: sid === sectionId ? 600 : 400, fontFamily: 'inherit' }}>
+                  {sectionMeta[sid].title}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <div style={{ flex: 1 }} />
+        <button onClick={() => ctx.setFocus(null)}
+          onMouseEnter={(e) => (e.currentTarget.style.background = 'rgba(255,255,255,.12)')}
+          onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
+          style={{ border: 'none', background: 'transparent', color: 'rgba(255,255,255,.7)', width: 32, height: 32,
+            borderRadius: 16, fontSize: 20, cursor: 'pointer', lineHeight: 1, transition: 'background .12s' }}>×</button>
+      </div>
+
+      {/* card centered, label + index below — only the card itself stops
+          propagation so any backdrop click (including the margins around
+          the card) exits focus */}
+      <div
+        style={{ position: 'absolute', top: 64, bottom: 56, left: 100, right: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+        <div onClick={(e) => e.stopPropagation()} style={{ width: width * scale, height: height * scale, position: 'relative' }}>
+          <div style={{ width, height, transform: `scale(${scale})`, transformOrigin: 'top left', background: '#fff', borderRadius: 2, overflow: 'hidden',
+            boxShadow: '0 20px 80px rgba(0,0,0,.4)' }}>
+            {children || <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb' }}>{aid}</div>}
+          </div>
+        </div>
+        <div onClick={(e) => e.stopPropagation()} style={{ fontSize: 14, fontWeight: 500, opacity: .85, textAlign: 'center' }}>
+          {(sec.labels || {})[aid] ?? artboard.props.label}
+          <span style={{ opacity: .5, marginLeft: 10, fontVariantNumeric: 'tabular-nums' }}>{idx + 1} / {peers.length}</span>
+        </div>
+      </div>
+
+      <Arrow dir="left" onClick={() => go(-1)} />
+      <Arrow dir="right" onClick={() => go(1)} />
+
+      {/* dots */}
+      <div onClick={(e) => e.stopPropagation()}
+        style={{ position: 'absolute', bottom: 20, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 8 }}>
+        {peers.map((p, i) => (
+          <button key={p} onClick={() => ctx.setFocus(`${sectionId}/${p}`)}
+            style={{ border: 'none', padding: 0, cursor: 'pointer', width: 6, height: 6, borderRadius: 3,
+              background: i === idx ? '#fff' : 'rgba(255,255,255,.3)' }} />
+        ))}
+      </div>
+    </div>,
+    document.body,
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Post-it — absolute-positioned sticky note
+// ─────────────────────────────────────────────────────────────
+function DCPostIt({ children, top, left, right, bottom, rotate = -2, width = 180 }) {
+  return (
+    <div style={{
+      position: 'absolute', top, left, right, bottom, width,
+      background: DC.postitBg, padding: '14px 16px',
+      fontFamily: '"Comic Sans MS", "Marker Felt", "Segoe Print", cursive',
+      fontSize: 14, lineHeight: 1.4, color: DC.postitText,
+      boxShadow: '0 2px 8px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.08)',
+      transform: `rotate(${rotate}deg)`,
+      zIndex: 5,
+    }}>{children}</div>
+  );
+}
+
+Object.assign(window, { DesignCanvas, DCSection, DCArtboard, DCPostIt });
+
+
+
+// ===== components/Logo.jsx =====
+// Harvest logo — tiny wheat-bundle glyph + wordmark
+function HarvestMark({ size = 18, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 18 18" fill="none" stroke={color} strokeWidth="1.2" strokeLinecap="round">
+      {/* wheat stem */}
+      <path d="M9 2 L9 16" />
+      {/* grain */}
+      <path d="M9 5 Q6 5 5 3.5 Q6 2 9 2.5" />
+      <path d="M9 5 Q12 5 13 3.5 Q12 2 9 2.5" />
+      <path d="M9 8 Q6 8 5 6.5 Q6 5 9 5.5" />
+      <path d="M9 8 Q12 8 13 6.5 Q12 5 9 5.5" />
+      <path d="M9 11 Q6 11 5 9.5 Q6 8 9 8.5" />
+      <path d="M9 11 Q12 11 13 9.5 Q12 8 9 8.5" />
+    </svg>
+  );
+}
+
+function HarvestLogo({ size = 18, color, tone = "full" }) {
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 8, color: color || "inherit" }}>
+      <HarvestMark size={size} color={color} />
+      {tone === "full" && (
+        <span style={{
+          fontFamily: 'var(--sans)', fontWeight: 600,
+          fontSize: size * 0.95, letterSpacing: "-0.03em",
+        }}>Harvest</span>
+      )}
+    </span>
+  );
+}
+
+Object.assign(window, { HarvestMark, HarvestLogo });
+
+
+// ===== components/Charts.jsx =====
+// Harvest — shared data-viz primitives (no external deps)
+
+// Deterministic seeded random so charts don't reflow on re-render
+function seedRand(seed) {
+  let s = seed;
+  return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
+}
+
+// Generate a plausible price path
+function genPath(n, startPrice, vol = 0.012, trend = 0.0005, seed = 7) {
+  const r = seedRand(seed);
+  const out = [startPrice];
+  for (let i = 1; i < n; i++) {
+    const step = (r() - 0.5) * 2 * vol + trend;
+    out.push(Math.max(0.1, out[i - 1] * (1 + step)));
+  }
+  return out;
+}
+
+// Sparkline — tiny line chart for rows and cards
+function Sparkline({ points, width = 80, height = 22, color = "var(--acid)", fill = false, strokeWidth = 1.25 }) {
+  if (!points || points.length < 2) return null;
+  const min = Math.min(...points);
+  const max = Math.max(...points);
+  const range = max - min || 1;
+  const step = width / (points.length - 1);
+  const coords = points.map((p, i) => [i * step, height - ((p - min) / range) * (height - 2) - 1]);
+  const d = coords.map(([x, y], i) => (i ? `L${x.toFixed(2)} ${y.toFixed(2)}` : `M${x.toFixed(2)} ${y.toFixed(2)}`)).join(" ");
+  const area = fill ? `${d} L${width} ${height} L0 ${height} Z` : null;
+  return (
+    <svg width={width} height={height} style={{ display: "block", overflow: "visible" }}>
+      {fill && <path d={area} fill={color} opacity={0.12} />}
+      <path d={d} fill="none" stroke={color} strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Chart with axes, optional shaded region, optional markers
+function LineChart({
+  points, width = 600, height = 220, color = "var(--acid)",
+  fill = true, padding = 24, yTicks = 4, xLabels = [], markers = [], strike, dashedFrom,
+}) {
+  const min = Math.min(...points) * 0.985;
+  const max = Math.max(...points) * 1.015;
+  const range = max - min || 1;
+  const plotW = width - padding * 2;
+  const plotH = height - padding * 2;
+  const step = plotW / (points.length - 1);
+
+  const toXY = (i, v) => [padding + i * step, padding + plotH - ((v - min) / range) * plotH];
+  const d = points.map((p, i) => { const [x, y] = toXY(i, p); return (i ? "L" : "M") + x.toFixed(2) + " " + y.toFixed(2); }).join(" ");
+
+  const solidPts = dashedFrom != null ? points.slice(0, dashedFrom + 1) : points;
+  const dashPts = dashedFrom != null ? points.slice(dashedFrom) : [];
+  const solidD = solidPts.map((p, i) => { const [x, y] = toXY(i, p); return (i ? "L" : "M") + x.toFixed(2) + " " + y.toFixed(2); }).join(" ");
+  const dashD = dashPts.map((p, i) => { const [x, y] = toXY(i + (dashedFrom || 0), p); return (i ? "L" : "M") + x.toFixed(2) + " " + y.toFixed(2); }).join(" ");
+
+  const areaD = solidD + ` L${padding + (solidPts.length - 1) * step} ${padding + plotH} L${padding} ${padding + plotH} Z`;
+
+  const ticks = [];
+  for (let i = 0; i <= yTicks; i++) {
+    const v = min + (range * i) / yTicks;
+    const y = padding + plotH - (plotH * i) / yTicks;
+    ticks.push({ v, y });
+  }
+
+  return (
+    <svg width={width} height={height} style={{ display: "block" }}>
+      {ticks.map((t, i) => (
+        <g key={i}>
+          <line x1={padding} x2={width - padding} y1={t.y} y2={t.y} stroke="var(--line-soft)" />
+          <text x={width - padding + 6} y={t.y + 3} fontSize="9" fill="var(--fg-faint)" fontFamily="var(--mono)">
+            {t.v.toFixed(t.v < 10 ? 2 : 0)}
+          </text>
+        </g>
+      ))}
+      {strike != null && (() => {
+        const y = padding + plotH - ((strike - min) / range) * plotH;
+        return (
+          <g>
+            <line x1={padding} x2={width - padding} y1={y} y2={y} stroke="var(--acid)" strokeWidth="1" strokeDasharray="3 3" opacity="0.6" />
+            <text x={padding + 4} y={y - 3} fontSize="9" fill="var(--acid)" fontFamily="var(--mono)">STRIKE {strike}</text>
+          </g>
+        );
+      })()}
+      {fill && <path d={areaD} fill={color} opacity={0.08} />}
+      <path d={solidD} fill="none" stroke={color} strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+      {dashD && <path d={dashD} fill="none" stroke={color} strokeWidth="1.2" strokeDasharray="3 3" opacity="0.7" />}
+      {markers.map((m, i) => {
+        const [x, y] = toXY(m.i, points[m.i]);
+        return (
+          <g key={i}>
+            <circle cx={x} cy={y} r="3.5" fill="var(--bg)" stroke={m.color || color} strokeWidth="1.4" />
+            {m.label && <text x={x + 7} y={y - 6} fontSize="9" fill="var(--fg-dim)" fontFamily="var(--mono)">{m.label}</text>}
+          </g>
+        );
+      })}
+      {xLabels.map((x, i) => (
+        <text key={i} x={padding + (i * plotW) / (xLabels.length - 1)} y={height - 6} fontSize="9"
+          fill="var(--fg-faint)" fontFamily="var(--mono)" textAnchor={i === 0 ? "start" : i === xLabels.length - 1 ? "end" : "middle"}>{x}</text>
+      ))}
+    </svg>
+  );
+}
+
+// Premium-vs-yield scatter for screener
+function Scatter({ points, width = 600, height = 300, padding = 36, highlightId, onHover }) {
+  const xs = points.map(p => p.x), ys = points.map(p => p.y);
+  const minX = Math.min(...xs), maxX = Math.max(...xs);
+  const minY = Math.min(...ys), maxY = Math.max(...ys);
+  const plotW = width - padding * 1.5;
+  const plotH = height - padding * 1.5;
+  const toX = v => padding + ((v - minX) / (maxX - minX)) * plotW;
+  const toY = v => padding + plotH - ((v - minY) / (maxY - minY)) * plotH;
+  return (
+    <svg width={width} height={height} style={{ display: "block" }}>
+      <defs>
+        <pattern id="grid" width={plotW / 6} height={plotH / 5} patternUnits="userSpaceOnUse">
+          <path d={`M${plotW / 6} 0 L0 0 L0 ${plotH / 5}`} fill="none" stroke="var(--line-soft)" />
+        </pattern>
+      </defs>
+      <rect x={padding} y={padding} width={plotW} height={plotH} fill="url(#grid)" />
+      {/* axis ticks */}
+      {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
+        <text key={"x" + i} x={padding + t * plotW} y={padding + plotH + 16} fontSize="9"
+          fill="var(--fg-faint)" fontFamily="var(--mono)" textAnchor="middle">
+          {(minX + t * (maxX - minX)).toFixed(1)}%
+        </text>
+      ))}
+      {[0, 0.25, 0.5, 0.75, 1].map((t, i) => (
+        <text key={"y" + i} x={padding - 6} y={padding + plotH - t * plotH + 3} fontSize="9"
+          fill="var(--fg-faint)" fontFamily="var(--mono)" textAnchor="end">
+          {(minY + t * (maxY - minY)).toFixed(0)}%
+        </text>
+      ))}
+      {/* axis labels */}
+      <text x={padding + plotW / 2} y={height - 4} fontSize="10" fill="var(--fg-mute)" fontFamily="var(--mono)" textAnchor="middle">PREMIUM (% of price)</text>
+      <text x={12} y={padding + plotH / 2} fontSize="10" fill="var(--fg-mute)" fontFamily="var(--mono)"
+        textAnchor="middle" transform={`rotate(-90, 12, ${padding + plotH / 2})`}>ANNUALIZED YIELD</text>
+      {points.map(p => {
+        const hi = p.id === highlightId;
+        return (
+          <g key={p.id} onMouseEnter={() => onHover && onHover(p.id)}
+            style={{ cursor: "pointer" }}>
+            <circle cx={toX(p.x)} cy={toY(p.y)} r={hi ? 6 : 4}
+              fill={hi ? "var(--acid)" : "var(--acid-faint)"} stroke="var(--acid)" strokeWidth={hi ? 1.5 : 0.8} />
+            {hi && <text x={toX(p.x) + 10} y={toY(p.y) - 6} fontSize="10" fontFamily="var(--mono)" fill="var(--fg)">{p.label}</text>}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+Object.assign(window, { Sparkline, LineChart, Scatter, genPath, seedRand });
+
+
+// ===== components/Data.jsx =====
+// Sample data for Harvest mockups
+const HARVEST_POSITIONS = [
+  { sym: "AAPL", name: "Apple Inc.", shares: 400, avg: 162.40, price: 194.32, day: 1.18, week: 2.4, ivr: 28, cc: { strike: 200, exp: "May 16", premium: 2.45, delta: 0.28, cover: 400 } },
+  { sym: "MSFT", name: "Microsoft Corp.", shares: 200, avg: 342.10, price: 428.15, day: -0.42, week: -1.1, ivr: 22, cc: { strike: 440, exp: "May 16", premium: 4.20, delta: 0.32, cover: 200 } },
+  { sym: "NVDA", name: "NVIDIA Corp.", shares: 100, avg: 480.00, price: 892.40, day: 2.81, week: 5.9, ivr: 58, cc: { strike: 920, exp: "May 09", premium: 18.60, delta: 0.34, cover: 100 } },
+  { sym: "AMD", name: "Adv. Micro Devices", shares: 300, avg: 148.20, price: 168.90, day: 0.94, week: -2.8, ivr: 41, cc: { strike: 180, exp: "May 16", premium: 3.10, delta: 0.26, cover: 300 } },
+  { sym: "GOOG", name: "Alphabet Inc.", shares: 250, avg: 138.00, price: 174.25, day: 0.61, week: 3.2, ivr: 19, cc: { strike: 180, exp: "May 23", premium: 2.80, delta: 0.30, cover: 200 } },
+  { sym: "F", name: "Ford Motor Co.", shares: 1000, avg: 11.80, price: 13.42, day: -0.78, week: 1.1, ivr: 35, cc: { strike: 14, exp: "May 16", premium: 0.38, delta: 0.38, cover: 1000 } },
+  { sym: "SOFI", name: "SoFi Technologies", shares: 800, avg: 7.40, price: 9.18, day: 2.12, week: 6.4, ivr: 62, cc: { strike: 10, exp: "May 09", premium: 0.42, delta: 0.35, cover: 800 } },
+  { sym: "T", name: "AT&T Inc.", shares: 500, avg: 17.20, price: 18.94, day: 0.28, week: 0.9, ivr: 14, cc: null },
+];
+
+const HARVEST_RECS = [
+  {
+    id: "r1", sym: "AAPL", conviction: "High", score: 88,
+    action: "Sell 4x May 16 $200 Call", premium: 980, annYield: 18.4, pop: 72, delta: 0.28,
+    thesis: "IV rank at 28 offers reasonable premium. $200 strike sits above 1σ range and two prior rejection points. Earnings are post-expiration; event risk avoided.",
+    tags: ["above-cost-basis", "no-earnings", "iv-rank-median"],
+  },
+  {
+    id: "r2", sym: "NVDA", conviction: "Med", score: 74,
+    action: "Sell 1x May 09 $920 Call", premium: 1860, annYield: 31.2, pop: 64, delta: 0.34,
+    thesis: "Elevated IVR of 58 captures rich premium. Short 2-week tenor reduces assignment risk. Strike is 3% OTM but trend momentum is strong — consider rolling.",
+    tags: ["high-iv", "short-dte", "trend-risk"],
+  },
+  {
+    id: "r3", sym: "AMD", conviction: "Med", score: 69,
+    action: "Sell 3x May 16 $180 Call", premium: 930, annYield: 22.0, pop: 70, delta: 0.26,
+    thesis: "Consolidation band between $160 and $180. Selling at resistance. Premium covers 3.3 weeks of portfolio drag.",
+    tags: ["range-bound", "at-resistance"],
+  },
+  {
+    id: "r4", sym: "SOFI", conviction: "Low", score: 52,
+    action: "Hold — await IV cooldown",
+    thesis: "IVR at 62 is attractive, but price is trending into earnings. Wait for post-event IV crush before initiating.",
+    tags: ["earnings-soon", "watch"],
+  },
+];
+
+const HARVEST_HISTORY = [
+  { id: "h1", date: "Apr 18", sym: "AAPL", action: "STO", strike: 190, exp: "Apr 18", premium: 2.10, qty: 4, outcome: "expired", pnl: 840, ret: 1.24 },
+  { id: "h2", date: "Apr 18", sym: "MSFT", action: "STO", strike: 420, exp: "Apr 18", premium: 3.80, qty: 2, outcome: "expired", pnl: 760, ret: 0.91 },
+  { id: "h3", date: "Apr 11", sym: "NVDA", action: "BTC", strike: 880, exp: "Apr 18", premium: 12.40, qty: 1, outcome: "closed-early", pnl: 620, ret: 0.82 },
+  { id: "h4", date: "Apr 04", sym: "AMD", action: "STO", strike: 175, exp: "Apr 18", premium: 2.80, qty: 3, outcome: "assigned", pnl: 1240, ret: 1.62 },
+  { id: "h5", date: "Mar 28", sym: "AAPL", action: "STO", strike: 185, exp: "Apr 18", premium: 1.90, qty: 4, outcome: "rolled", pnl: 0, ret: 0 },
+  { id: "h6", date: "Mar 28", sym: "F", action: "STO", strike: 13, exp: "Apr 18", premium: 0.28, qty: 10, outcome: "expired", pnl: 280, ret: 2.24 },
+];
+
+const HARVEST_SCREENER = [
+  { id: "s1", sym: "TSLA", label: "TSLA", x: 2.8, y: 38, delta: 0.30, ivr: 68 },
+  { id: "s2", sym: "NVDA", label: "NVDA", x: 2.1, y: 31, delta: 0.34, ivr: 58 },
+  { id: "s3", sym: "AAPL", label: "AAPL", x: 1.3, y: 18, delta: 0.28, ivr: 28 },
+  { id: "s4", sym: "MSFT", label: "MSFT", x: 1.0, y: 14, delta: 0.32, ivr: 22 },
+  { id: "s5", sym: "AMD", label: "AMD", x: 1.9, y: 22, delta: 0.26, ivr: 41 },
+  { id: "s6", sym: "SOFI", label: "SOFI", x: 4.6, y: 52, delta: 0.35, ivr: 62 },
+  { id: "s7", sym: "F", label: "F", x: 2.8, y: 30, delta: 0.38, ivr: 35 },
+  { id: "s8", sym: "GOOG", label: "GOOG", x: 1.6, y: 19, delta: 0.30, ivr: 19 },
+  { id: "s9", sym: "META", label: "META", x: 2.0, y: 26, delta: 0.28, ivr: 38 },
+  { id: "s10", sym: "PLTR", label: "PLTR", x: 3.4, y: 42, delta: 0.32, ivr: 55 },
+  { id: "s11", sym: "INTC", label: "INTC", x: 2.2, y: 28, delta: 0.31, ivr: 44 },
+  { id: "s12", sym: "COIN", label: "COIN", x: 4.1, y: 46, delta: 0.33, ivr: 60 },
+  { id: "s13", sym: "KO", label: "KO", x: 0.7, y: 9, delta: 0.24, ivr: 12 },
+  { id: "s14", sym: "JPM", label: "JPM", x: 1.0, y: 13, delta: 0.27, ivr: 18 },
+  { id: "s15", sym: "XOM", label: "XOM", x: 1.4, y: 17, delta: 0.29, ivr: 26 },
+];
+
+Object.assign(window, { HARVEST_POSITIONS, HARVEST_RECS, HARVEST_HISTORY, HARVEST_SCREENER });
+
+
+// ===== components/Marketing.jsx =====
+// Harvest — Marketing site variations
+
+// ─────────────────────────────────────────────────────────────
+// Shared marketing chrome
+// ─────────────────────────────────────────────────────────────
+function MarketingNav({ scheme = "dark" }) {
+  const bg = scheme === "dark" ? "rgba(250,248,243,0.78)" : "rgba(250,248,243,0.5)";
+  return (
+    <div style={{
+      position: "sticky", top: 0, zIndex: 10,
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "14px 36px",
+      background: bg,
+      backdropFilter: "blur(18px)",
+      borderBottom: "1px solid var(--line-soft)",
+    }}>
+      <HarvestLogo size={17} />
+      <div style={{ display: "flex", gap: 28, color: "var(--fg-dim)", fontSize: 13 }}>
+        <a>Product</a><a>Screener</a><a>Pricing</a><a>Research</a><a>Changelog</a>
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <button className="h-btn ghost sm">Sign in</button>
+        <button className="h-btn sm primary">Start free</button>
+      </div>
+    </div>
+  );
+}
+
+function MarketingFooter() {
+  const col = (t, items) => (
+    <div>
+      <div className="h-eyebrow" style={{ marginBottom: 14 }}>{t}</div>
+      {items.map((i, k) => <div key={k} style={{ color: "var(--fg-dim)", fontSize: 13, padding: "4px 0" }}>{i}</div>)}
+    </div>
+  );
+  return (
+    <div style={{ padding: "72px 36px 40px", borderTop: "1px solid var(--line)", background: "var(--bg)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr 1fr 1fr 1fr", gap: 48, maxWidth: 1200 }}>
+        <div>
+          <HarvestLogo size={18} />
+          <p style={{ color: "var(--fg-mute)", marginTop: 16, fontSize: 13, maxWidth: 280, lineHeight: 1.6 }}>
+            Income tools for long-term shareholders. Built in New York. Not investment advice.
+          </p>
+        </div>
+        {col("Product", ["Dashboard", "Screener", "Recommendations", "Journal", "Mobile"])}
+        {col("Research", ["Covered call 101", "The wheel, explained", "Tax basics", "Glossary", "Blog"])}
+        {col("Company", ["About", "Careers", "Security", "Press"])}
+        {col("Legal", ["Terms", "Privacy", "Disclosures", "Form CRS"])}
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 56, paddingTop: 24, borderTop: "1px solid var(--line)",
+        color: "var(--fg-faint)", fontSize: 11, fontFamily: "var(--mono)", letterSpacing: "0.08em", textTransform: "uppercase" }}>
+        <span>© 2026 Harvest Financial, Inc.</span>
+        <span>SIPC-protected custody via Apex Clearing · Member FINRA</span>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// VARIATION A — Editorial / terminal. Monospace-forward, acid green
+// pull quotes. Ticker strip. Live screenshot on right.
+// ─────────────────────────────────────────────────────────────
+function MarketingHeroEditorial() {
+  const path = genPath(120, 100, 0.008, 0.0012, 14);
+  return (
+    <div style={{ background: "var(--bg)", position: "relative", overflow: "hidden" }} className="h-grain">
+      <div style={{ padding: "120px 36px 96px", maxWidth: 1280, margin: "0 auto", position: "relative" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1.1fr 1fr", gap: 80, alignItems: "center" }}>
+          <div>
+            <div className="h-eyebrow" style={{ marginBottom: 24 }}>
+              <span className="h-dot" style={{ marginRight: 8, verticalAlign: "middle" }} /> Covered-call platform · v2.4
+            </div>
+            <h1 className="display" style={{
+              fontSize: 68, fontWeight: 500, lineHeight: 0.98, letterSpacing: "-0.035em",
+              margin: 0, color: "var(--fg)",
+            }}>
+              Income from the <span style={{ color: "var(--acid)" }}>shares</span><br/>you already own.
+            </h1>
+            <p style={{ fontSize: 17, color: "var(--fg-dim)", marginTop: 24, maxWidth: 480, lineHeight: 1.55 }}>
+              Harvest scans your portfolio, models risk, and recommends covered calls sized to your
+              positions. Ranked by expected yield, delta and event risk — never by commission.
+            </p>
+            <div style={{ display: "flex", gap: 10, marginTop: 32 }}>
+              <button className="h-btn primary">Connect a portfolio</button>
+              <button className="h-btn">See the screener →</button>
+            </div>
+            <div style={{ display: "flex", gap: 28, marginTop: 48, color: "var(--fg-mute)", fontSize: 12, fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              <span>✓ Read-only by default</span>
+              <span>✓ No trade commissions</span>
+              <span>✓ Imports from 12 brokers</span>
+            </div>
+          </div>
+          <div style={{ position: "relative" }}>
+            <MockTerminalPanel path={path} />
+          </div>
+        </div>
+      </div>
+      <TickerStrip />
+    </div>
+  );
+}
+
+function MockTerminalPanel({ path }) {
+  return (
+    <div style={{
+      background: "var(--bg-elev)", border: "1px solid var(--line-strong)", borderRadius: 4,
+      padding: 20, fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)",
+      boxShadow: "0 30px 80px rgba(24,28,20,0.12), 0 0 0 1px var(--acid-faint)",
+    }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, paddingBottom: 12, borderBottom: "1px solid var(--line)" }}>
+        <div style={{ color: "var(--fg)", fontSize: 12, fontWeight: 500 }}>AAPL · 400 sh</div>
+        <div className="h-chip acid" style={{ height: 20 }}>Recommendation · High</div>
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 18 }}>
+        <div>
+          <LineChart points={path} width={340} height={160} color="var(--acid)" strike={200} padding={18} yTicks={3} xLabels={["Jan", "Feb", "Mar", "Apr"]} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <KV k="Action" v="Sell 4× call" />
+          <KV k="Strike" v="$200" />
+          <KV k="Expiry" v="May 16" />
+          <KV k="Premium" v="$980" acid />
+          <KV k="Ann. yield" v="18.4%" />
+          <KV k="PoP" v="72%" />
+        </div>
+      </div>
+      <div style={{ marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line)", color: "var(--fg-mute)", lineHeight: 1.55, fontSize: 10.5 }}>
+        IV rank 28 · $200 strike sits above 1σ range and prior rejection. No earnings pre-expiry.
+      </div>
+    </div>
+  );
+}
+
+function KV({ k, v, acid }) {
+  return (
+    <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+      <span style={{ color: "var(--fg-faint)", textTransform: "uppercase", letterSpacing: "0.08em", fontSize: 9.5 }}>{k}</span>
+      <span style={{ color: acid ? "var(--acid)" : "var(--fg)", fontSize: 11 }}>{v}</span>
+    </div>
+  );
+}
+
+function TickerStrip() {
+  const tickers = [
+    { s: "AAPL", v: "+1.18%" }, { s: "MSFT", v: "-0.42%" }, { s: "NVDA", v: "+2.81%" },
+    { s: "GOOG", v: "+0.61%" }, { s: "AMD", v: "+0.94%" }, { s: "META", v: "+1.42%" },
+    { s: "TSLA", v: "-1.80%" }, { s: "F", v: "-0.78%" }, { s: "SOFI", v: "+2.12%" },
+    { s: "INTC", v: "+0.34%" }, { s: "COIN", v: "+3.40%" }, { s: "KO", v: "+0.18%" },
+  ];
+  return (
+    <div style={{
+      borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)",
+      padding: "12px 0", background: "var(--bg-elev)", overflow: "hidden", whiteSpace: "nowrap",
+      fontFamily: "var(--mono)", fontSize: 11,
+    }}>
+      {[...tickers, ...tickers].map((t, i) => (
+        <span key={i} style={{ marginRight: 36, color: "var(--fg-mute)" }}>
+          <span style={{ color: "var(--fg)" }}>{t.s}</span>{" "}
+          <span style={{ color: t.v.startsWith("+") ? "var(--acid)" : "var(--down)" }}>{t.v}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// VARIATION B — Serif-led, confident. Giant headline, single quiet chart.
+// ─────────────────────────────────────────────────────────────
+function MarketingHeroSerif() {
+  const path = genPath(90, 100, 0.008, 0.0014, 21);
+  return (
+    <div style={{ background: "var(--bg)", position: "relative", overflow: "hidden" }} className="h-grain">
+      <div style={{ padding: "140px 36px 120px", maxWidth: 1100, margin: "0 auto", textAlign: "center", position: "relative" }}>
+        <div className="h-eyebrow" style={{ marginBottom: 28 }}>
+          <span className="h-dot" style={{ marginRight: 8, verticalAlign: "middle" }} /> The covered-call platform for long-term shareholders
+        </div>
+        <h1 className="serif" style={{
+          fontSize: 108, fontWeight: 400, lineHeight: 0.95, letterSpacing: "-0.04em",
+          margin: 0, color: "var(--fg)",
+        }}>
+          Yield on the <em style={{ fontStyle: "italic", color: "var(--acid)" }}>shares</em><br/>
+          <em style={{ fontStyle: "italic" }}>you already own.</em>
+        </h1>
+        <p style={{ fontSize: 18, color: "var(--fg-dim)", marginTop: 32, maxWidth: 560, marginLeft: "auto", marginRight: "auto", lineHeight: 1.6 }}>
+          Harvest reads your existing portfolio and surfaces covered-call opportunities
+          ranked by expected yield, risk of assignment, and event exposure.
+        </p>
+        <div style={{ display: "flex", gap: 10, marginTop: 36, justifyContent: "center" }}>
+          <button className="h-btn primary">Connect your portfolio</button>
+          <button className="h-btn">Read the research</button>
+        </div>
+
+        {/* single quiet chart floats beneath */}
+        <div style={{ marginTop: 96, position: "relative", borderTop: "1px solid var(--line)", paddingTop: 40 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 40, textAlign: "left" }}>
+            <Stat k="Yield captured" v="$12,840" sub="past 90 days" acc />
+            <Stat k="Avg. annualized" v="14.2%" sub="per position" />
+            <Stat k="Assignments" v="6 of 48" sub="12.5% rate" />
+            <Stat k="Next expiry" v="May 16" sub="4 contracts" />
+          </div>
+          <div style={{ marginTop: 40 }}>
+            <LineChart points={path} width={1020} height={200} color="var(--acid)" padding={24} yTicks={3}
+              xLabels={["Jan", "Feb", "Mar", "Apr", "Today"]} markers={[{ i: 15, label: "AAPL expired" }, { i: 55, label: "NVDA rolled" }, { i: 85, label: "now", color: "var(--acid)" }]} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Stat({ k, v, sub, acc }) {
+  return (
+    <div>
+      <div className="h-eyebrow" style={{ marginBottom: 10 }}>{k}</div>
+      <div className="num" style={{ fontSize: 36, fontWeight: 500, color: acc ? "var(--acid)" : "var(--fg)", letterSpacing: "-0.03em" }}>{v}</div>
+      <div style={{ color: "var(--fg-mute)", fontSize: 12, marginTop: 4 }}>{sub}</div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// VARIATION C — Split/dense. Left: manifesto copy. Right: stacked live panels.
+// ─────────────────────────────────────────────────────────────
+function MarketingHeroSplit() {
+  return (
+    <div style={{ background: "var(--bg)", borderBottom: "1px solid var(--line)" }} className="h-grain" >
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", minHeight: 640 }}>
+        <div style={{ padding: "120px 56px 80px", borderRight: "1px solid var(--line)", display: "flex", flexDirection: "column", justifyContent: "center" }}>
+          <div className="h-eyebrow" style={{ marginBottom: 24 }}>Platform · Beta</div>
+          <h1 className="display" style={{
+            fontSize: 58, fontWeight: 500, lineHeight: 1.02, letterSpacing: "-0.035em", margin: 0,
+          }}>
+            Turn a 2%<br/>
+            dividend yield<br/>
+            into <span style={{ color: "var(--acid)" }}>14%</span>.
+          </h1>
+          <p style={{ color: "var(--fg-dim)", fontSize: 16, marginTop: 28, maxWidth: 440, lineHeight: 1.6 }}>
+            Selling one covered call per month against a long stock position historically
+            produces 10–18% annualized income. Harvest makes the decision legible, repeatable,
+            and tuned to your risk.
+          </p>
+          <div style={{ display: "flex", gap: 10, marginTop: 32 }}>
+            <button className="h-btn primary">Get started</button>
+            <button className="h-btn">Methodology</button>
+          </div>
+        </div>
+        <div style={{ padding: "56px 40px", background: "var(--bg-elev)", display: "flex", flexDirection: "column", gap: 16, justifyContent: "center" }}>
+          <StackedPanel />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StackedPanel() {
+  const positions = HARVEST_POSITIONS.slice(0, 4);
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <span className="h-eyebrow">Your portfolio · 8 positions</span>
+        <span className="h-chip acid">+$4,320 eligible this cycle</span>
+      </div>
+      {positions.map(p => {
+        const path = genPath(32, p.price * 0.92, 0.01, 0.001, p.sym.charCodeAt(0));
+        const up = p.day >= 0;
+        return (
+          <div key={p.sym} style={{ background: "var(--bg)", border: "1px solid var(--line)", padding: "16px 20px", display: "grid", gridTemplateColumns: "48px 1fr 100px 120px 60px", alignItems: "center", gap: 16, borderRadius: 2 }}>
+            <div className="num" style={{ fontSize: 13, color: "var(--fg)" }}>{p.sym}</div>
+            <div style={{ color: "var(--fg-mute)", fontSize: 12 }}>{p.shares} sh · avg ${p.avg.toFixed(2)}</div>
+            <Sparkline points={path} width={100} height={24} color={up ? "var(--acid)" : "var(--down)"} />
+            <div className="num" style={{ fontSize: 13, textAlign: "right", color: "var(--fg)" }}>${p.price.toFixed(2)}</div>
+            <div className="num" style={{ fontSize: 12, textAlign: "right", color: up ? "var(--acid)" : "var(--down)" }}>{up ? "+" : ""}{p.day.toFixed(2)}%</div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Shared marketing sections (appear below all hero variants)
+// ─────────────────────────────────────────────────────────────
+function MarketingFeatures() {
+  const features = [
+    { n: "01", t: "Your portfolio. Read-only.", c: "Import from 12 brokers or upload a CSV. Harvest never places trades or sees your credentials — we read holdings via Plaid Investments and SnapTrade.", acc: "Supported: Fidelity, Schwab, Robinhood, IBKR, E*TRADE, Vanguard, Public, Webull, tastytrade, M1, Merrill, and JP Morgan." },
+    { n: "02", t: "Recommendations under each position.", c: "Open any ticker to see a ranked list of covered-call candidates. Each idea shows premium, annualized yield, probability of profit, and a short thesis you can read in 15 seconds.", acc: "Filtered for IV rank, delta band, DTE, earnings, ex-dividend, and assignment probability." },
+    { n: "03", t: "The screener finds ideas you don't own.", c: "Plot premium against yield, filter by delta, DTE, or sector. Add a ticker to your watchlist and Harvest will monitor its IV rank and alert when a defined setup triggers.", acc: "Presets for wheel starters, high-IV income, and low-delta conservatives." },
+    { n: "04", t: "A journal of every trade you've made.", c: "Every open, roll, close, and assignment is captured. See realized yield by ticker, expiry, and outcome. Export to CSV or Form 8949 at year-end.", acc: "Outcome tags: expired, closed-early, rolled, assigned, called-away. Filter by any." },
+  ];
+  return (
+    <div style={{ padding: "120px 36px", borderTop: "1px solid var(--line)", background: "var(--bg)" }}>
+      <div style={{ maxWidth: 1200, margin: "0 auto" }}>
+        <div className="h-eyebrow" style={{ marginBottom: 16 }}>How Harvest works</div>
+        <h2 className="display" style={{ fontSize: 52, margin: 0, letterSpacing: "-0.035em", fontWeight: 500, maxWidth: 800 }}>
+          Four surfaces. Built for the long-term shareholder who wants the shares to keep working.
+        </h2>
+        <div style={{ marginTop: 72, display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 1, background: "var(--line)", border: "1px solid var(--line)" }}>
+          {features.map(f => (
+            <div key={f.n} style={{ background: "var(--bg)", padding: "44px 40px" }}>
+              <div className="num" style={{ fontSize: 13, color: "var(--acid)", marginBottom: 32 }}>{f.n}</div>
+              <div style={{ fontSize: 24, color: "var(--fg)", letterSpacing: "-0.02em", marginBottom: 14, fontWeight: 500 }}>{f.t}</div>
+              <p style={{ color: "var(--fg-dim)", fontSize: 14.5, lineHeight: 1.6, maxWidth: 480 }}>{f.c}</p>
+              <p style={{ color: "var(--fg-mute)", fontSize: 12, lineHeight: 1.5, marginTop: 16, fontFamily: "var(--mono)" }}>{f.acc}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MarketingProof() {
+  return (
+    <div style={{ padding: "96px 36px", borderTop: "1px solid var(--line)" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64, alignItems: "center" }}>
+          <div>
+            <div className="h-eyebrow" style={{ marginBottom: 20 }}>Methodology</div>
+            <h3 className="display" style={{ fontSize: 36, letterSpacing: "-0.025em", fontWeight: 500, margin: 0, lineHeight: 1.1 }}>
+              Every recommendation carries a thesis, a risk score, and a clear exit plan.
+            </h3>
+            <p style={{ color: "var(--fg-dim)", fontSize: 15, marginTop: 20, lineHeight: 1.6 }}>
+              We score each candidate on seven axes: IV rank, delta band, days-to-expiration, earnings distance,
+              ex-dividend distance, historical assignment rate, and portfolio concentration. The weights are public.
+            </p>
+            <a style={{ display: "inline-block", marginTop: 24, color: "var(--acid)", fontSize: 13, borderBottom: "1px solid var(--acid-line)", paddingBottom: 2 }}>Read the methodology →</a>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 12 }}>
+            {["IV rank", "Delta band", "Days-to-expiry", "Earnings distance", "Ex-div distance", "Historical assignment", "Concentration cap"].map(x => (
+              <div key={x} style={{ border: "1px solid var(--line)", padding: "14px 16px", fontSize: 13, color: "var(--fg)", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>{x}</span>
+                <span className="h-eyebrow">weight</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MarketingCTA() {
+  return (
+    <div style={{ padding: "120px 36px", borderTop: "1px solid var(--line)", background: "var(--bg-elev)", position: "relative", overflow: "hidden" }}>
+      <div style={{ maxWidth: 1100, margin: "0 auto", display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 48, alignItems: "center" }}>
+        <div>
+          <h3 className="display" style={{ fontSize: 60, letterSpacing: "-0.035em", fontWeight: 500, margin: 0, lineHeight: 1, color: "var(--fg)" }}>
+            Start with a<br />read-only portfolio.
+          </h3>
+          <p style={{ color: "var(--fg-dim)", fontSize: 16, marginTop: 24, maxWidth: 480, lineHeight: 1.6 }}>
+            Connect your broker in under a minute. Harvest will surface the first batch of
+            recommendations as soon as the import finishes.
+          </p>
+          <div style={{ display: "flex", gap: 10, marginTop: 28 }}>
+            <button className="h-btn primary">Connect a portfolio</button>
+            <button className="h-btn">Book a walkthrough</button>
+          </div>
+        </div>
+        <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--fg-mute)", lineHeight: 1.9 }}>
+          <div>→ 1. Link broker (read-only)</div>
+          <div>→ 2. Harvest imports positions</div>
+          <div>→ 3. See ranked ideas in 60s</div>
+          <div>→ 4. Review the thesis per trade</div>
+          <div>→ 5. Place orders in your broker</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, {
+  MarketingNav, MarketingFooter,
+  MarketingHeroEditorial, MarketingHeroSerif, MarketingHeroSplit,
+  MarketingFeatures, MarketingProof, MarketingCTA,
+  TickerStrip,
+});
+
+
+// ===== components/Dashboard.jsx =====
+// Harvest — Dashboard / App screens
+
+// ─────────────────────────────────────────────────────────────
+// App chrome
+// ─────────────────────────────────────────────────────────────
+function AppSidebar({ active = "dashboard" }) {
+  const nav = [
+    { id: "dashboard", label: "Dashboard", icon: <path d="M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z" /> },
+    { id: "positions", label: "Positions", icon: <path d="M2 3h12M2 8h12M2 13h8" /> },
+    { id: "recs", label: "Recommendations", icon: <path d="M8 1.5L9.6 5.6l4.4.3-3.4 2.9 1 4.3L8 10.8l-3.6 2.3 1-4.3L2 5.9l4.4-.3z" /> },
+    { id: "screener", label: "Screener", icon: <path d="M2 2h12v3H2zM2 6h7v8H2zM10 6h4v4h-4z" /> },
+    { id: "history", label: "Journal", icon: <path d="M4 2v12M4 2l8 3v7l-8 3" /> },
+    { id: "research", label: "Research", icon: <circle cx="7" cy="7" r="5" /> },
+  ];
+  const sub = [
+    { id: "settings", label: "Settings" },
+    { id: "help", label: "Help & docs" },
+  ];
+  return (
+    <div style={{
+      width: 216, borderRight: "1px solid var(--line)", background: "var(--bg)",
+      padding: "16px 12px", display: "flex", flexDirection: "column", gap: 4, flexShrink: 0,
+    }}>
+      <div style={{ padding: "10px 12px 20px" }}>
+        <HarvestLogo size={16} />
+      </div>
+      <div className="h-eyebrow" style={{ padding: "8px 12px 6px" }}>Workspace</div>
+      {nav.map(n => {
+        const isActive = n.id === active;
+        return (
+          <div key={n.id} style={{
+            padding: "7px 12px", borderRadius: 4, display: "flex", alignItems: "center", gap: 10,
+            color: isActive ? "var(--fg)" : "var(--fg-dim)", fontSize: 13, cursor: "pointer",
+            background: isActive ? "rgba(24,28,20,0.05)" : "transparent",
+            borderLeft: isActive ? "1px solid var(--acid)" : "1px solid transparent",
+          }}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round">{n.icon}</svg>
+            {n.label}
+          </div>
+        );
+      })}
+      <div style={{ flex: 1 }} />
+      <div className="h-eyebrow" style={{ padding: "8px 12px 6px" }}>Account</div>
+      {sub.map(n => (
+        <div key={n.id} style={{ padding: "6px 12px", fontSize: 13, color: "var(--fg-mute)" }}>{n.label}</div>
+      ))}
+      <div style={{ marginTop: 12, padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 4, fontSize: 12 }}>
+        <div style={{ color: "var(--fg)", fontSize: 12, fontWeight: 500 }}>M. Howell</div>
+        <div style={{ color: "var(--fg-mute)", fontSize: 11, marginTop: 2 }}>Fidelity · connected</div>
+      </div>
+    </div>
+  );
+}
+
+function AppTopbar({ title = "Dashboard", breadcrumb = ["Workspace"] }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between",
+      padding: "12px 24px", borderBottom: "1px solid var(--line)", background: "var(--bg)", flexShrink: 0 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+        <span style={{ color: "var(--fg-faint)", fontSize: 12 }}>{breadcrumb.join(" / ")} /</span>
+        <span style={{ color: "var(--fg)", fontSize: 14, fontWeight: 500 }}>{title}</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 10px", border: "1px solid var(--line)", borderRadius: 4, color: "var(--fg-mute)", fontSize: 11, fontFamily: "var(--mono)" }}>
+          <span className="h-dot" style={{ background: "var(--acid)" }} />
+          Market open · 14:22 ET
+        </div>
+        <button className="h-btn sm">⌘K Search</button>
+        <button className="h-btn sm primary">+ New idea</button>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// VARIATION A — Dense, column-heavy. Positions list as primary surface,
+// recommendations open as an inline drawer beneath each row.
+// ─────────────────────────────────────────────────────────────
+function DashboardDense({ openSym = "AAPL" }) {
+  const [open, setOpen] = React.useState(openSym);
+  const equity = 284520;
+  const dayPnL = 1842;
+  const eligible = 4320;
+  const path = genPath(120, 240000, 0.008, 0.0015, 9);
+
+  return (
+    <div className="h-root" style={{ display: "flex", width: "100%", height: "100%", background: "var(--bg)" }}>
+      <AppSidebar active="dashboard" />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <AppTopbar title="Dashboard" />
+        <div style={{ flex: 1, overflow: "auto" }} className="h-scroll">
+          {/* header metrics */}
+          <div style={{ padding: "24px 24px 16px", display: "grid", gridTemplateColumns: "1.4fr 1fr 1fr 1fr", gap: 24, borderBottom: "1px solid var(--line)" }}>
+            <div>
+              <div className="h-eyebrow">Portfolio equity</div>
+              <div className="num" style={{ fontSize: 32, color: "var(--fg)", letterSpacing: "-0.025em", marginTop: 4 }}>
+                ${equity.toLocaleString()}.42
+              </div>
+              <div style={{ display: "flex", gap: 10, marginTop: 6, fontSize: 12, fontFamily: "var(--mono)" }}>
+                <span className="h-up">+${dayPnL.toLocaleString()} · +0.65%</span>
+                <span style={{ color: "var(--fg-faint)" }}>today</span>
+              </div>
+            </div>
+            <Stat k="Income captured" v="$12,840" sub="past 90 days" acc />
+            <Stat k="Eligible this cycle" v={`${eligible.toLocaleString()}`} sub="6 opportunities" />
+            <Stat k="Open contracts" v="4" sub="next expiry May 16" />
+          </div>
+
+          {/* equity chart + sidebars */}
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 0, borderBottom: "1px solid var(--line)" }}>
+            <div style={{ padding: "24px 24px 20px", borderRight: "1px solid var(--line)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 16 }}>
+                <span className="h-eyebrow">Equity · last 120 days</span>
+                <div style={{ display: "flex", gap: 2 }}>
+                  {["1M", "3M", "YTD", "1Y", "All"].map((r, i) => (
+                    <span key={r} className="h-chip" style={{ color: r === "3M" ? "var(--acid)" : undefined, borderColor: r === "3M" ? "var(--acid-line)" : undefined }}>{r}</span>
+                  ))}
+                </div>
+              </div>
+              <LineChart points={path} width={680} height={180} color="var(--acid)" padding={24} yTicks={4}
+                xLabels={["Jan", "Feb", "Mar", "Apr"]} markers={[{ i: 10, label: "AAPL 4×" }, { i: 48, label: "NVDA rolled" }, { i: 90, label: "expired" }]} />
+            </div>
+            <div style={{ padding: "24px" }}>
+              <span className="h-eyebrow">Open contracts</span>
+              <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+                {[
+                  { sym: "AAPL", detail: "4× May 16 200C", prem: 980, pop: 72 },
+                  { sym: "MSFT", detail: "2× May 16 440C", prem: 840, pop: 68 },
+                  { sym: "NVDA", detail: "1× May 09 920C", prem: 1860, pop: 64 },
+                  { sym: "AMD", detail: "3× May 16 180C", prem: 930, pop: 70 },
+                ].map(o => (
+                  <div key={o.sym} style={{ padding: "10px 12px", border: "1px solid var(--line)", borderRadius: 2, display: "grid", gridTemplateColumns: "1fr auto", gap: 4 }}>
+                    <div>
+                      <div className="num" style={{ fontSize: 12, color: "var(--fg)" }}>{o.sym} <span style={{ color: "var(--fg-mute)" }}> · {o.detail}</span></div>
+                      <div style={{ fontSize: 10.5, color: "var(--fg-faint)", fontFamily: "var(--mono)", marginTop: 2, textTransform: "uppercase", letterSpacing: "0.08em" }}>PoP {o.pop}% · 26 DTE</div>
+                    </div>
+                    <div className="num" style={{ color: "var(--acid)", fontSize: 12 }}>+${o.prem}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* positions list */}
+          <div style={{ padding: "24px 24px 48px" }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 14 }}>
+              <div>
+                <span className="h-eyebrow">Positions</span>
+                <span style={{ color: "var(--fg-mute)", marginLeft: 12, fontSize: 12 }}>8 holdings · click a row for recommendations</span>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="h-btn sm">Filter</button>
+                <button className="h-btn sm">Sort · eligible</button>
+              </div>
+            </div>
+            <PositionsTable open={open} setOpen={setOpen} />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Positions table + expanding recommendation drawer
+// ─────────────────────────────────────────────────────────────
+function PositionsTable({ open, setOpen }) {
+  return (
+    <div style={{ border: "1px solid var(--line)", borderRadius: 2, overflow: "hidden" }}>
+      <div style={{
+        display: "grid", gridTemplateColumns: "70px 1fr 90px 110px 110px 90px 90px 110px 24px",
+        padding: "10px 16px", gap: 16, background: "var(--bg-elev)", borderBottom: "1px solid var(--line)",
+      }} className="h-eyebrow">
+        <span>Symbol</span><span>Name</span><span style={{ textAlign: "right" }}>Shares</span>
+        <span style={{ textAlign: "right" }}>Avg cost</span><span style={{ textAlign: "right" }}>Last</span>
+        <span style={{ textAlign: "right" }}>Day</span><span style={{ textAlign: "right" }}>IV rank</span>
+        <span style={{ textAlign: "right" }}>Eligible</span><span />
+      </div>
+      {HARVEST_POSITIONS.map((p, i) => {
+        const up = p.day >= 0;
+        const isOpen = open === p.sym;
+        const eligible = p.cc ? (p.cc.premium * p.cc.cover).toFixed(0) : null;
+        return (
+          <React.Fragment key={p.sym}>
+            <div onClick={() => setOpen(isOpen ? null : p.sym)}
+              style={{
+                display: "grid", gridTemplateColumns: "70px 1fr 90px 110px 110px 90px 90px 110px 24px",
+                padding: "14px 16px", gap: 16, fontSize: 13,
+                borderTop: i === 0 ? "none" : "1px solid var(--line-soft)", alignItems: "center",
+                cursor: "pointer", background: isOpen ? "var(--acid-faint)" : "transparent",
+                borderLeft: isOpen ? "1px solid var(--acid)" : "1px solid transparent", marginLeft: -1,
+              }}>
+              <span className="num" style={{ color: "var(--fg)", fontSize: 13 }}>{p.sym}</span>
+              <span style={{ color: "var(--fg-dim)" }}>{p.name}</span>
+              <span className="num" style={{ textAlign: "right", color: "var(--fg)" }}>{p.shares}</span>
+              <span className="num" style={{ textAlign: "right", color: "var(--fg-dim)" }}>${p.avg.toFixed(2)}</span>
+              <span className="num" style={{ textAlign: "right", color: "var(--fg)" }}>${p.price.toFixed(2)}</span>
+              <span className="num" style={{ textAlign: "right", color: up ? "var(--acid)" : "var(--down)" }}>{up ? "+" : ""}{p.day.toFixed(2)}%</span>
+              <span className="num" style={{ textAlign: "right", color: p.ivr > 40 ? "var(--acid)" : "var(--fg-dim)" }}>{p.ivr}</span>
+              <span className="num" style={{ textAlign: "right", color: eligible ? "var(--acid)" : "var(--fg-faint)" }}>
+                {eligible ? `${eligible}` : "—"}
+              </span>
+              <span style={{ color: "var(--fg-mute)", fontSize: 12, transform: isOpen ? "rotate(90deg)" : "none", transition: "transform .15s" }}>›</span>
+            </div>
+            {isOpen && <RecommendationDrawer sym={p.sym} pos={p} />}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function RecommendationDrawer({ sym, pos }) {
+  // pick recs for this symbol, fallback to generic 3
+  const recs = HARVEST_RECS.filter(r => r.sym === sym).length
+    ? HARVEST_RECS.filter(r => r.sym === sym)
+    : [
+        { id: "g1", sym, conviction: "Med", score: 66, action: `Sell ${Math.floor(pos.shares / 100)}x May 16 ${Math.round(pos.price * 1.04 / 5) * 5} Call`, premium: Math.round(pos.price * 0.015 * pos.shares), annYield: 12.4, pop: 70, delta: 0.28, thesis: "Moderate IV rank, strike above recent range, no earnings before expiry." , tags: ["above-cost-basis", "no-earnings"] },
+        { id: "g2", sym, conviction: "Low", score: 48, action: `Sell ${Math.floor(pos.shares / 100)}x May 09 ${Math.round(pos.price * 1.02 / 5) * 5} Call`, premium: Math.round(pos.price * 0.008 * pos.shares), annYield: 8.2, pop: 78, delta: 0.22, thesis: "Closer strike, tighter window, lower yield but higher PoP.", tags: ["defensive", "short-dte"] },
+      ];
+  const path = genPath(40, pos.price * 0.96, 0.01, 0.0012, pos.sym.charCodeAt(0) * 3);
+
+  return (
+    <div style={{ padding: "24px 20px", background: "var(--bg-elev)", borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 2fr", gap: 24 }}>
+        <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderRadius: 2, padding: 18 }}>
+          <span className="h-eyebrow">{sym} · last 40 days</span>
+          <div style={{ marginTop: 12 }}>
+            <LineChart points={path} width={340} height={150} color="var(--acid)" padding={20} yTicks={3}
+              strike={pos.cc?.strike} xLabels={["40d", "30d", "20d", "10d", "Today"]} />
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginTop: 14, paddingTop: 12, borderTop: "1px solid var(--line-soft)" }}>
+            <KV k="IV rank" v={pos.ivr} />
+            <KV k="30d range" v={`${(pos.price * 0.94).toFixed(0)}–${(pos.price * 1.05).toFixed(0)}`} />
+            <KV k="Next earnings" v="> 30d" />
+          </div>
+        </div>
+        <div>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 12 }}>
+            <span className="h-eyebrow">{recs.length} covered-call candidates · ranked by score</span>
+            <span style={{ fontSize: 11, color: "var(--fg-mute)", fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>Updated 14:22 ET</span>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {recs.map(r => <RecCard key={r.id} rec={r} />)}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function RecCard({ rec }) {
+  const conv = rec.conviction === "High" ? "acid" : rec.conviction === "Med" ? "solid" : "";
+  return (
+    <div style={{ background: "var(--bg)", border: "1px solid var(--line)", borderLeft: `2px solid ${rec.conviction === "High" ? "var(--acid)" : rec.conviction === "Med" ? "var(--olive)" : "var(--line-strong)"}`, padding: "16px 18px", display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr 1fr auto", gap: 20, alignItems: "center" }}>
+      <div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <span className={`h-chip ${conv}`}>{rec.conviction}</span>
+          <span style={{ color: "var(--fg-mute)", fontSize: 11, fontFamily: "var(--mono)" }}>SCORE {rec.score}</span>
+        </div>
+        <div style={{ color: "var(--fg)", fontSize: 13.5, fontFamily: "var(--mono)", marginBottom: 6 }}>{rec.action}</div>
+        <div style={{ color: "var(--fg-mute)", fontSize: 12, lineHeight: 1.5, maxWidth: 440 }}>{rec.thesis}</div>
+        {rec.tags && (
+          <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+            {rec.tags.map(t => <span key={t} className="h-chip" style={{ height: 18, fontSize: 10 }}>{t}</span>)}
+          </div>
+        )}
+      </div>
+      <Mini k="Premium" v={rec.premium ? `${rec.premium}` : "—"} acid={!!rec.premium} />
+      <Mini k="Ann. yield" v={rec.annYield ? `${rec.annYield}%` : "—"} />
+      <Mini k="PoP" v={rec.pop ? `${rec.pop}%` : "—"} />
+      <Mini k="Delta" v={rec.delta ? rec.delta.toFixed(2) : "—"} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        <button className="h-btn sm primary">Preview order</button>
+        <button className="h-btn sm">Save</button>
+      </div>
+    </div>
+  );
+}
+
+function Mini({ k, v, acid }) {
+  return (
+    <div>
+      <div className="h-eyebrow" style={{ marginBottom: 4 }}>{k}</div>
+      <div className="num" style={{ fontSize: 18, color: acid ? "var(--acid)" : "var(--fg)", letterSpacing: "-0.02em" }}>{v}</div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// VARIATION B — Calm / premium. Big empty canvas, fewer columns,
+// one featured recommendation. Left rail of positions.
+// ─────────────────────────────────────────────────────────────
+function DashboardCalm() {
+  const [selected, setSelected] = React.useState("AAPL");
+  const pos = HARVEST_POSITIONS.find(p => p.sym === selected);
+  const path = genPath(90, pos.price * 0.9, 0.009, 0.0013, pos.sym.charCodeAt(0) * 5);
+  const recs = HARVEST_RECS.filter(r => r.sym === selected);
+  return (
+    <div className="h-root" style={{ display: "flex", width: "100%", height: "100%", background: "var(--bg)" }}>
+      <AppSidebar active="dashboard" />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <AppTopbar title="Dashboard" />
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "320px 1fr", overflow: "hidden" }}>
+          {/* position rail */}
+          <div style={{ borderRight: "1px solid var(--line)", padding: "18px 0", overflow: "auto" }} className="h-scroll">
+            <div style={{ padding: "0 20px 16px" }}>
+              <div className="h-eyebrow">Portfolio · 8</div>
+              <div className="num" style={{ fontSize: 24, color: "var(--fg)", marginTop: 8 }}>$284,520.42</div>
+              <div style={{ fontSize: 12, color: "var(--acid)", fontFamily: "var(--mono)" }}>+$1,842 today</div>
+            </div>
+            <div style={{ borderTop: "1px solid var(--line)" }} />
+            {HARVEST_POSITIONS.map(p => {
+              const isSel = p.sym === selected;
+              const sp = genPath(32, p.price * 0.94, 0.01, 0.001, p.sym.charCodeAt(0));
+              return (
+                <div key={p.sym} onClick={() => setSelected(p.sym)}
+                  style={{
+                    padding: "14px 20px", display: "grid", gridTemplateColumns: "54px 1fr 90px",
+                    alignItems: "center", gap: 12, cursor: "pointer",
+                    background: isSel ? "var(--acid-faint)" : "transparent",
+                    borderLeft: isSel ? "2px solid var(--acid)" : "2px solid transparent",
+                    borderBottom: "1px solid var(--line-soft)",
+                  }}>
+                  <div>
+                    <div className="num" style={{ fontSize: 13, color: "var(--fg)" }}>{p.sym}</div>
+                    <div style={{ fontSize: 10.5, color: "var(--fg-mute)", fontFamily: "var(--mono)", marginTop: 2 }}>{p.shares}sh</div>
+                  </div>
+                  <Sparkline points={sp} width={90} height={20} color={p.day >= 0 ? "var(--acid)" : "var(--down)"} />
+                  <div style={{ textAlign: "right" }}>
+                    <div className="num" style={{ fontSize: 12, color: "var(--fg)" }}>${p.price.toFixed(2)}</div>
+                    <div className="num" style={{ fontSize: 10.5, color: p.day >= 0 ? "var(--acid)" : "var(--down)" }}>{p.day >= 0 ? "+" : ""}{p.day.toFixed(2)}%</div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* detail */}
+          <div style={{ overflow: "auto", padding: "40px 48px" }} className="h-scroll">
+            <div style={{ display: "flex", alignItems: "baseline", gap: 16 }}>
+              <div className="serif" style={{ fontSize: 48, color: "var(--fg)", letterSpacing: "-0.03em" }}>{pos.sym}</div>
+              <div style={{ color: "var(--fg-mute)", fontSize: 14 }}>{pos.name}</div>
+              {pos.cc && <span className="h-chip acid">Eligible · ${(pos.cc.premium * pos.cc.cover).toFixed(0)}</span>}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 24, marginTop: 32, paddingBottom: 32, borderBottom: "1px solid var(--line)" }}>
+              <Stat k="Last" v={`${pos.price.toFixed(2)}`} sub={`${pos.day >= 0 ? "+" : ""}${pos.day.toFixed(2)}%`} acc />
+              <Stat k="Position" v={`${pos.shares} sh`} sub={`avg ${pos.avg.toFixed(2)}`} />
+              <Stat k="Market value" v={`${(pos.shares * pos.price).toLocaleString()}`} sub={`${((pos.price - pos.avg) / pos.avg * 100).toFixed(1)}% cost basis`} />
+              <Stat k="IV rank" v={pos.ivr} sub={pos.ivr > 40 ? "elevated" : "moderate"} />
+              <Stat k="Earnings" v="> 30d" sub="no event risk" />
+            </div>
+            <div style={{ marginTop: 40 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 16 }}>
+                <span className="h-eyebrow">Price · 90 days · $200 strike reference</span>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {["1M", "3M", "6M", "1Y"].map(r => <span key={r} className="h-chip" style={r === "3M" ? { color: "var(--acid)", borderColor: "var(--acid-line)" } : {}}>{r}</span>)}
+                </div>
+              </div>
+              <LineChart points={path} width={880} height={220} color="var(--acid)" strike={pos.cc?.strike} padding={28} yTicks={4}
+                xLabels={["90d ago", "60d", "30d", "Today"]} />
+            </div>
+            <div style={{ marginTop: 48 }}>
+              <span className="h-eyebrow">{recs.length || 2} recommendations · ranked</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
+                {(recs.length ? recs : HARVEST_RECS.slice(0, 2)).map(r => <RecCard key={r.id} rec={{ ...r, sym: pos.sym }} />)}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// VARIATION C — "Briefing" — daily digest / morning coffee style.
+// Top card is the day's single best idea. Then: watchlist delta,
+// expiries due, portfolio tape.
+// ─────────────────────────────────────────────────────────────
+function DashboardBriefing() {
+  const today = "Monday, April 20";
+  const path = genPath(120, 240000, 0.008, 0.0015, 11);
+  const top = HARVEST_RECS[0];
+  return (
+    <div className="h-root" style={{ display: "flex", width: "100%", height: "100%", background: "var(--bg)" }}>
+      <AppSidebar active="dashboard" />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <AppTopbar title="Today's briefing" breadcrumb={["Workspace", "Dashboard"]} />
+        <div style={{ flex: 1, overflow: "auto", padding: "36px 48px 64px" }} className="h-scroll">
+          <div className="h-eyebrow">{today} · Pre-market close · 14:22 ET</div>
+          <h1 className="serif" style={{ fontSize: 52, letterSpacing: "-0.03em", margin: "12px 0 32px", color: "var(--fg)", fontWeight: 400, maxWidth: 900 }}>
+            Four positions are <em style={{ color: "var(--acid)", fontStyle: "italic" }}>harvest-ready</em>. The best of them sits on your Apple shares.
+          </h1>
+
+          {/* hero rec card */}
+          <div style={{ border: "1px solid var(--line-strong)", background: "var(--bg-elev)", padding: 36, display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 48, borderRadius: 2 }}>
+            <div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                <span className="h-chip acid">High conviction</span>
+                <span className="h-chip">Score 88 / 100</span>
+                <span className="h-chip">AAPL · 400 sh</span>
+              </div>
+              <div className="display" style={{ fontSize: 32, color: "var(--fg)", letterSpacing: "-0.02em", marginBottom: 12, fontWeight: 500 }}>
+                Sell 4 × May 16 $200 calls on AAPL.
+              </div>
+              <p style={{ color: "var(--fg-dim)", fontSize: 15, lineHeight: 1.6, marginBottom: 20 }}>
+                {top.thesis} Premium of <span className="num" style={{ color: "var(--acid)" }}>$980</span> represents
+                an annualized <span className="num" style={{ color: "var(--acid)" }}>18.4%</span> against your cost basis.
+                Probability of profit is <span className="num" style={{ color: "var(--fg)" }}>72%</span>.
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button className="h-btn primary">Preview order</button>
+                <button className="h-btn">See the math</button>
+                <button className="h-btn ghost">Dismiss</button>
+              </div>
+            </div>
+            <div>
+              <LineChart points={genPath(60, 180, 0.01, 0.0015, 33)} width={380} height={180} color="var(--acid)" strike={200} padding={20} yTicks={3} xLabels={["60d", "30d", "Today"]} />
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr", gap: 8, marginTop: 16, paddingTop: 16, borderTop: "1px solid var(--line)" }}>
+                <Mini k="Premium" v="$980" acid />
+                <Mini k="Yield" v="18.4%" />
+                <Mini k="PoP" v="72%" />
+                <Mini k="Delta" v="0.28" />
+              </div>
+            </div>
+          </div>
+
+          <div style={{ marginTop: 48, display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 32 }}>
+            <div>
+              <span className="h-eyebrow">Three more to consider</span>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
+                {HARVEST_RECS.slice(1).map(r => <RecCard key={r.id} rec={r} />)}
+              </div>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+              <div>
+                <span className="h-eyebrow">Portfolio · 90 days</span>
+                <div style={{ marginTop: 12 }}>
+                  <LineChart points={path} width={420} height={140} color="var(--acid)" padding={20} yTicks={3} xLabels={["Jan", "Feb", "Mar", "Apr"]} />
+                </div>
+              </div>
+              <div style={{ border: "1px solid var(--line)", padding: 20 }}>
+                <span className="h-eyebrow">Expiring this week</span>
+                <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                  {[
+                    { sym: "AAPL", detail: "4 × Apr 18 190C", pop: "now 98%", pnl: "+$840" },
+                    { sym: "MSFT", detail: "2 × Apr 18 420C", pop: "now 96%", pnl: "+$760" },
+                  ].map(x => (
+                    <div key={x.sym} style={{ display: "grid", gridTemplateColumns: "60px 1fr auto", gap: 12, padding: "6px 0", borderBottom: "1px solid var(--line-soft)" }}>
+                      <span className="num" style={{ color: "var(--fg)", fontSize: 13 }}>{x.sym}</span>
+                      <span style={{ color: "var(--fg-mute)", fontSize: 11.5, fontFamily: "var(--mono)" }}>{x.detail} · {x.pop}</span>
+                      <span className="num" style={{ color: "var(--acid)" }}>{x.pnl}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{ border: "1px solid var(--line)", padding: 20 }}>
+                <span className="h-eyebrow">Watchlist movers</span>
+                <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                  {[{s:"SOFI",v:"+6.4%",iv:62},{s:"COIN",v:"+3.4%",iv:60},{s:"PLTR",v:"+2.1%",iv:55}].map(x => (
+                    <div key={x.s} style={{ display: "grid", gridTemplateColumns: "60px 1fr auto", gap: 12, padding: "6px 0", borderBottom: "1px solid var(--line-soft)" }}>
+                      <span className="num" style={{ color: "var(--fg)", fontSize: 13 }}>{x.s}</span>
+                      <span style={{ color: "var(--fg-mute)", fontSize: 11.5, fontFamily: "var(--mono)" }}>IV rank {x.iv}</span>
+                      <span className="num" style={{ color: "var(--acid)" }}>{x.v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { DashboardDense, DashboardCalm, DashboardBriefing, AppSidebar, AppTopbar, PositionsTable, RecCard });
+
+
+// ===== components/Screener.jsx =====
+// Harvest — Screener (chart-forward premium vs yield scatter)
+
+function Screener() {
+  const [highlight, setHighlight] = React.useState("s1");
+  const highlighted = HARVEST_SCREENER.find(s => s.id === highlight) || HARVEST_SCREENER[0];
+  return (
+    <div className="h-root" style={{ display: "flex", width: "100%", height: "100%", background: "var(--bg)" }}>
+      <AppSidebar active="screener" />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <AppTopbar title="Screener" breadcrumb={["Workspace"]} />
+        <div style={{ flex: 1, display: "grid", gridTemplateColumns: "260px 1fr 300px", overflow: "hidden" }}>
+          {/* filter rail */}
+          <div style={{ borderRight: "1px solid var(--line)", padding: "24px 20px", overflow: "auto" }} className="h-scroll">
+            <span className="h-eyebrow">Preset</span>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 10, marginBottom: 24 }}>
+              {["Wheel starters", "High-IV income", "Low-delta conservative", "My watchlist", "Custom"].map((p, i) => (
+                <div key={p} style={{
+                  padding: "8px 12px", fontSize: 13, borderRadius: 2, cursor: "pointer",
+                  background: i === 1 ? "var(--acid-faint)" : "transparent",
+                  color: i === 1 ? "var(--acid)" : "var(--fg-dim)",
+                  border: `1px solid ${i === 1 ? "var(--acid-line)" : "var(--line)"}`,
+                }}>{p}</div>
+              ))}
+            </div>
+
+            <span className="h-eyebrow">Filters</span>
+            <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 20 }}>
+              <Filter label="Delta" v="0.20 — 0.40" />
+              <Filter label="DTE" v="7 — 45" />
+              <Filter label="IV rank" v="≥ 25" />
+              <Filter label="Annualized yield" v="≥ 15%" />
+              <Filter label="Earnings before expiry" v="Exclude" />
+              <Filter label="Ex-dividend before expiry" v="Exclude" />
+              <Filter label="Market cap" v="≥ $1B" />
+              <Filter label="Sector" v="All" />
+            </div>
+            <button className="h-btn primary sm" style={{ marginTop: 20, width: "100%" }}>Apply</button>
+            <button className="h-btn sm" style={{ marginTop: 8, width: "100%" }}>Save preset</button>
+          </div>
+
+          {/* chart + results */}
+          <div style={{ display: "flex", flexDirection: "column", overflow: "hidden" }}>
+            <div style={{ padding: "24px 28px", borderBottom: "1px solid var(--line)" }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 16 }}>
+                <div>
+                  <span className="h-eyebrow">Premium × Yield · {HARVEST_SCREENER.length} candidates</span>
+                  <div style={{ fontSize: 12, color: "var(--fg-mute)", marginTop: 4, fontFamily: "var(--mono)" }}>Each dot is a ticker's best near-month 0.30-delta call. Hover to select.</div>
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <span className="h-chip">X: Premium %</span>
+                  <span className="h-chip">Y: Ann. yield</span>
+                  <button className="h-btn sm">Swap axes</button>
+                </div>
+              </div>
+              <Scatter points={HARVEST_SCREENER} width={760} height={340} highlightId={highlight} onHover={setHighlight} />
+            </div>
+            {/* compact results table below */}
+            <div style={{ flex: 1, overflow: "auto" }} className="h-scroll">
+              <div style={{
+                display: "grid", gridTemplateColumns: "60px 1fr 90px 90px 90px 90px 90px",
+                padding: "10px 28px", gap: 12, background: "var(--bg-elev)", borderBottom: "1px solid var(--line)",
+              }} className="h-eyebrow">
+                <span>Sym</span><span>Setup</span>
+                <span style={{ textAlign: "right" }}>Premium</span>
+                <span style={{ textAlign: "right" }}>Ann. yield</span>
+                <span style={{ textAlign: "right" }}>Delta</span>
+                <span style={{ textAlign: "right" }}>IV rank</span>
+                <span />
+              </div>
+              {HARVEST_SCREENER.map(s => {
+                const isH = s.id === highlight;
+                return (
+                  <div key={s.id} onMouseEnter={() => setHighlight(s.id)}
+                    style={{
+                      display: "grid", gridTemplateColumns: "60px 1fr 90px 90px 90px 90px 90px",
+                      gap: 12, padding: "12px 28px", fontSize: 13, borderBottom: "1px solid var(--line-soft)",
+                      background: isH ? "var(--acid-faint)" : "transparent",
+                      borderLeft: isH ? "1px solid var(--acid)" : "1px solid transparent", marginLeft: -1,
+                      cursor: "pointer", alignItems: "center",
+                    }}>
+                    <span className="num" style={{ color: "var(--fg)" }}>{s.sym}</span>
+                    <span style={{ color: "var(--fg-dim)", fontFamily: "var(--mono)", fontSize: 11.5 }}>May 16 · {(s.delta * 100).toFixed(0)}Δ call</span>
+                    <span className="num" style={{ textAlign: "right", color: "var(--acid)" }}>{s.x.toFixed(1)}%</span>
+                    <span className="num" style={{ textAlign: "right", color: "var(--fg)" }}>{s.y}%</span>
+                    <span className="num" style={{ textAlign: "right", color: "var(--fg-dim)" }}>{s.delta.toFixed(2)}</span>
+                    <span className="num" style={{ textAlign: "right", color: s.ivr > 40 ? "var(--acid)" : "var(--fg-dim)" }}>{s.ivr}</span>
+                    <button className="h-btn sm" style={{ justifySelf: "end" }}>Details</button>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* right inspector */}
+          <div style={{ borderLeft: "1px solid var(--line)", padding: "24px 22px", overflow: "auto", background: "var(--bg-elev)" }} className="h-scroll">
+            <div className="h-eyebrow">Selected</div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 8 }}>
+              <div className="serif" style={{ fontSize: 36, color: "var(--fg)", letterSpacing: "-0.03em" }}>{highlighted.sym}</div>
+              <span className="h-chip acid">Near-month setup</span>
+            </div>
+            <div style={{ marginTop: 18 }}>
+              <LineChart points={genPath(40, 100, 0.01, 0.0012, highlighted.sym.charCodeAt(0) * 2)} width={260} height={120} color="var(--acid)" padding={16} yTicks={3} />
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 20 }}>
+              <Mini k="Premium" v={`${highlighted.x}%`} acid />
+              <Mini k="Ann. yield" v={`${highlighted.y}%`} />
+              <Mini k="Delta" v={highlighted.delta.toFixed(2)} />
+              <Mini k="IV rank" v={highlighted.ivr} />
+            </div>
+            <div style={{ marginTop: 24, padding: 16, background: "var(--bg)", border: "1px solid var(--line)" }}>
+              <span className="h-eyebrow">Thesis</span>
+              <p style={{ color: "var(--fg-dim)", fontSize: 12.5, lineHeight: 1.6, marginTop: 8 }}>
+                {highlighted.sym} IV rank {highlighted.ivr} sits {highlighted.ivr > 40 ? "above" : "near"} its 12-month median.
+                A {(highlighted.delta * 100).toFixed(0)}-delta May 16 call captures {highlighted.x}% of price as premium,
+                equivalent to {highlighted.y}% annualized against cost of shares.
+              </p>
+            </div>
+            <button className="h-btn primary sm" style={{ marginTop: 18, width: "100%" }}>Add to watchlist</button>
+            <button className="h-btn sm" style={{ marginTop: 8, width: "100%" }}>Open order ticket</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Filter({ label, v }) {
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--fg-dim)", marginBottom: 6 }}>
+        <span>{label}</span>
+        <span style={{ color: "var(--fg)", fontFamily: "var(--mono)", fontSize: 11 }}>{v}</span>
+      </div>
+      <div style={{ height: 4, background: "var(--bg-elev)", borderRadius: 2, position: "relative" }}>
+        <div style={{ position: "absolute", left: "20%", right: "30%", top: 0, bottom: 0, background: "var(--acid)", borderRadius: 2 }} />
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────
+// Journal / Trade history
+// ─────────────────────────────────────────────────────────────
+function Journal() {
+  return (
+    <div className="h-root" style={{ display: "flex", width: "100%", height: "100%", background: "var(--bg)" }}>
+      <AppSidebar active="history" />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <AppTopbar title="Journal" breadcrumb={["Workspace"]} />
+        <div style={{ flex: 1, overflow: "auto", padding: "28px 32px" }} className="h-scroll">
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 24, paddingBottom: 24, borderBottom: "1px solid var(--line)" }}>
+            <Stat k="Realized income · YTD" v="$32,840" sub="52 trades" acc />
+            <Stat k="Win rate" v="82%" sub="43 of 52" />
+            <Stat k="Avg. annualized" v="14.2%" sub="weighted by premium" />
+            <Stat k="Assignment rate" v="11.5%" sub="6 of 52" />
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", margin: "32px 0 16px" }}>
+            <span className="h-eyebrow">Executions · last 30 days</span>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="h-btn sm">Filter · all outcomes</button>
+              <button className="h-btn sm">Export · CSV</button>
+            </div>
+          </div>
+          <div style={{ border: "1px solid var(--line)" }}>
+            <div style={{
+              display: "grid", gridTemplateColumns: "90px 80px 60px 80px 90px 80px 60px 120px 80px 90px",
+              padding: "10px 16px", gap: 12, background: "var(--bg-elev)", borderBottom: "1px solid var(--line)",
+            }} className="h-eyebrow">
+              <span>Date</span><span>Sym</span><span>Action</span>
+              <span style={{ textAlign: "right" }}>Strike</span><span>Exp</span>
+              <span style={{ textAlign: "right" }}>Prem.</span><span style={{ textAlign: "right" }}>Qty</span>
+              <span>Outcome</span><span style={{ textAlign: "right" }}>P&L</span><span style={{ textAlign: "right" }}>Return</span>
+            </div>
+            {HARVEST_HISTORY.map((h, i) => {
+              const tone = h.outcome === "expired" ? "acid" : h.outcome === "assigned" ? "warn" : h.outcome === "rolled" ? "" : "";
+              return (
+                <div key={h.id} style={{
+                  display: "grid", gridTemplateColumns: "90px 80px 60px 80px 90px 80px 60px 120px 80px 90px",
+                  padding: "14px 16px", gap: 12, fontSize: 13, borderTop: i === 0 ? "none" : "1px solid var(--line-soft)", alignItems: "center",
+                }}>
+                  <span className="num" style={{ color: "var(--fg-dim)" }}>{h.date}</span>
+                  <span className="num" style={{ color: "var(--fg)" }}>{h.sym}</span>
+                  <span className="num" style={{ color: "var(--fg-mute)", fontSize: 11, letterSpacing: "0.08em" }}>{h.action}</span>
+                  <span className="num" style={{ textAlign: "right", color: "var(--fg)" }}>${h.strike}</span>
+                  <span className="num" style={{ color: "var(--fg-dim)" }}>{h.exp}</span>
+                  <span className="num" style={{ textAlign: "right", color: "var(--fg)" }}>${h.premium.toFixed(2)}</span>
+                  <span className="num" style={{ textAlign: "right", color: "var(--fg-dim)" }}>{h.qty}</span>
+                  <span><span className={`h-chip ${tone}`}>{h.outcome}</span></span>
+                  <span className="num" style={{ textAlign: "right", color: h.pnl > 0 ? "var(--acid)" : h.pnl < 0 ? "var(--down)" : "var(--fg-faint)" }}>
+                    {h.pnl ? (h.pnl > 0 ? "+$" : "-$") + Math.abs(h.pnl) : "—"}
+                  </span>
+                  <span className="num" style={{ textAlign: "right", color: h.ret > 0 ? "var(--acid)" : "var(--fg-faint)" }}>{h.ret ? h.ret.toFixed(2) + "%" : "—"}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { Screener, Journal });
+
+
+// ===== components/MarketingPages.jsx =====
+// Harvest — Pricing, Features page, Blog, Mobile placeholder
+
+function PricingPage() {
+  const tiers = [
+    {
+      name: "Seed", price: "Free", sub: "Forever",
+      desc: "For investors sizing up the platform.",
+      features: [
+        "1 connected portfolio",
+        "5 recommendations per day",
+        "Basic screener (10 filters)",
+        "30-day journal history",
+      ], cta: "Start free", highlight: false,
+    },
+    {
+      name: "Harvest", price: "$24", sub: "/ month",
+      desc: "For the long-term shareholder running the wheel.",
+      features: [
+        "Unlimited portfolios",
+        "Unlimited recommendations",
+        "Full screener · 34 filters",
+        "Complete journal + CSV export",
+        "Watchlist alerts (IV triggers)",
+        "Tax-year Form 8949 export",
+      ], cta: "Start 14-day trial", highlight: true,
+    },
+    {
+      name: "Grove", price: "$89", sub: "/ month",
+      desc: "For the semi-pro managing multiple books.",
+      features: [
+        "Everything in Harvest",
+        "Roll-and-close automation suggestions",
+        "Per-portfolio risk caps",
+        "Methodology editor",
+        "API access (read-only)",
+        "Priority research desk",
+      ], cta: "Start 14-day trial", highlight: false,
+    },
+  ];
+
+  return (
+    <div style={{ background: "var(--bg)" }}>
+      <MarketingNav />
+      <div style={{ padding: "96px 36px 48px", maxWidth: 1200, margin: "0 auto", textAlign: "center" }}>
+        <div className="h-eyebrow" style={{ marginBottom: 20 }}>Pricing</div>
+        <h1 className="display" style={{ fontSize: 64, letterSpacing: "-0.035em", margin: 0, fontWeight: 500 }}>
+          One price. No commissions.
+        </h1>
+        <p style={{ color: "var(--fg-dim)", fontSize: 17, marginTop: 20, maxWidth: 560, margin: "20px auto 0", lineHeight: 1.55 }}>
+          Harvest is subscription software. We do not take a cut of your premium, we do not
+          route your orders, and we do not sell your data to anyone.
+        </p>
+      </div>
+      <div style={{ padding: "24px 36px 96px", maxWidth: 1200, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 0, border: "1px solid var(--line)" }}>
+          {tiers.map((t, i) => (
+            <div key={t.name} style={{
+              padding: "40px 36px",
+              borderLeft: i === 0 ? "none" : "1px solid var(--line)",
+              background: t.highlight ? "var(--bg-elev)" : "var(--bg)",
+              position: "relative",
+            }}>
+              {t.highlight && <span className="h-chip acid" style={{ position: "absolute", top: 16, right: 16 }}>Most popular</span>}
+              <div className="h-eyebrow">{t.name}</div>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 20 }}>
+                <span className="display" style={{ fontSize: 48, color: "var(--fg)", letterSpacing: "-0.03em", fontWeight: 500 }}>{t.price}</span>
+                <span style={{ color: "var(--fg-mute)", fontSize: 13 }}>{t.sub}</span>
+              </div>
+              <p style={{ color: "var(--fg-dim)", fontSize: 14, marginTop: 10, lineHeight: 1.5, minHeight: 42 }}>{t.desc}</p>
+              <button className={`h-btn ${t.highlight ? "primary" : ""}`} style={{ width: "100%", marginTop: 20 }}>{t.cta}</button>
+              <hr className="h-hair" style={{ margin: "28px 0 20px" }} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                {t.features.map(f => (
+                  <div key={f} style={{ display: "flex", gap: 10, alignItems: "baseline", color: "var(--fg-dim)", fontSize: 13.5 }}>
+                    <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--acid)" strokeWidth="1.6" strokeLinecap="round">
+                      <path d="M2 5l2 2 4-4" /></svg>
+                    {f}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 40, fontSize: 12, color: "var(--fg-faint)", fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: "0.08em", textAlign: "center" }}>
+          Month-to-month. Cancel anytime. Sales tax applied where required.
+        </div>
+      </div>
+
+      {/* comparison grid */}
+      <div style={{ background: "var(--bg-elev)", borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)", padding: "80px 36px" }}>
+        <div style={{ maxWidth: 1000, margin: "0 auto" }}>
+          <div className="h-eyebrow" style={{ marginBottom: 14 }}>Compare in detail</div>
+          <h3 className="display" style={{ fontSize: 32, letterSpacing: "-0.025em", fontWeight: 500, margin: 0 }}>Every feature, every tier.</h3>
+          <div style={{ marginTop: 40, border: "1px solid var(--line)" }}>
+            {[
+              ["Connected portfolios", "1", "Unlimited", "Unlimited"],
+              ["Recommendations per day", "5", "Unlimited", "Unlimited"],
+              ["Screener filters", "10", "34", "34 + custom"],
+              ["Journal history", "30 days", "Full", "Full + API"],
+              ["Watchlist alerts", "—", "IV · Δ · events", "IV · Δ · events · custom"],
+              ["Tax export · Form 8949", "—", "Included", "Included"],
+              ["Roll-and-close automation", "—", "—", "Included"],
+              ["API access", "—", "—", "Read-only"],
+              ["Support", "Email", "Email · 1d", "Priority · 4h"],
+            ].map((r, i) => (
+              <div key={r[0]} style={{
+                display: "grid", gridTemplateColumns: "2fr 1fr 1fr 1fr",
+                padding: "14px 20px", gap: 16, fontSize: 13, color: "var(--fg-dim)",
+                borderTop: i === 0 ? "none" : "1px solid var(--line-soft)", alignItems: "center",
+              }}>
+                <span style={{ color: "var(--fg)" }}>{r[0]}</span>
+                {r.slice(1).map((c, j) => <span key={j} className="num" style={{ color: c === "—" ? "var(--fg-faint)" : "var(--fg-dim)" }}>{c}</span>)}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <MarketingFooter />
+    </div>
+  );
+}
+
+function FeaturesPage() {
+  return (
+    <div style={{ background: "var(--bg)" }}>
+      <MarketingNav />
+      <div style={{ padding: "96px 36px 72px", maxWidth: 1100, margin: "0 auto" }}>
+        <div className="h-eyebrow" style={{ marginBottom: 16 }}>Feature · Recommendations</div>
+        <h1 className="display" style={{ fontSize: 64, letterSpacing: "-0.035em", margin: 0, fontWeight: 500, maxWidth: 900 }}>
+          A covered-call opinion, under every ticker.
+        </h1>
+        <p style={{ color: "var(--fg-dim)", fontSize: 17, marginTop: 24, maxWidth: 620, lineHeight: 1.6 }}>
+          Open any position on your dashboard. Harvest has already scanned the chain, scored the
+          candidates, and written a thesis. The math is always shown. You decide.
+        </p>
+      </div>
+      <div style={{ padding: "0 36px 72px", maxWidth: 1200, margin: "0 auto" }}>
+        <div style={{ background: "var(--bg-elev)", border: "1px solid var(--line)", padding: 32, position: "relative" }}>
+          <RecCard rec={HARVEST_RECS[0]} />
+          <div style={{ marginTop: 12 }}><RecCard rec={HARVEST_RECS[1]} /></div>
+          <div style={{ marginTop: 12 }}><RecCard rec={HARVEST_RECS[2]} /></div>
+        </div>
+      </div>
+      <div style={{ borderTop: "1px solid var(--line)", padding: "96px 36px" }}>
+        <div style={{ maxWidth: 1100, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 64 }}>
+          <div>
+            <div className="h-eyebrow" style={{ marginBottom: 16 }}>What's inside a recommendation</div>
+            <h3 className="display" style={{ fontSize: 36, letterSpacing: "-0.025em", fontWeight: 500, margin: 0, lineHeight: 1.1 }}>
+              Seven measurements. One score. A short thesis.
+            </h3>
+            <p style={{ color: "var(--fg-dim)", fontSize: 15, marginTop: 20, lineHeight: 1.6 }}>
+              We care about yield, but we care more about the dull stuff — the earnings date you
+              forgot, the dividend you'd miss, the concentration creeping up in your book.
+            </p>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {[
+              ["IV rank", "Where current implied vol sits in its 12-month range."],
+              ["Delta band", "How far out of the money — a rough probability proxy."],
+              ["Days to expiration", "Theta is highest in the 20–45 day window."],
+              ["Earnings distance", "Avoid known catalysts before expiration."],
+              ["Ex-dividend distance", "Early assignment risk around ex-div."],
+              ["Assignment probability", "From historical outcomes on comparable setups."],
+              ["Concentration cap", "Don't let one ticker eat the portfolio."],
+            ].map((r, i) => (
+              <div key={r[0]} style={{ borderBottom: "1px solid var(--line-soft)", paddingBottom: 12, paddingTop: i === 0 ? 0 : 6 }}>
+                <div className="num" style={{ fontSize: 13, color: "var(--fg)", marginBottom: 4 }}>{String(i + 1).padStart(2, "0")} · {r[0]}</div>
+                <div style={{ color: "var(--fg-mute)", fontSize: 13, lineHeight: 1.5 }}>{r[1]}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <MarketingCTA />
+      <MarketingFooter />
+    </div>
+  );
+}
+
+function BlogPage() {
+  const posts = [
+    { tag: "Methodology", date: "Apr 14, 2026", title: "Why we cap delta at 0.40 on recommendations.", dek: "Higher delta means more premium. It also means more assignment. Here's how we think about the trade-off.", read: "8 min" },
+    { tag: "Education", date: "Apr 07, 2026", title: "The wheel, drawn on a napkin.", dek: "Sell a cash-secured put. Get assigned. Sell a covered call. Get called away. Start over. It's almost that simple.", read: "6 min" },
+    { tag: "Research", date: "Mar 28, 2026", title: "Five years of covered calls on SPY.", dek: "What the historical data says about running the wheel on broad-market exposure through 2020, 2022, and the recovery.", read: "12 min" },
+    { tag: "Product", date: "Mar 21, 2026", title: "What's new in Harvest 2.4: roll suggestions.", dek: "When a short call goes against you, Harvest now proposes three specific rolls — down, out, or diagonal — each with the math.", read: "4 min" },
+    { tag: "Education", date: "Mar 10, 2026", title: "Covered calls and your tax bill.", dek: "Short-term capital gains. Qualified dividends. Wash sales across rolled contracts. A primer.", read: "10 min" },
+    { tag: "Methodology", date: "Feb 28, 2026", title: "IV rank vs. IV percentile: which should you use?", dek: "They measure different things. Most screeners conflate them. Here's what each tells you.", read: "7 min" },
+  ];
+
+  return (
+    <div style={{ background: "var(--bg)" }}>
+      <MarketingNav />
+      <div style={{ padding: "96px 36px 56px", maxWidth: 1100, margin: "0 auto" }}>
+        <div className="h-eyebrow" style={{ marginBottom: 16 }}>Research & writing</div>
+        <h1 className="display" style={{ fontSize: 56, letterSpacing: "-0.035em", margin: 0, fontWeight: 500 }}>
+          Field notes from the Harvest desk.
+        </h1>
+        <p style={{ color: "var(--fg-dim)", fontSize: 17, marginTop: 20, maxWidth: 560, lineHeight: 1.55 }}>
+          Methodology, education, and product notes. Written by the people who build the software.
+        </p>
+      </div>
+      {/* hero post */}
+      <div style={{ padding: "0 36px 64px", maxWidth: 1100, margin: "0 auto" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 48, border: "1px solid var(--line)", padding: 36, background: "var(--bg-elev)" }}>
+          <div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 20 }}>
+              <span className="h-chip acid">Featured</span>
+              <span className="h-chip">Methodology</span>
+              <span className="h-chip">Apr 14</span>
+            </div>
+            <h2 className="serif" style={{ fontSize: 44, letterSpacing: "-0.025em", lineHeight: 1.05, margin: 0, color: "var(--fg)" }}>
+              Why we cap delta at 0.40 on recommendations.
+            </h2>
+            <p style={{ color: "var(--fg-dim)", fontSize: 15.5, marginTop: 20, lineHeight: 1.6, maxWidth: 520 }}>
+              Higher delta means more premium. It also means more assignment. Here's the tradeoff
+              we've landed on after 18 months of user data and a look at five years of historical
+              chains.
+            </p>
+            <div style={{ display: "flex", gap: 18, marginTop: 28, fontSize: 12, color: "var(--fg-mute)", fontFamily: "var(--mono)", textTransform: "uppercase", letterSpacing: "0.08em" }}>
+              <span>Maya Ostrov · Head of Research</span>
+              <span>8 min read</span>
+            </div>
+          </div>
+          <div className="h-placeholder" style={{ minHeight: 260 }}>
+            <span>FIGURE · DELTA × ASSIGNMENT RATE</span>
+          </div>
+        </div>
+      </div>
+      {/* rest of grid */}
+      <div style={{ padding: "24px 36px 96px", maxWidth: 1100, margin: "0 auto" }}>
+        <div className="h-eyebrow" style={{ marginBottom: 24 }}>All posts</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 0, border: "1px solid var(--line)" }}>
+          {posts.map((p, i) => (
+            <div key={p.title} style={{
+              padding: "32px 28px", borderLeft: i % 2 === 0 ? "none" : "1px solid var(--line)",
+              borderTop: i > 1 ? "1px solid var(--line)" : "none",
+            }}>
+              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                <span className="h-chip">{p.tag}</span>
+                <span className="h-chip">{p.date}</span>
+              </div>
+              <h3 className="serif" style={{ fontSize: 24, letterSpacing: "-0.02em", margin: 0, color: "var(--fg)", lineHeight: 1.2 }}>
+                {p.title}
+              </h3>
+              <p style={{ color: "var(--fg-dim)", fontSize: 13.5, lineHeight: 1.6, marginTop: 12 }}>{p.dek}</p>
+              <div style={{ fontSize: 11, color: "var(--fg-mute)", fontFamily: "var(--mono)", letterSpacing: "0.08em", textTransform: "uppercase", marginTop: 14 }}>
+                {p.read} · read →
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+      <MarketingFooter />
+    </div>
+  );
+}
+
+Object.assign(window, { PricingPage, FeaturesPage, BlogPage });
+
+
+// ===== app.jsx =====
+// Harvest — App root. Kept as a separate babel src so it loads after the
+// other component scripts have registered their globals.
+
+function MarketingFrame({ Hero, landingOnly }) {
+  return (
+    <div style={{ overflow: "auto", height: "100%", background: "var(--bg)" }} className="h-root h-scroll">
+      <MarketingNav />
+      <Hero />
+      {!landingOnly && (
+        <React.Fragment>
+          <MarketingFeatures />
+          <MarketingProof />
+          <MarketingCTA />
+          <MarketingFooter />
+        </React.Fragment>
+      )}
+    </div>
+  );
+}
+
+function SiteFrame({ Page }) {
+  return (
+    <div style={{ overflow: "auto", height: "100%", background: "var(--bg)" }} className="h-root h-scroll">
+      <Page />
+    </div>
+  );
+}
+
+function MobileMock() {
+  return (
+    <div style={{ height: "100%", background: "#111", padding: 40, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: 320, height: 640, borderRadius: 36, background: "var(--bg)", border: "6px solid #222", overflow: "hidden", boxShadow: "0 40px 100px rgba(0,0,0,0.5)" }} className="h-root">
+        <div style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", fontFamily: "var(--mono)", fontSize: 10, color: "var(--fg-mute)" }}>
+          <span>14:22</span>
+          <HarvestMark size={14} color="var(--fg)" />
+          <span>●●●</span>
+        </div>
+        <div style={{ padding: "8px 20px 16px" }}>
+          <div className="h-eyebrow">Today · Apr 20</div>
+          <div className="serif" style={{ fontSize: 26, color: "var(--fg)", letterSpacing: "-0.025em", marginTop: 8, lineHeight: 1.1 }}>
+            Four positions are <em style={{ color: "var(--acid)", fontStyle: "italic" }}>harvest-ready</em>.
+          </div>
+        </div>
+        <div style={{ padding: "0 16px", display: "flex", flexDirection: "column", gap: 8 }}>
+          {HARVEST_RECS.slice(0, 3).map(r => (
+            <div key={r.id} style={{ padding: 14, border: "1px solid var(--line)", borderLeft: `2px solid ${r.conviction === "High" ? "var(--acid)" : "var(--olive)"}`, background: "var(--bg-elev)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                <span className="num" style={{ fontSize: 12, color: "var(--fg)" }}>{r.sym}</span>
+                <span className="h-chip acid" style={{ height: 18, fontSize: 9 }}>{r.conviction}</span>
+              </div>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 11, color: "var(--fg-dim)", marginBottom: 8 }}>{r.action}</div>
+              <div style={{ display: "flex", gap: 12 }}>
+                <Mini k="Prem" v={r.premium ? `${r.premium}` : "—"} acid />
+                <Mini k="Yld" v={r.annYield ? `${r.annYield}%` : "—"} />
+                <Mini k="PoP" v={r.pop ? `${r.pop}%` : "—"} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  return (
+    <DesignCanvas>
+      <DCSection id="marketing" title="Marketing landing · three directions" subtitle="Paper white · forest accent · subtle harvest metaphor">
+        <DCArtboard id="landing-a" label="A · Editorial terminal" width={1280} height={1200}>
+          <MarketingFrame Hero={MarketingHeroEditorial} landingOnly />
+        </DCArtboard>
+        <DCArtboard id="landing-b" label="B · Serif manifesto" width={1280} height={1200}>
+          <MarketingFrame Hero={MarketingHeroSerif} landingOnly />
+        </DCArtboard>
+        <DCArtboard id="landing-c" label="C · Split / dense" width={1280} height={1200}>
+          <MarketingFrame Hero={MarketingHeroSplit} landingOnly />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="marketing-full" title="Full landing scroll · direction A" subtitle="Hero + features + methodology + CTA + footer (scrolls inside the frame)">
+        <DCArtboard id="landing-full" label="Home · scrollable" width={1280} height={900}>
+          <MarketingFrame Hero={MarketingHeroEditorial} />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="marketing-site" title="Additional marketing pages" subtitle="Pricing · Features · Blog · scrolls inside each frame">
+        <DCArtboard id="pricing" label="Pricing" width={1280} height={900}>
+          <SiteFrame Page={PricingPage} />
+        </DCArtboard>
+        <DCArtboard id="features" label="Features · Recommendations" width={1280} height={900}>
+          <SiteFrame Page={FeaturesPage} />
+        </DCArtboard>
+        <DCArtboard id="blog" label="Research / blog index" width={1280} height={900}>
+          <SiteFrame Page={BlogPage} />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="dashboard" title="Dashboard · three directions" subtitle="Recommendations surface as drawers under positions, a detail rail, or a daily briefing">
+        <DCArtboard id="dash-a" label="A · Dense · inline rec drawers" width={1440} height={900}>
+          <DashboardDense openSym="AAPL" />
+        </DCArtboard>
+        <DCArtboard id="dash-b" label="B · Calm · position rail" width={1440} height={900}>
+          <DashboardCalm />
+        </DCArtboard>
+        <DCArtboard id="dash-c" label="C · Briefing · daily digest" width={1440} height={900}>
+          <DashboardBriefing />
+        </DCArtboard>
+      </DCSection>
+
+      <DCSection id="app" title="App · screener & journal" subtitle="Chart-forward screener, execution history">
+        <DCArtboard id="screener" label="Screener · premium × yield" width={1440} height={900}>
+          <Screener />
+        </DCArtboard>
+        <DCArtboard id="journal" label="Journal" width={1440} height={900}>
+          <Journal />
+        </DCArtboard>
+        <DCArtboard id="mobile" label="Mobile briefing" width={420} height={720}>
+          <MobileMock />
+        </DCArtboard>
+      </DCSection>
+    </DesignCanvas>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+
+
+</script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script>
+(function(){
+  var src = document.getElementById('jsx-source').textContent;
+  var out;
+  try { out = Babel.transform(src, { presets: ['react'] }).code; }
+  catch(e){ document.body.innerHTML='<pre style="color:#fff;background:#000;padding:20px;font:12px monospace">Babel parse error: '+ (e.message||e) +'</pre>'; throw e; }
+  try { (0, eval)(out); }
+  catch(e){ document.body.innerHTML='<pre style="color:#fff;background:#000;padding:20px;font:12px monospace">Runtime error: '+ (e.message||e) +'\n'+(e.stack||'') +'</pre>'; throw e; }
+})();
+</script>
+</body>
+</html>
