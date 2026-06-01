@@ -4,6 +4,21 @@ All notable changes to Harvest are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.2.0] - 2026-06-01
+
+### Added
+- **Theta Left and Delta columns on the Open Positions table.** Each open
+  position now shows, at a glance, the total time value still left to decay in
+  your favor (in dollars) and its per-contract delta — colored by assignment
+  risk — without having to expand the row.
+
+### Changed
+- **Income Earned now reflects net premium kept, not just gross premium.** The
+  card on both a single portfolio and the All Portfolios view sums what you sold
+  for less what you paid to buy back, across every position. Open positions
+  still count their full premium (nothing bought back yet); closed positions
+  reduce the figure by their buy-back cost, so it reads as realized income.
+
 ## [0.3.1.0] - 2026-06-01
 
 ### Fixed
