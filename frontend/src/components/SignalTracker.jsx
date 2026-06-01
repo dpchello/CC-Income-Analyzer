@@ -1391,6 +1391,9 @@ export default function SignalTracker({ signalData, alphaData }) {
       {/* Technical indicators */}
       <TechnicalsPanel technicals={alphaData?.technicals} />
 
+      {/* Open interest by strike — scrubber + speculative-dollars toggle */}
+      <OIChart />
+
       {/* Factor grid */}
       <div>
         <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--text)' }}>Factor Breakdown</h2>
