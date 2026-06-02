@@ -392,7 +392,12 @@ function AllPortfoliosView({ positions, portfolios, holdings }) {
 
   const allOpen = positions.filter(p => p.status === 'open')
   const totalContracts = allOpen.reduce((s, p) => s + (p.contracts || 0), 0)
-  const totalPremium   = allOpen.reduce((s, p) => s + (p.premium_collected || 0), 0)
+  // Income Earned = net premium kept across all positions: Sold At less Closed/Bought,
+  // × 100 × contracts. Open positions (no buy-back yet) count their full premium.
+  const totalIncome    = positions.reduce(
+    (s, p) => s + ((p.sell_price || 0) - (p.close_price || 0)) * 100 * (p.contracts || 0),
+    0
+  )
   const totalPnl       = allOpen.reduce((s, p) => s + (p.pnl || 0), 0)
 
   // Concentration base = total available contracts across all portfolios (shares / 100)
@@ -461,7 +466,7 @@ function AllPortfoliosView({ positions, portfolios, holdings }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
           { labelKey: 'OpenPositions',     label: 'Open Positions',                                                    value: String(allOpen.length),                                          color: 'var(--text)' },
-          { labelKey: 'IncomeEarned',      label: <Term id="PremiumCollected">Income Earned</Term>,                    value: `$${totalPremium.toLocaleString()}`,                              color: 'var(--green)' },
+          { labelKey: 'IncomeEarned',      label: <Term id="PremiumCollected">Income Earned</Term>,                    value: `$${Math.round(totalIncome).toLocaleString()}`,                   color: 'var(--green)' },
           { labelKey: 'UnrealizedPnL',     label: 'Unrealized P&L',                                                    value: `${totalPnl >= 0 ? '+' : ''}$${Math.abs(totalPnl).toFixed(0)}`, color: totalPnl >= 0 ? 'var(--green)' : 'var(--red)' },
           { labelKey: 'TotalContracts',    label: <Term id="Contracts">Total Positions (×100)</Term>,                  value: String(totalContracts),                                          color: 'var(--text)' },
         ].map(s => (
@@ -1021,6 +1026,23 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
             {pnlPos ? '+' : ''}${pos.pnl?.toFixed(0) ?? '—'}
           </span>
         </td>
+        {/* Theta remaining = total time value left to decay in your favor ($) */}
+        <td className="px-4 py-3">
+          <span className="text-xs font-mono font-semibold" style={{ color: 'var(--green)' }}>
+            {pos.time_premium != null
+              ? `$${Math.round(pos.time_premium * 100 * (pos.contracts || 0)).toLocaleString()}`
+              : '—'}
+          </span>
+        </td>
+        {/* Delta — per-contract option delta, as a decimal */}
+        <td className="px-4 py-3">
+          <span
+            className="text-xs font-mono font-semibold"
+            style={{ color: pos.delta == null ? 'var(--muted)' : pos.delta > 0.35 ? 'var(--red)' : pos.delta > 0.25 ? 'var(--amber)' : 'var(--text)' }}
+          >
+            {pos.delta != null ? pos.delta.toFixed(2) : '—'}
+          </span>
+        </td>
         <td className="px-4 py-3">
           <span
             className="text-[11px] px-2 py-0.5 font-medium"
@@ -1037,7 +1059,7 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
       {/* ── Inline drawer ── */}
       {expanded && (
         <tr>
-          <td colSpan={5} className="border-b" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)' }}>
+          <td colSpan={7} className="border-b" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)' }}>
             <div className="px-5 py-4 space-y-4">
 
               {/* Detail stats */}
@@ -1332,7 +1354,13 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
     ccLotsByTicker[p.ticker].push({ strike: p.strike, shares: (p.contracts || 0) * 100 })
   }
 
-  const totalPremium = openPos.reduce((s, p) => s + (p.premium_collected || 0), 0)
+  // Income Earned = net premium kept across the whole portfolio: what we sold for,
+  // less what we paid to buy back, × 100 × contracts. Open positions have no buy-back
+  // yet (close_price null) so their full premium counts; closed positions net out.
+  const totalIncome = myPositions.reduce(
+    (s, p) => s + ((p.sell_price || 0) - (p.close_price || 0)) * 100 * (p.contracts || 0),
+    0
+  )
   const totalPnl     = openPos.reduce((s, p) => s + (p.pnl || 0), 0)
   const avgCapture   = openPos.length ? openPos.reduce((s, p) => s + (p.profit_capture_pct || 0), 0) / openPos.length : 0
 
@@ -1673,7 +1701,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               {[
                 { label: 'Open Positions',          value: String(openPos.length),                                       color: 'var(--text)' },
-                { label: 'Income Earned',            value: `$${totalPremium.toLocaleString()}`,                          color: 'var(--green)' },
+                { label: 'Income Earned',            value: `$${Math.round(totalIncome).toLocaleString()}`,               color: 'var(--green)' },
                 { label: 'Unrealized P&L',           value: `${totalPnl >= 0 ? '+' : ''}$${Math.abs(totalPnl).toFixed(0)}`, color: totalPnl >= 0 ? 'var(--green)' : 'var(--red)' },
                 { label: '% of Max Income Collected', value: `${avgCapture.toFixed(1)}%`,                                  color: 'var(--amber)' },
               ].map(s => (
@@ -1787,7 +1815,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                   <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
                     <thead>
                       <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
-                        {['Position', 'Expiry', 'P&L', 'Status', ''].map(h => (
+                        {['Position', 'Expiry', 'P&L', 'Theta Left', 'Delta', 'Status', ''].map(h => (
                           <th key={h} className="px-4 py-2.5 text-left font-normal text-[11px] uppercase tracking-wider"
                             style={{ color: 'var(--muted)' }}>{h}</th>
                         ))}
