@@ -4,6 +4,28 @@ All notable changes to Harvest are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.3.0] - 2026-06-01
+
+### Added
+- **Put-side speculative dollars on the Open Interest chart.** In dollar mode you
+  now see real put $ alongside call $, instead of the put side reading zero. The
+  data was always there in the options feed, the app just wasn't pulling the put
+  bid/ask, so put dollar values had nothing to compute from.
+
+### Changed
+- **OI dollar mode now measures time value, not total premium.** Bars show the
+  speculative money still at stake (time value remaining × open interest), so deep
+  in-the-money strikes no longer dominate the chart with intrinsic value that isn't
+  really a bet on direction.
+- **OI chart orientation flipped: calls grow up (green), puts grow down (red),** with
+  the legend, tooltip, and totals footer relabeled to match.
+- Stale OI snapshots captured before put quotes were available now self-heal — the
+  next load backfills put values instead of showing zero for the rest of the day.
+
+### Fixed
+- Put dollar values that always rendered as zero because the chain fetcher discarded
+  put bid/ask/lastPrice and kept only put open interest.
+
 ## [0.3.2.0] - 2026-06-01
 
 ### Added

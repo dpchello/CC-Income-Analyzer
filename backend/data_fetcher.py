@@ -52,6 +52,20 @@ def _bs_greeks(S, K, T, sigma, r=0.043, q=0.012):
     except Exception:
         return None, None, None, None
 
+def _clean_float(v):
+    """A finite float, or None for missing/NaN cells (pandas uses NaN for blanks)."""
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return None
+    return round(float(v), 4)
+
+
+def _clean_int(v):
+    """An int, or None for missing/NaN cells."""
+    if v is None or (isinstance(v, float) and np.isnan(v)):
+        return None
+    return int(v)
+
+
 CACHE_TTL = 60  # seconds
 
 # ── Dividend cache (24h TTL — quarterly data doesn't change intraday) ─────────
@@ -221,15 +235,23 @@ class DataFetcher:
                               if c in calls.columns]
             result = calls[available_cols].to_dict("records")
 
-            # Build put OI lookup by strike
-            put_oi_by_strike: dict = {}
+            # Build put OI + quote lookup by strike. yfinance's puts frame carries
+            # bid/ask/lastPrice just like calls — extract them so put mid (and thus
+            # put time value / speculative $) can be derived, not just put OI.
+            put_by_strike: dict = {}
             try:
                 puts = chain.puts
-                if "strike" in puts.columns and "openInterest" in puts.columns:
-                    for _, row in puts[["strike", "openInterest"]].iterrows():
-                        k = round(float(row["strike"]), 2)
-                        oi = row["openInterest"]
-                        put_oi_by_strike[k] = int(oi) if oi is not None and not (isinstance(oi, float) and np.isnan(oi)) else None
+                if "strike" in puts.columns:
+                    pcols = [c for c in ["strike", "openInterest", "bid", "ask", "lastPrice"]
+                             if c in puts.columns]
+                    for _, prow in puts[pcols].iterrows():
+                        k = round(float(prow["strike"]), 2)
+                        put_by_strike[k] = {
+                            "put_oi":   _clean_int(prow.get("openInterest")),
+                            "put_bid":  _clean_float(prow.get("bid")),
+                            "put_ask":  _clean_float(prow.get("ask")),
+                            "put_last": _clean_float(prow.get("lastPrice")),
+                        }
             except Exception:
                 pass
 
@@ -241,8 +263,12 @@ class DataFetcher:
                     elif isinstance(v, float):
                         row[k] = round(v, 4)
 
-                # Attach put OI for this strike
-                row["put_oi"] = put_oi_by_strike.get(round(float(row.get("strike") or 0), 2))
+                # Attach put OI + quotes for this strike
+                pinfo = put_by_strike.get(round(float(row.get("strike") or 0), 2)) or {}
+                row["put_oi"]   = pinfo.get("put_oi")
+                row["put_bid"]  = pinfo.get("put_bid")
+                row["put_ask"]  = pinfo.get("put_ask")
+                row["put_last"] = pinfo.get("put_last")
 
                 # Compute Greeks via Black-Scholes (yfinance doesn't supply them)
                 iv = row.get("impliedVolatility") or 0
@@ -397,14 +423,20 @@ class DataFetcher:
                               "openInterest", "impliedVolatility"]
                               if c in calls.columns]
             result = calls[available_cols].to_dict("records")
-            put_oi_by_strike: dict = {}
+            put_by_strike: dict = {}
             try:
                 puts = chain.puts
-                if "strike" in puts.columns and "openInterest" in puts.columns:
-                    for _, row in puts[["strike", "openInterest"]].iterrows():
-                        k = round(float(row["strike"]), 2)
-                        oi = row["openInterest"]
-                        put_oi_by_strike[k] = int(oi) if oi is not None and not (isinstance(oi, float) and np.isnan(oi)) else None
+                if "strike" in puts.columns:
+                    pcols = [c for c in ["strike", "openInterest", "bid", "ask", "lastPrice"]
+                             if c in puts.columns]
+                    for _, prow in puts[pcols].iterrows():
+                        k = round(float(prow["strike"]), 2)
+                        put_by_strike[k] = {
+                            "put_oi":   _clean_int(prow.get("openInterest")),
+                            "put_bid":  _clean_float(prow.get("bid")),
+                            "put_ask":  _clean_float(prow.get("ask")),
+                            "put_last": _clean_float(prow.get("lastPrice")),
+                        }
             except Exception:
                 pass
             for row in result:
@@ -413,7 +445,11 @@ class DataFetcher:
                         row[k] = None
                     elif isinstance(v, float):
                         row[k] = round(v, 4)
-                row["put_oi"] = put_oi_by_strike.get(round(float(row.get("strike") or 0), 2))
+                pinfo = put_by_strike.get(round(float(row.get("strike") or 0), 2)) or {}
+                row["put_oi"]   = pinfo.get("put_oi")
+                row["put_bid"]  = pinfo.get("put_bid")
+                row["put_ask"]  = pinfo.get("put_ask")
+                row["put_last"] = pinfo.get("put_last")
                 iv = row.get("impliedVolatility") or 0
                 strike = row.get("strike") or 0
                 if spot > 0 and iv > 0 and strike > 0:
