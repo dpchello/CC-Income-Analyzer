@@ -987,13 +987,14 @@ function OIChartInner({ data, width, height, spyPrice, ticker, mode }) {
   const BAR_MAX = 14
   const isDollars = mode === 'dollars'
 
-  // Selected metric per side: OI counts, or speculative dollars (OI × mid × 100).
-  const callOf = d => (isDollars ? d.call_value : d.call_oi) || 0
-  const putOf  = d => (isDollars ? d.put_value  : d.put_oi)  || 0
+  // Selected metric per side: OI counts, or speculative dollars =
+  // time value remaining × open interest (time_premium × 100 × OI).
+  const callOf = d => (isDollars ? d.call_time_value : d.call_oi) || 0
+  const putOf  = d => (isDollars ? d.put_time_value  : d.put_oi)  || 0
 
   const strikes = data.map(d => String(d.strike))
   const xScale = scaleBand({ domain: strikes, range: [0, innerW], padding: 0.15 })
-  // Diverging axis: puts grow up from a centered zero line, calls grow down.
+  // Diverging axis: calls grow up from a centered zero line, puts grow down.
   const maxAbs = Math.max(...data.map(d => Math.max(callOf(d), putOf(d))), 1)
   const yScale = scaleLinear({ domain: [-maxAbs * 1.1, maxAbs * 1.1], range: [innerH, 0] })
   const zeroY = yScale(0)
@@ -1040,22 +1041,22 @@ function OIChartInner({ data, width, height, spyPrice, ticker, mode }) {
           <GridRows scale={yScale} width={innerW} stroke="var(--border)" strokeDasharray="3 3" strokeOpacity={0.5} />
           {data.map(d => {
             const x = xScale(String(d.strike)) ?? 0
-            const putY  = yScale(putOf(d))      // puts above the zero line
-            const callY = yScale(-callOf(d))    // calls mirrored below the zero line
+            const callY = yScale(callOf(d))     // calls above the zero line
+            const putY  = yScale(-putOf(d))     // puts mirrored below the zero line
             return (
               <Group key={d.strike}>
-                <Bar x={x} y={putY} width={barW} height={Math.max(0, zeroY - putY)}
+                <Bar x={x} y={callY} width={barW} height={Math.max(0, zeroY - callY)}
                   fill="var(--green)" opacity={0.7}
                   onMouseMove={e => handleMouseMove(d, e)} onMouseLeave={hideTooltip}
                 />
-                <Bar x={x + barW} y={zeroY} width={barW} height={Math.max(0, callY - zeroY)}
+                <Bar x={x + barW} y={zeroY} width={barW} height={Math.max(0, putY - zeroY)}
                   fill="var(--red)" opacity={0.7}
                   onMouseMove={e => handleMouseMove(d, e)} onMouseLeave={hideTooltip}
                 />
               </Group>
             )
           })}
-          {/* Zero baseline separating puts (up) from calls (down) */}
+          {/* Zero baseline separating calls (up) from puts (down) */}
           <line x1={0} x2={innerW} y1={zeroY} y2={zeroY} stroke="var(--border)" strokeWidth={1} />
           {spyLineX !== null && (
             <line
@@ -1101,10 +1102,10 @@ function OIChartInner({ data, width, height, spyPrice, ticker, mode }) {
         >
           <div style={{ color: 'var(--muted)', marginBottom: 2 }}>${tooltipData.strike} Strike</div>
           <div style={{ color: 'var(--green)' }}>
-            Put {isDollars ? 'value' : 'OI'}: {isDollars && !putOf(tooltipData) ? 'n/a' : fmtTip(putOf(tooltipData))}
+            Call {isDollars ? 'time $' : 'OI'}: {fmtTip(callOf(tooltipData))}
           </div>
           <div style={{ color: 'var(--red)' }}>
-            Call {isDollars ? 'value' : 'OI'}: {fmtTip(callOf(tooltipData))}
+            Put {isDollars ? 'time $' : 'OI'}: {isDollars && !putOf(tooltipData) ? 'n/a' : fmtTip(putOf(tooltipData))}
           </div>
         </TooltipWithBounds>
       )}
@@ -1200,8 +1201,8 @@ export function OIChart() {
       strike:      r.strike,
       put_oi:      r.put_oi  || 0,
       call_oi:     r.call_oi || 0,
-      put_value:   r.put_value  || 0,
-      call_value:  r.call_value || 0,
+      put_time_value:  r.put_time_value  || 0,
+      call_time_value: r.call_time_value || 0,
       put_change:  r.put_change_1d,
       call_change: r.call_change_1d,
     }))
@@ -1209,8 +1210,8 @@ export function OIChart() {
   const allStrikes  = oiData?.strikes || []
   const totalCallOI = allStrikes.reduce((s, r) => s + (r.call_oi || 0), 0)
   const totalPutOI  = allStrikes.reduce((s, r) => s + (r.put_oi  || 0), 0)
-  const totalCallVal = allStrikes.reduce((s, r) => s + (r.call_value || 0), 0)
-  const totalPutVal  = allStrikes.reduce((s, r) => s + (r.put_value  || 0), 0)
+  const totalCallVal = allStrikes.reduce((s, r) => s + (r.call_time_value || 0), 0)
+  const totalPutVal  = allStrikes.reduce((s, r) => s + (r.put_time_value  || 0), 0)
 
   const fmtDollars = v => {
     const n = Math.abs(Number(v) || 0)
@@ -1236,8 +1237,8 @@ export function OIChart() {
             </h2>
             <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
               {isDollars
-                ? 'Green above = Put $ · Red below = Call $ (open interest × mid price) · dashed line = spot · ±15% around spot'
-                : 'Green above = Put OI · Red below = Call OI · dashed line = spot price · ±15% around spot'}
+                ? 'Green above = Call $ · Red below = Put $ (time value remaining × open interest) · dashed line = spot · ±15% around spot'
+                : 'Green above = Call OI · Red below = Put OI · dashed line = spot price · ±15% around spot'}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
@@ -1361,16 +1362,16 @@ export function OIChart() {
           <div className="px-5 py-2 border-t flex flex-wrap gap-x-6 gap-y-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
             {isDollars ? (
               <>
-                <span>Total Call $: <span style={{ color: 'var(--red)' }}>{fmtDollars(totalCallVal)}</span></span>
-                <span>Total Put $: <span style={{ color: 'var(--green)' }}>{totalPutVal > 0 ? fmtDollars(totalPutVal) : 'n/a'}</span></span>
+                <span>Total Call $: <span style={{ color: 'var(--green)' }}>{fmtDollars(totalCallVal)}</span></span>
+                <span>Total Put $: <span style={{ color: 'var(--red)' }}>{totalPutVal > 0 ? fmtDollars(totalPutVal) : 'n/a'}</span></span>
                 {totalPutVal === 0 && (
-                  <span style={{ opacity: 0.8 }}>Put $ unavailable — source provides put open interest but not put quotes.</span>
+                  <span style={{ opacity: 0.8 }}>Put $ unavailable — no put time value at these strikes.</span>
                 )}
               </>
             ) : (
               <>
-                <span><Term id="OpenInterest">Total Call OI</Term>: <span style={{ color: 'var(--red)' }}>{totalCallOI.toLocaleString()}</span></span>
-                <span><Term id="OpenInterest">Total Put OI</Term>: <span style={{ color: 'var(--green)' }}>{totalPutOI.toLocaleString()}</span></span>
+                <span><Term id="OpenInterest">Total Call OI</Term>: <span style={{ color: 'var(--green)' }}>{totalCallOI.toLocaleString()}</span></span>
+                <span><Term id="OpenInterest">Total Put OI</Term>: <span style={{ color: 'var(--red)' }}>{totalPutOI.toLocaleString()}</span></span>
                 {totalCallOI > 0 && <span><Term id="PutCallRatio">Put/Call ratio</Term>: <span style={{ color: 'var(--text)' }}>{(totalPutOI / totalCallOI).toFixed(2)}</span></span>}
               </>
             )}
