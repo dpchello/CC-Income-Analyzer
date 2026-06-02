@@ -110,10 +110,10 @@ def _compute_mid(bid, ask, last=None):
 def _snapshot_row(row: dict) -> dict:
     """One strike's stored fields: OI + mid price for calls and puts.
 
-    yfinance supplies call quotes plus open interest for both sides, but no put
-    quotes — so put_mid is None and put dollar-values can't be derived from this
-    source. Stored anyway so the shape is forward-compatible if a richer feed
-    starts providing put quotes.
+    Both sides carry OI and a mid price. The chain fetcher pulls bid/ask/lastPrice
+    from yfinance's puts frame (not just calls), so put_mid is real whenever the
+    source quotes the put. put_mid stays None only when that strike's put has no
+    usable quote, in which case put dollar-values fall back to 0.
     """
     return {
         "call_oi":  int(row["openInterest"]) if row.get("openInterest") is not None else None,
@@ -128,16 +128,26 @@ def _total_oi(strikes: dict) -> int:
     return sum((v.get("call_oi") or 0) + (v.get("put_oi") or 0) for v in strikes.values())
 
 
+def _has_put_mids(strikes: dict) -> bool:
+    """True if any strike carries a usable put mid (so put dollar-values exist)."""
+    return any(v.get("put_mid") is not None for v in strikes.values() if isinstance(v, dict))
+
+
 def record_chain_snapshot(expiry: str, chain_rows: list, force: bool = False):
     """Store a full call+put OI + mid snapshot for an expiry.
 
     First-write-wins per date so the cron's pre-market reading stays canonical —
-    EXCEPT we overwrite when the stored snapshot has zero total OI but the fresh
-    chain has real OI. yfinance reports openInterest as an end-of-day settlement
-    figure, so an early fetch can land 0 across every strike; without this self-
-    heal that empty reading would lock in for the whole day and the chart would
-    render nothing. force=True always overwrites (the manual 'capture today'
-    button)."""
+    EXCEPT we overwrite in two self-heal cases:
+      1. Stored snapshot has zero total OI but the fresh chain has real OI.
+         yfinance reports openInterest as an end-of-day settlement figure, so an
+         early fetch can land 0 across every strike; without this the empty
+         reading would lock in for the whole day and the chart would render
+         nothing.
+      2. Stored snapshot has no put mids but the fresh chain does. Snapshots
+         captured while the fetcher dropped put bid/ask (see data_fetcher) have
+         put_mid=None for every strike, so the put side renders no speculative
+         dollars; healing backfills them on the next load.
+    force=True always overwrites (the manual 'capture today' button)."""
     today_str = date.today().isoformat()
     cutoff = (date.today() - timedelta(days=_MAX_DAYS)).isoformat()
     with _lock:
@@ -152,6 +162,7 @@ def record_chain_snapshot(expiry: str, chain_rows: list, force: bool = False):
             existing is None
             or force
             or (_total_oi(existing) == 0 and _total_oi(new_rows) > 0)
+            or (not _has_put_mids(existing) and _has_put_mids(new_rows))
         )
         if should_write:
             data[expiry][today_str] = new_rows
