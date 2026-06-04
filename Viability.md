@@ -386,7 +386,7 @@ Not competition. Not regulation. **Inconsistent signals.** If the engine says SE
 
 ### The Right First Year
 
-1. Deploy on Railway (already planned)
+1. Run self-hosted as a local Mac app (already planned)
 2. Add auth + basic subscription (Stripe)
 3. Use it yourself and with 10–20 people you know for 6 months — collect the performance data
 4. Publish the signal history and outcomes honestly (even the bad ones)

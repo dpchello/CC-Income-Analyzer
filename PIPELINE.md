@@ -100,7 +100,7 @@ Pro sees all).
 **Description:** Deploy the marketing site to Vercel, run a full QA pass on the end-to-end user flow, and validate the product is ready for real users.
 
 **Deploy steps:**
-1. Set `NEXT_PUBLIC_API_URL` env var in Vercel pointing to Railway backend URL
+1. Set `NEXT_PUBLIC_API_URL` env var in Vercel pointing to the self-hosted backend URL (local Mac app exposed via a tunnel, e.g. Cloudflare Tunnel)
 2. Connect `marketing/` subdirectory to Vercel project (or use `vercel --cwd marketing/`)
 3. Verify all 7 routes build cleanly (`npm run build` in `marketing/`)
 4. Confirm calculator widget calls backend correctly from the live Vercel URL
@@ -1177,7 +1177,7 @@ but not peak. Consider waiting if IV rises before the next expiry cycle.
 1. **JWT startup validation:** `raise RuntimeError` if `JWT_SECRET_KEY` env var is missing — prevents silent fallback to dev key in production
 2. **JWT revocation / short expiry:** Either a token denylist table in SQLite, or reduce expiry to 1h + add `POST /api/auth/refresh` endpoint
 3. **CORS lockdown:** Change `allow_origins=["*"]` to specific origin list once production URLs are stable
-**Depends on:** Stable production URLs (Vercel + Railway)
+**Depends on:** Stable production URLs (Vercel marketing + self-hosted backend tunnel)
 **Rationale:** Currently deferred for MVP speed. Must be addressed before charging money.
 
 ---
@@ -1185,8 +1185,8 @@ but not peak. Consider waiting if IV rises before the next expiry cycle.
 ### PIPE-033 · Marketing Deploy + Keepalive
 **Status:** `pending`
 **Description:** Deploy `marketing/` to Vercel and add a keepalive ping.
-1. Deploy: `cd marketing && vercel --prod` with `NEXT_PUBLIC_API_URL=<railway-backend-url>`
-2. Keepalive: Add a `useEffect` on the marketing site's index page that calls `/api/health` (GET, no auth) on mount to pre-warm the Railway backend. Prevents the 20-30s cold start on the first calculator use.
+1. Deploy: `cd marketing && vercel --prod` with `NEXT_PUBLIC_API_URL=<self-hosted-backend-url>`
+2. Keepalive: Add a `useEffect` on the marketing site's index page that calls `/api/health` (GET, no auth) on mount to confirm the self-hosted backend is reachable through the tunnel. (The old cloud cold-start concern no longer applies — the local backend stays warm.)
 3. **Gate on PIPE-030 QA:** Do not deploy until multi-tenancy is confirmed working.
 **Rationale:** Marketing site is built and vercel.json exists. Blocked only on PIPE-030 passing QA.
 

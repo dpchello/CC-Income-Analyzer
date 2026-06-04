@@ -301,9 +301,9 @@ Free tier is enough for v1:
 2. **You are the entire ops team.** If something breaks at 3am while you're traveling, the app is down until you fix it. Cloud hosting hides this.
 3. **ISP TOS.** Comcast, Spectrum, etc. technically prohibit "running servers" on residential plans. Cloudflare Tunnel makes detection unlikely (outbound only), but it's not zero-risk. If your ISP is Sonic, Ting, or a small fiber ISP, you're probably fine.
 4. **Single point of failure: this Mac.** Disk failure = catastrophic. Backups (§9) are mandatory, not optional.
-5. **Migration path is easy if you outgrow this.** FastAPI + SQLite/Postgres ports cleanly to Railway/Fly when revenue justifies it. Your `railway.json` is already there.
+5. **Migration path is easy if you outgrow this.** FastAPI + SQLite/Postgres ports cleanly to a cloud host (Fly, Render, etc.) when revenue justifies it.
 
-**My honest take:** Self-hosting is a great choice for the next 3–6 months while you have <100 users, want $0 infra cost, and are still iterating fast. Plan to move to Railway/Fly the day you take the first paying customer who'd be annoyed by a 6-hour outage.
+**My honest take:** Self-hosting is a great choice for the next 3–6 months while you have <100 users, want $0 infra cost, and are still iterating fast. Plan to move to a cloud host (Fly, Render, etc.) the day you take the first paying customer who'd be annoyed by a 6-hour outage.
 
 ---
 

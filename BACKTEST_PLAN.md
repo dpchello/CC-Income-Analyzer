@@ -19,7 +19,7 @@ The spec assumed yfinance + 2 years of underlying-only data, so it specified Bla
 | Strike selection | Binary search on delta via BS | SQL `WHERE delta <= maxDelta ORDER BY delta DESC LIMIT 1` | Real per-strike delta in DuckDB |
 | IV filter | Realized vol vs strategy.minIvr | Real `implied_volatility` column vs strategy.minIvr | Matches what the live engine does |
 | Entry cadence | Every 5 days, unconditional | **Dual-track**: unconditional + regime-gated | Proves the signal engine adds value |
-| Result storage | In-memory cache | DuckDB results tables | Survives Railway redeploys |
+| Result storage | In-memory cache | DuckDB results tables | Survives backend restarts |
 | Slippage | Not modeled (caveat in disclaimer) | `(bid+ask)/2` mid-fill, with disclaimer noting half-spread optimism | Industry-comparable; user explicitly chose mid over bid |
 | File scope | `data_fetcher.py` adds `get_historical_prices` | Not needed — `data_store.get_underlying_prices` already exists | Reuse |
 

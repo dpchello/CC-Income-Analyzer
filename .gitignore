@@ -10,7 +10,7 @@ __pycache__/
 # ── Node / frontend ───────────────────────────────────────────────────────────
 frontend/node_modules/
 frontend/.vite/
-# frontend/dist/ — intentionally committed for Railway deploy
+# frontend/dist/ — intentionally committed so the self-hosted backend can serve the built UI
 marketing/node_modules/
 marketing/.next/
 marketing/.vercel/

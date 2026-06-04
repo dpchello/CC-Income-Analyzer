@@ -95,7 +95,7 @@ Every free-tier interaction should end with a dollar amount the user can't yet a
 | Financial data | AlphaVantage (25 calls/day free) | Done, key in env var |
 | Auth | python-jose JWT + bcrypt | Backend done, frontend pending |
 | Database | Supabase (Postgres) + RLS | Replacing SQLite — migration pending |
-| Hosting — app | Railway | Not yet deployed publicly |
+| Hosting — app | Self-hosted local Mac app (Harvest.app / harvestctl.sh) | Runs locally on the user's Mac (uvicorn on 127.0.0.1:8000) |
 | Hosting — marketing | Vercel | Not yet deployed |
 | Payments | Stripe Checkout + Customer Portal | Not yet built |
 | Email | Resend (transactional) + Loops (drip) | Not yet built |
@@ -151,7 +151,7 @@ and on-brand for the holder, not the trader.
   - Calculator widget with email gate after 3 anonymous uses
 
 ### What's Next
-1. Deploy backend to Railway (app still running locally)
+1. Finalize the local Mac app packaging (Harvest.app launcher + harvestctl.sh) — self-hosted, no cloud host
 2. Stripe billing (PIPE-031)
 3. r/dividends post + Seeking Alpha article (first acquisition)
 4. QA pass — test full free user flow end to end
@@ -234,3 +234,7 @@ These are not up for re-discussion without an explicit strategy conversation:
 - **First acquisition channel:** r/dividends post + Seeking Alpha article
 - **Charts library:** Airbnb Visx — not Recharts (removed)
 - **Python target:** 3.9 — no 3.10+ union syntax
+- **App hosting:** Self-hosted as a local Mac app (Harvest.app / harvestctl.sh, uvicorn on
+  127.0.0.1:8000). **Railway is deprecated and fully removed (2026-06-03)** — no `railway.json`,
+  `Procfile`, or `Dockerfile`. Marketing site stays on Vercel. A cloud host (Fly, Render, etc.)
+  is a future migration option only when revenue justifies it.
