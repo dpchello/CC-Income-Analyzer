@@ -20,12 +20,13 @@ coding more.
 
 ## Ranked recommendations
 
-### 0. Deploy backend to Railway  ·  score 30  ·  PRECONDITION
+### 0. Finalize local self-hosted backend (Harvest.app)  ·  score 30  ·  PRECONDITION
 - **Serves goal:** all of them — there are currently **zero** possible active users.
-- **Why now:** `Dockerfile`, `railway.json`, and `Procfile` are all present and valid
-  (subagent: deploy config ~90% ready). The API runs only on localhost, so the North
-  Star is structurally zero until this happens. This is an **ops push, not a build** —
-  it doesn't fit the cron executor; it's a you-with-secrets task.
+- **Why now:** the cloud deploy artifacts (`railway.json`, `Procfile`, `Dockerfile`) were
+  removed — Harvest now self-hosts as a local Mac app (`Harvest.app` / `harvestctl.sh`,
+  uvicorn on 127.0.0.1:8000). The launcher scripts exist but aren't finalized/committed yet.
+  This is an **ops push, not a build** — it doesn't fit the cron executor; it's a
+  you-with-the-Mac task.
 - **Expected impact on North Star:** flips it from undefined to measurable. Nothing
   else in this memo matters without it.
 - **Effort:** S (~1 day) — *but* see "Decisions needed": deploy ordering depends on the
@@ -85,7 +86,7 @@ coding more.
 ## Scoring table
 | Candidate | Goal | Impact ×3 | Reach ×2 | Effort ×1 | Total |
 |---|---|---|---|---|---|
-| Deploy backend → Railway | all (precondition) | 15 | 10 | 5 | **30** |
+| Finalize local self-host (Harvest.app) | all (precondition) | 15 | 10 | 5 | **30** |
 | Surface roll/defense in UI | #2 #4 #6 | 15 | 10 | 4 | **29** |
 | Enforce freemium gates (backend) | #5 + revenue | 12 | 10 | 4 | **26** |
 | Stripe billing | revenue | 12 | 10 | 2 | **24** |

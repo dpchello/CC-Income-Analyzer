@@ -36,7 +36,7 @@ SNAPTRADE_CLIENT_ID=...
 SNAPTRADE_CONSUMER_KEY=...
 ```
 
-Add to `.env` and Railway config. `CONSUMER_KEY` is sensitive — backend only, never exposed to frontend.
+Add to `.env` (backend only). `CONSUMER_KEY` is sensitive — never exposed to frontend.
 
 ---
 

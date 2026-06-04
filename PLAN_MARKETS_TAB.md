@@ -266,6 +266,6 @@ caching them server-side, and recomputing 1300 daily values is sub-millisecond.
 1. **Ticker filter UX:** typeahead search across all S&P 500 + SPY + QQQ, or pre-populated dropdown? I'd lean typeahead.
 2. **Default chart state on first load:** Composite (Top 500 weighted) at 1Y range, indicators off? Or all on?
 3. **Show SPY/QQQ overlay by default?** They're useful context for a composite view.
-4. **Cron host:** the existing crons live in `backend/cron/` — are these run via Railway cron, or a system cron on your machine? Affects how I wire the new jobs.
+4. **Cron host:** the existing crons live in `backend/cron/` — these run as a system cron on your Mac (the backend self-hosts locally). Affects how I wire the new jobs.
 
 Once you green-light, I'll start at Step 1.
