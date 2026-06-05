@@ -979,7 +979,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
 
 // ── OI Chart inner (Visx) ─────────────────────────────────────────────────────
 
-function OIChartInner({ data, width, height, spyPrice, ticker, mode }) {
+function OIChartInner({ data, width, height, spyPrice, ticker, mode, pin }) {
   const { showTooltip, hideTooltip, tooltipData, tooltipLeft, tooltipTop, tooltipOpen } = useTooltip()
   const MARGIN = { top: 12, right: 16, left: 54, bottom: 22 }
   const innerW = Math.max(0, width - MARGIN.left - MARGIN.right)
@@ -1034,11 +1034,31 @@ function OIChartInner({ data, width, height, spyPrice, ticker, mode }) {
       })()
     : null
 
+  // Pin / max-pain markers — snap each price to the nearest visible strike; skip
+  // if it falls outside the charted ±15% window.
+  const minK = data.length ? data[0].strike : 0
+  const maxK = data.length ? data[data.length - 1].strike : 0
+  const nearestStrike = value => {
+    if (value == null || value < minK || value > maxK || !data.length) return null
+    return data.reduce((best, d) => (Math.abs(d.strike - value) < Math.abs(best.strike - value) ? d : best), data[0])
+  }
+  const PIN_COLOR  = 'var(--blue)'
+  const PAIN_COLOR = '#a78bfa'   // violet — distinct from spot (amber) and pin (blue)
+  const pinS  = pin ? nearestStrike(pin.pin_strike) : null
+  const painS = pin ? nearestStrike(pin.max_pain)  : null
+  const bandLeft   = s => xScale(String(s.strike)) ?? 0
+  const strikeCenX = s => (xScale(String(s.strike)) ?? 0) + xScale.bandwidth() / 2
+
   return (
     <div style={{ position: 'relative' }}>
       <svg width={width} height={height}>
         <Group left={MARGIN.left} top={MARGIN.top}>
           <GridRows scale={yScale} width={innerW} stroke="var(--border)" strokeDasharray="3 3" strokeOpacity={0.5} />
+          {/* Gamma-pin highlight band (behind the bars) */}
+          {pinS && (
+            <rect x={bandLeft(pinS)} y={0} width={xScale.bandwidth()} height={innerH}
+              fill={PIN_COLOR} opacity={0.12} />
+          )}
           {data.map(d => {
             const x = xScale(String(d.strike)) ?? 0
             const callY = yScale(callOf(d))     // calls above the zero line
@@ -1067,6 +1087,22 @@ function OIChartInner({ data, width, height, spyPrice, ticker, mode }) {
           {spyLineX !== null && (
             <text x={spyLineX + 3} y={10} fontSize={9} fill="var(--amber)">
               {ticker ? `${ticker} $${spyPrice}` : `$${spyPrice}`}
+            </text>
+          )}
+          {/* Max-pain level (violet dashed) */}
+          {painS && (
+            <>
+              <line x1={strikeCenX(painS)} x2={strikeCenX(painS)} y1={0} y2={innerH}
+                stroke={PAIN_COLOR} strokeWidth={1.25} strokeDasharray="2 3" />
+              <text x={strikeCenX(painS)} y={innerH - 3} fontSize={8} fill={PAIN_COLOR} textAnchor="middle">
+                MAX PAIN
+              </text>
+            </>
+          )}
+          {/* Gamma-pin tag (band drawn behind bars above) */}
+          {pinS && (
+            <text x={strikeCenX(pinS)} y={9} fontSize={8} fontWeight="700" fill={PIN_COLOR} textAnchor="middle">
+              PIN
             </text>
           )}
           <AxisBottom
@@ -1113,20 +1149,97 @@ function OIChartInner({ data, width, height, spyPrice, ticker, mode }) {
   )
 }
 
+// ── Pinning readout (max pain · gamma pin + strength · walls) ──────────────────
+
+function PinningStrip({ pin, spot }) {
+  if (!pin) return null
+  const { max_pain, pin_strike, pin_strength, pin_label, pin_gex, method, call_wall, put_wall, spot_vs_pain_pct } = pin
+  const strengthPct = Math.round((pin_strength || 0) * 100)
+  const labelColor = (pin_label === 'dominant' || pin_label === 'strong') ? 'var(--green)'
+    : pin_label === 'moderate' ? 'var(--amber)'
+    : 'var(--muted)'
+  const fmtPrice = v => v != null ? `$${Number.isInteger(v) ? v : Number(v).toFixed(2)}` : '—'
+  const fmtGex = v => {
+    const n = Math.abs(Number(v) || 0)
+    if (n >= 1e9) return `$${(n / 1e9).toFixed(1)}B`
+    if (n >= 1e6) return `$${(n / 1e6).toFixed(0)}M`
+    if (n >= 1e3) return `$${(n / 1e3).toFixed(0)}k`
+    return `$${n.toFixed(0)}`
+  }
+  const dir = spot_vs_pain_pct == null ? null
+    : spot_vs_pain_pct > 0.05 ? `${spot_vs_pain_pct.toFixed(1)}% above · pull ↓`
+    : spot_vs_pain_pct < -0.05 ? `${Math.abs(spot_vs_pain_pct).toFixed(1)}% below · pull ↑`
+    : 'right at max pain'
+
+  const PIN_COLOR = 'var(--blue)'
+  const PAIN_COLOR = '#a78bfa'
+  const dot = c => <span style={{ width: 8, height: 8, borderRadius: 9999, background: c, display: 'inline-block', flexShrink: 0 }} />
+
+  return (
+    <div className="px-5 py-3 border-t" style={{ borderColor: 'var(--border)' }}>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-xs uppercase tracking-wider font-mono" style={{ color: 'var(--muted)' }}>Pinning</span>
+        {method === 'oi' && (
+          <span className="text-[10px]" style={{ color: 'var(--muted)' }}>
+            near-spot OI estimate — true gamma fills in from the next morning capture
+          </span>
+        )}
+      </div>
+      <div className="flex flex-wrap items-start gap-x-7 gap-y-3 text-xs">
+        {/* Gamma pin + strength */}
+        <div style={{ minWidth: 160 }}>
+          <div className="flex items-center gap-1.5 mb-1" style={{ color: 'var(--muted)' }}>
+            {dot(PIN_COLOR)}<Term id="GammaPin" />
+          </div>
+          <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>
+            {fmtPrice(pin_strike)} <span style={{ color: labelColor }}>· {pin_label}</span>
+          </div>
+          <div className="mt-1 h-1.5" style={{ width: 128, background: 'var(--border)', borderRadius: 9999 }}>
+            <div style={{ width: `${strengthPct}%`, height: '100%', background: PIN_COLOR, borderRadius: 9999 }} />
+          </div>
+          <div className="text-[10px] mt-0.5" style={{ color: 'var(--muted)' }}>
+            {strengthPct}% of {method === 'gamma' ? 'gamma' : 'near-spot OI'}{pin_gex != null ? ` · ${fmtGex(pin_gex)} GEX` : ''}
+          </div>
+        </div>
+        {/* Max pain */}
+        <div style={{ minWidth: 120 }}>
+          <div className="flex items-center gap-1.5 mb-1" style={{ color: 'var(--muted)' }}>
+            {dot(PAIN_COLOR)}<Term id="MaxPain" />
+          </div>
+          <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>{fmtPrice(max_pain)}</div>
+          {dir && <div className="text-[10px] mt-0.5" style={{ color: 'var(--muted)' }}>{dir}</div>}
+        </div>
+        {/* Call / Put walls */}
+        <div style={{ minWidth: 100 }}>
+          <div className="mb-1" style={{ color: 'var(--muted)' }}><Term id="CallWall" /></div>
+          <div className="font-mono font-semibold" style={{ color: 'var(--green)' }}>{fmtPrice(call_wall)}</div>
+        </div>
+        <div style={{ minWidth: 100 }}>
+          <div className="mb-1" style={{ color: 'var(--muted)' }}><Term id="PutWall" /></div>
+          <div className="font-mono font-semibold" style={{ color: 'var(--red)' }}>{fmtPrice(put_wall)}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── OI Chart ──────────────────────────────────────────────────────────────────
 
 export function OIChart() {
   const { apiFetch } = useAuth()
   const [expiries, setExpiries] = useState([])
   const [selectedExpiry, setSelectedExpiry] = useState(null)
-  const [captureDate, setCaptureDate] = useState(null)   // null = latest snapshot
   const [viewMode, setViewMode] = useState('oi')         // 'oi' | 'dollars'
-  const [oiData, setOiData] = useState(null)
+  const [history, setHistory] = useState(null)           // full snapshot bundle for the expiry
+  const [dateIdx, setDateIdx] = useState(0)              // index into history.snapshots
+  const [playing, setPlaying] = useState(false)          // auto-advance the scrubber
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
   const [capturing, setCapturing] = useState(false)
   const [captureMsg, setCaptureMsg] = useState(null)
-  const [reloadKey, setReloadKey] = useState(0)   // bump to force a chart refetch
+  const [reloadKey, setReloadKey] = useState(0)   // bump to force a refetch
+
+  const PLAY_INTERVAL_MS = 650
 
   useEffect(() => {
     // Near-term daily expiries (next ~7 days) — not the 21–60 DTE entry set.
@@ -1140,24 +1253,52 @@ export function OIChart() {
       .catch(() => {})
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Load every snapshot for the expiry in one request, then scrub client-side.
+  // No per-frame fetch means dragging the slider (and auto-play) is instant.
   useEffect(() => {
     if (!selectedExpiry) return
     let cancelled = false
     setLoading(true)
     setError(null)
-    const params = new URLSearchParams({ expiry: selectedExpiry })
-    if (captureDate) params.set('capture_date', captureDate)
-    apiFetch(`/api/oi/chain?${params}`)
+    setPlaying(false)
+    apiFetch(`/api/oi/chain/history?expiry=${encodeURIComponent(selectedExpiry)}`)
       .then(r => r.json())
-      .then(data => { if (!cancelled) setOiData(data) })
+      .then(data => {
+        if (cancelled) return
+        setHistory(data)
+        const n = data?.snapshots?.length || 0
+        setDateIdx(n > 0 ? n - 1 : 0)   // start on the latest (today's) frame
+      })
       .catch(() => { if (!cancelled) setError('Could not load OI data.') })
       .finally(() => { if (!cancelled) setLoading(false) })
     return () => { cancelled = true }
-  }, [selectedExpiry, captureDate, reloadKey])
+  }, [selectedExpiry, reloadKey])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const snapCount = history?.snapshots?.length || 0
+
+  // Auto-play: advance one frame per tick; the effect below stops at the end.
+  useEffect(() => {
+    if (!playing || snapCount <= 1) return
+    const id = setInterval(() => {
+      setDateIdx(i => Math.min(i + 1, snapCount - 1))
+    }, PLAY_INTERVAL_MS)
+    return () => clearInterval(id)
+  }, [playing, snapCount])
+
+  useEffect(() => {
+    if (playing && snapCount > 1 && dateIdx >= snapCount - 1) setPlaying(false)
+  }, [playing, dateIdx, snapCount])
+
+  function togglePlay() {
+    if (playing) { setPlaying(false); return }
+    if (snapCount <= 1) return
+    if (dateIdx >= snapCount - 1) setDateIdx(0)   // restart when parked at the end
+    setPlaying(true)
+  }
 
   function selectExpiry(exp) {
-    setSelectedExpiry(exp)
-    setCaptureDate(null)   // reset the scrubber to "latest" when switching expiry
+    setPlaying(false)
+    setSelectedExpiry(exp)   // the load effect resets the scrubber to latest
   }
 
   async function captureToday() {
@@ -1167,7 +1308,7 @@ export function OIChart() {
       const res = await apiFetch('/api/oi/snapshot', { method: 'POST' })
       const data = await res.json()
       setCaptureMsg(`Captured ${data.captured}/${data.expiries} expiries for ${data.date}.`)
-      setReloadKey(k => k + 1)   // refetch the chart so today's data shows
+      setReloadKey(k => k + 1)   // refetch the bundle so today's data shows
     } catch {
       setCaptureMsg('Capture failed — try again in a moment.')
     }
@@ -1181,22 +1322,46 @@ export function OIChart() {
     return { label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }), dte }
   }
 
-  const spyPrice = oiData?.spy_price || 0
-  const oiTicker = oiData?.ticker || ''
+  const oiTicker = history?.ticker || ''
   const isDollars = viewMode === 'dollars'
 
-  const availableDates = oiData?.available_dates || []
-  const currentDate = oiData?.capture_date
-  const isLive = oiData?.is_live
-  const dateIdx = Math.max(0, availableDates.indexOf(currentDate))
+  const snapshots = history?.snapshots || []
+  const safeIdx = Math.min(Math.max(0, dateIdx), Math.max(0, snapshots.length - 1))
+  const current = snapshots[safeIdx] || null
+  const latest  = snapshots[snapshots.length - 1] || null
+  const currentDate = current?.capture_date
+  const isToday = !!current?.is_today
+
+  // Frozen morning snapshot: each frame keeps the spot it was captured at. Use a
+  // stable window (latest frame's spot) for the ±15% strike filter so the x-axis
+  // doesn't jump while scrubbing, but draw the spot line at THIS frame's spot so
+  // it moves to show where price sat on each captured day.
+  const filterSpot = (latest?.spot ?? history?.spy_price) || 0
+  const lineSpot   = (current?.spot ?? filterSpot) || 0
 
   const fmtDateLabel = d => d
     ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
     : ''
+  // Full date + time, e.g. "Jun 4, 2026, 8:44 AM"
+  const fmtDateTime = iso => {
+    if (!iso) return ''
+    const dt = new Date(iso)
+    if (isNaN(dt.getTime())) return ''
+    return dt.toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+  }
+  // Time only, e.g. "8:44 AM" (the date is shown alongside it in the scrubber).
+  const fmtTimeOnly = iso => {
+    if (!iso) return ''
+    const dt = new Date(iso)
+    if (isNaN(dt.getTime())) return ''
+    return dt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+  }
+  // "Last updated" = when the most recent snapshot was captured (the morning pull).
+  const lastUpdated = latest?.captured_at ? fmtDateTime(latest.captured_at) : fmtDateLabel(latest?.capture_date)
 
-  // Filter to ±15% around spot (raw values — OIChartInner mirrors calls below zero)
-  const chartData = (oiData?.strikes || [])
-    .filter(r => spyPrice === 0 || (r.strike >= spyPrice * 0.85 && r.strike <= spyPrice * 1.15))
+  // Filter to ±15% around the (stable) spot (raw values — OIChartInner mirrors calls below zero)
+  const chartData = (current?.strikes || [])
+    .filter(r => filterSpot === 0 || (r.strike >= filterSpot * 0.85 && r.strike <= filterSpot * 1.15))
     .map(r => ({
       strike:      r.strike,
       put_oi:      r.put_oi  || 0,
@@ -1207,7 +1372,7 @@ export function OIChart() {
       call_change: r.call_change_1d,
     }))
 
-  const allStrikes  = oiData?.strikes || []
+  const allStrikes  = current?.strikes || []
   const totalCallOI = allStrikes.reduce((s, r) => s + (r.call_oi || 0), 0)
   const totalPutOI  = allStrikes.reduce((s, r) => s + (r.put_oi  || 0), 0)
   const totalCallVal = allStrikes.reduce((s, r) => s + (r.call_time_value || 0), 0)
@@ -1240,6 +1405,12 @@ export function OIChart() {
                 ? 'Green above = Call $ · Red below = Put $ (time value remaining × open interest) · dashed line = spot · ±15% around spot'
                 : 'Green above = Call OI · Red below = Put OI · dashed line = spot price · ±15% around spot'}
             </p>
+            {lastUpdated && (
+              <p className="text-[11px] mt-1.5 flex items-center gap-1.5 flex-wrap" style={{ color: 'var(--muted)' }}>
+                <span>Last updated</span>
+                <span className="font-mono" style={{ color: 'var(--text)' }}>{lastUpdated}</span>
+              </p>
+            )}
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {/* Capture today's snapshot on demand */}
@@ -1313,41 +1484,64 @@ export function OIChart() {
                   data={chartData}
                   width={width}
                   height={height}
-                  spyPrice={spyPrice}
+                  spyPrice={lineSpot}
                   ticker={oiTicker}
                   mode={viewMode}
+                  pin={current?.pin}
                 />
               )}
             </ParentSize>
           </div>
 
-          {/* Date scrubber — replay OI/value as it built over time */}
-          {availableDates.length > 0 && (
+          <PinningStrip pin={current?.pin} spot={lineSpot} />
+
+          {/* Date scrubber — replay OI/value as it built over time. All frames are
+              preloaded, so scrubbing and play are instant (no per-frame fetch). */}
+          {snapshots.length > 0 && (
             <div className="px-5 py-3 border-t" style={{ borderColor: 'var(--border)' }}>
               <div className="flex items-center justify-between mb-1.5">
                 <span className="text-xs uppercase tracking-wider font-mono" style={{ color: 'var(--muted)' }}>History</span>
                 <span className="text-xs font-mono flex items-center gap-2" style={{ color: 'var(--text)' }}>
                   {fmtDateLabel(currentDate)}
-                  {isLive && (
-                    <span className="text-[10px] px-1.5 py-0.5" style={{ color: 'var(--green)', backgroundColor: 'rgba(62,207,142,0.12)', borderRadius: 'var(--radius-sm)' }}>● LIVE</span>
+                  {current?.captured_at && (
+                    <span className="text-[10px]" style={{ color: 'var(--muted)' }}>· {fmtTimeOnly(current.captured_at)}</span>
+                  )}
+                  {isToday && (
+                    <span className="text-[10px] px-1.5 py-0.5" style={{ color: 'var(--blue)', backgroundColor: 'rgba(74,158,255,0.12)', borderRadius: 'var(--radius-sm)' }}>TODAY</span>
                   )}
                 </span>
               </div>
-              {availableDates.length > 1 ? (
+              {snapshots.length > 1 ? (
                 <>
-                  <input
-                    type="range"
-                    min={0}
-                    max={availableDates.length - 1}
-                    value={dateIdx}
-                    onChange={e => setCaptureDate(availableDates[Number(e.target.value)])}
-                    className="w-full"
-                    style={{ accentColor: 'var(--blue)' }}
-                  />
-                  <div className="flex justify-between text-[10px] font-mono mt-0.5" style={{ color: 'var(--muted)' }}>
-                    <span>{fmtDateLabel(availableDates[0])}</span>
-                    <span>{availableDates.length} snapshots</span>
-                    <span>{fmtDateLabel(availableDates[availableDates.length - 1])}</span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={togglePlay}
+                      aria-label={playing ? 'Pause' : 'Play'}
+                      title={playing ? 'Pause' : 'Play through history'}
+                      className="shrink-0 flex items-center justify-center transition-colors"
+                      style={{
+                        width: 28, height: 28, borderRadius: '9999px',
+                        border: '1px solid var(--blue)', color: 'var(--blue)',
+                        backgroundColor: playing ? 'rgba(74,158,255,0.18)' : 'rgba(74,158,255,0.08)',
+                        fontSize: 10, lineHeight: 1, letterSpacing: playing ? '-1px' : '0',
+                      }}
+                    >
+                      {playing ? '❚❚' : '▶'}
+                    </button>
+                    <input
+                      type="range"
+                      min={0}
+                      max={snapshots.length - 1}
+                      value={safeIdx}
+                      onChange={e => { setPlaying(false); setDateIdx(Number(e.target.value)) }}
+                      className="w-full"
+                      style={{ accentColor: 'var(--blue)' }}
+                    />
+                  </div>
+                  <div className="flex justify-between text-[10px] font-mono mt-1" style={{ color: 'var(--muted)' }}>
+                    <span>{fmtDateLabel(snapshots[0].capture_date)}</span>
+                    <span>{safeIdx + 1} / {snapshots.length} snapshots</span>
+                    <span>{fmtDateLabel(snapshots[snapshots.length - 1].capture_date)}</span>
                   </div>
                 </>
               ) : (
