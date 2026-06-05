@@ -4,6 +4,49 @@ All notable changes to Harvest are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.4.0] - 2026-06-05
+
+### Added
+- **Replay the Open Interest chart day by day.** A history scrubber with a play
+  button lets you watch how open interest built up across recent trading days.
+  Every snapshot loads at once, so scrubbing and playback are instant — no lag
+  between dates.
+- **Gamma pins on the OI chart.** The chart now finds and marks the strikes price
+  tends to gravitate toward into expiry: a gamma pin (the strike with the most
+  dealer gamma to hedge) with a strength score, the max-pain level, and the
+  call/put walls. Each has a plain-English tooltip.
+- **"Last updated" label on the OI chart** showing the morning capture date and time.
+- **In-app Restart Backend button** (Settings). Reloads the server to pick up
+  updates or clear a stuck state, then reconnects on its own — no terminal needed.
+- **Number of contracts column on Open Positions, and every column header now sorts**
+  (click to sort, click again to reverse).
+- **Pre-open snapshot scheduler** that captures the morning open-interest figure
+  once per trading day, so the chart's data is consistent regardless of when you
+  open the app.
+
+### Changed
+- **The OI chart is now a frozen morning snapshot.** Open interest, option prices,
+  and the underlying price all reflect that morning's pull, so nothing drifts
+  through the day. Open interest is a once-a-day figure anyway — settled overnight,
+  published the next morning.
+- **"Start Pro" now does something.** Until card checkout ships, it adds you to the
+  Pro early-access list instead of being a button that did nothing.
+
+### Fixed
+- **Positions no longer show a fake "100% — Take Profit" when the price feed is down.**
+  If the market-data provider can't return a live option price, positions now read
+  "Price unavailable" instead of treating a failed fetch as a worthless option,
+  which had made every position look fully profitable.
+- **The OI chart no longer fails to load when the data feed returns a bad price.**
+  A missing/NaN spot price was poisoning the whole chart response (NaN isn't valid
+  JSON, so the browser rejected it). Non-finite values are now scrubbed to null.
+- **Historical OI dates populate again.** Frozen-empty (zero open-interest) snapshots
+  are dropped from the scrubber, so every date you can land on has real data.
+- **Harvest.app desktop control panel: repaired a broken code signature.** The brand
+  icon had been swapped in after signing, breaking the seal (which Gatekeeper can
+  reject as "damaged"). Re-signed it, and added a build script so future rebuilds
+  re-sign correctly.
+
 ## [0.3.3.0] - 2026-06-01
 
 ### Added
