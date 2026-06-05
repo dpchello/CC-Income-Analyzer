@@ -919,10 +919,36 @@ function statusFromPos(pos) {
   if (pos.dte <= 7) return { label: 'Urgent', color: 'var(--red)' }
   if (pos.distance_to_strike_pct != null && pos.distance_to_strike_pct > 0 && pos.distance_to_strike_pct <= 1.5)
     return { label: 'Urgent', color: 'var(--red)' }
+  // Live mark missing (data provider down) — don't fake a "Take Profit" off a $0 price.
+  if (pos.price_unavailable) return { label: 'Price unavailable', color: 'var(--muted)' }
   if (pos.delta != null && pos.delta > 0.35) return { label: 'Watch', color: 'var(--amber)' }
   if ((pos.profit_capture_pct || 0) >= 50) return { label: 'Take Profit', color: 'var(--green)' }
   if (pos.dte <= 21) return { label: 'Watch', color: 'var(--amber)' }
   return { label: 'On Track', color: 'var(--muted)' }
+}
+
+// Open Positions table — sortable columns. `get` returns the value each column
+// sorts on (positions with no live price sink to the bottom rather than masquerade).
+const STATUS_RANK = { 'Urgent': 0, 'Watch': 1, 'Take Profit': 2, 'On Track': 3, 'Price unavailable': 4 }
+const POS_COLUMNS = [
+  { label: 'Position',   key: 'strike',    get: p => p.strike ?? 0 },
+  { label: 'Expiry',     key: 'expiry',    get: p => p.expiry || '' },
+  { label: 'Contracts',  key: 'contracts', get: p => p.contracts ?? 0 },
+  { label: 'P&L',        key: 'pnl',       get: p => (p.price_unavailable ? -Infinity : (p.pnl ?? -Infinity)) },
+  { label: 'Theta Left', key: 'theta',     get: p => (p.price_unavailable ? -Infinity : (p.time_premium ?? 0) * 100 * (p.contracts || 0)) },
+  { label: 'Delta',      key: 'delta',     get: p => p.delta ?? -Infinity },
+  { label: 'Status',     key: 'status',    get: p => STATUS_RANK[statusFromPos(p).label] ?? 99 },
+]
+
+function sortPositions(list, { key, dir }) {
+  const col = key && POS_COLUMNS.find(c => c.key === key)
+  if (!col) return list
+  const sign = dir === 'asc' ? 1 : -1
+  return [...list].sort((a, b) => {
+    const av = col.get(a), bv = col.get(b)
+    if (typeof av === 'string' || typeof bv === 'string') return String(av).localeCompare(String(bv)) * sign
+    return (av - bv) * sign
+  })
 }
 
 function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, onMove }) {
@@ -1021,15 +1047,22 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
         <td className="px-4 py-3 text-xs font-mono" style={{ color: 'var(--muted)' }}>
           {pos.expiry}
         </td>
+        <td className="px-4 py-3 text-xs font-mono" style={{ color: 'var(--text)' }}>
+          {pos.contracts}
+        </td>
         <td className="px-4 py-3">
-          <span className="text-xs font-mono font-semibold" style={{ color: pnlPos ? 'var(--green)' : 'var(--red)' }}>
-            {pnlPos ? '+' : ''}${pos.pnl?.toFixed(0) ?? '—'}
-          </span>
+          {pos.price_unavailable ? (
+            <span className="text-xs font-mono" style={{ color: 'var(--muted)' }}>—</span>
+          ) : (
+            <span className="text-xs font-mono font-semibold" style={{ color: pnlPos ? 'var(--green)' : 'var(--red)' }}>
+              {pnlPos ? '+' : ''}${pos.pnl?.toFixed(0) ?? '—'}
+            </span>
+          )}
         </td>
         {/* Theta remaining = total time value left to decay in your favor ($) */}
         <td className="px-4 py-3">
           <span className="text-xs font-mono font-semibold" style={{ color: 'var(--green)' }}>
-            {pos.time_premium != null
+            {!pos.price_unavailable && pos.time_premium != null
               ? `$${Math.round(pos.time_premium * 100 * (pos.contracts || 0)).toLocaleString()}`
               : '—'}
           </span>
@@ -1059,7 +1092,7 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
       {/* ── Inline drawer ── */}
       {expanded && (
         <tr>
-          <td colSpan={7} className="border-b" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)' }}>
+          <td colSpan={8} className="border-b" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)' }}>
             <div className="px-5 py-4 space-y-4">
 
               {/* Detail stats */}
@@ -1331,6 +1364,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
   const [showConnectBrokerage, setShowConnectBrokerage] = useState(false)
   const [brokerageSyncOnly, setBrokerageSyncOnly] = useState(false)
   const [collapsedBrokers, setCollapsedBrokers] = useState({})
+  const [posSort, setPosSort] = useState({ key: null, dir: 'asc' })   // Open Positions sort
 
   // Auto-select first portfolio on load
   useEffect(() => {
@@ -1343,6 +1377,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
   const myPositions = positions.filter(p => p.portfolio_id === selectedId)
   const myHoldings  = holdings.filter(h => h.portfolio_id === selectedId)
   const openPos  = myPositions.filter(p => p.status === 'open')
+  const sortedOpenPos = sortPositions(openPos, posSort)
   const closedPos = myPositions.filter(p => p.status === 'closed')
 
   // Covered shares per ticker, plus per-strike lots for weighted-average value math
@@ -1815,14 +1850,26 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                   <table className="w-full text-xs" style={{ borderCollapse: 'collapse' }}>
                     <thead>
                       <tr className="border-b" style={{ borderColor: 'var(--border)' }}>
-                        {['Position', 'Expiry', 'P&L', 'Theta Left', 'Delta', 'Status', ''].map(h => (
-                          <th key={h} className="px-4 py-2.5 text-left font-normal text-[11px] uppercase tracking-wider"
-                            style={{ color: 'var(--muted)' }}>{h}</th>
-                        ))}
+                        {POS_COLUMNS.map(col => {
+                          const active = posSort.key === col.key
+                          return (
+                            <th
+                              key={col.key}
+                              onClick={() => setPosSort(s => s.key === col.key
+                                ? { key: col.key, dir: s.dir === 'asc' ? 'desc' : 'asc' }
+                                : { key: col.key, dir: 'asc' })}
+                              className="px-4 py-2.5 text-left font-normal text-[11px] uppercase tracking-wider cursor-pointer select-none whitespace-nowrap hover:text-[var(--text)] transition-colors"
+                              style={{ color: active ? 'var(--text)' : 'var(--muted)' }}
+                            >
+                              {col.label}{active && <span style={{ color: 'var(--blue)' }}>{posSort.dir === 'asc' ? ' ↑' : ' ↓'}</span>}
+                            </th>
+                          )
+                        })}
+                        <th className="px-4 py-2.5" />
                       </tr>
                     </thead>
                     <tbody>
-                      {openPos.map(pos => (
+                      {sortedOpenPos.map(pos => (
                         <PositionRow
                           key={pos.id} pos={pos}
                           portfolios={portfolios}
