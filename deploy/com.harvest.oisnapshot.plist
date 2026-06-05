@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd job: pre-open OI snapshot trigger.
+
+  Open interest is a once-a-day figure — the OCC settles a session's trades
+  overnight and publishes them the next morning — so the chart wants exactly one
+  capture per trading day, taken in the morning. This job pings the backend's
+  /api/version every weekday morning; that request fires the daily_snapshot_guard
+  middleware, which (once per day, guarded by oi_snapshot_sentinel.txt) captures
+  the morning OI + mids + spot IN the running uvicorn process — so it shares the
+  same file lock as the app and can't race the chart's reads.
+
+  Why ping a URL instead of running a script: capturing in-process reuses the
+  existing self-heal path and avoids a second writer fighting the server for
+  oi_chain_history.json. No auth is needed — the middleware runs before routing.
+
+  Timing: this fires at 08:45 *local* time. Open interest is identical all day
+  once the feed has refreshed, so the only thing that matters is being late
+  enough that Yahoo/yfinance has posted the overnight figure — a few minutes
+  around the open is the sweet spot. Adjust Hour/Minute below to your market
+  open in local time (e.g. Eastern users may prefer 09:35). Weekday 1–5 = Mon–Fri.
+
+  Install:
+    cp deploy/com.harvest.oisnapshot.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.harvest.oisnapshot.plist
+
+  Verify (fire it manually, then watch the backend log for "[snapshot-job]"):
+    launchctl start com.harvest.oisnapshot
+    tail -f ~/Library/Logs/harvest/backend.out.log
+
+  Unload:
+    launchctl unload ~/Library/LaunchAgents/com.harvest.oisnapshot.plist
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.harvest.oisnapshot</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/curl</string>
+        <string>-s</string>
+        <string>-m</string>
+        <string>30</string>
+        <string>--retry</string>
+        <string>5</string>
+        <string>--retry-delay</string>
+        <string>20</string>
+        <string>-o</string>
+        <string>/dev/null</string>
+        <string>http://127.0.0.1:8000/api/version</string>
+    </array>
+
+    <!-- Mon–Fri at 08:45 local. One dict per weekday (launchd matches all set fields). -->
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>45</integer></dict>
+    </array>
+
+    <key>StandardOutPath</key>
+    <string>/Users/leslie/Library/Logs/harvest/oisnapshot.out.log</string>
+
+    <key>StandardErrorPath</key>
+    <string>/Users/leslie/Library/Logs/harvest/oisnapshot.err.log</string>
+</dict>
+</plist>

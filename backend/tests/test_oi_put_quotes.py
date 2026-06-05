@@ -110,6 +110,9 @@ def test_self_heal_backfills_putless_snapshot(monkeypatch):
     saved = {}
     monkeypatch.setattr(oi_tracker, "_load_chain", lambda: store)
     monkeypatch.setattr(oi_tracker, "_save_chain", lambda data: saved.update(data))
+    # Keep the capture-meta sidecar in-memory so the heal-write doesn't touch disk.
+    monkeypatch.setattr(oi_tracker, "_save_capture_meta", lambda data: None)
+    monkeypatch.setattr(oi_tracker, "_load_capture_meta", lambda: {})
 
     oi_tracker.record_chain_snapshot(exp, _FRESH_ROWS)  # no force
 

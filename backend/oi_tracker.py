@@ -13,14 +13,21 @@ Signal thresholds (1-day change):
 """
 
 import json
+import math
 import os
 import threading
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 _DATA_DIR = Path(os.getenv("DATA_DIR", str(Path(__file__).parent)))
 OI_HISTORY_FILE = _DATA_DIR / "oi_history.json"
 OI_CHAIN_FILE   = _DATA_DIR / "oi_chain_history.json"
+# Sidecar: per "expiry|date" capture metadata — {at: ISO timestamp, spot: price
+# at capture}. Lets the chart show a real date+time AND freeze the underlying's
+# price to the morning pull (so time-value/$ views don't drift intraday). Kept
+# separate from OI_CHAIN_FILE so its shape (a flat dict of strikes per date)
+# stays untouched for every existing reader.
+OI_CAPTURE_META_FILE = _DATA_DIR / "oi_capture_meta.json"
 _lock = threading.Lock()
 _MAX_DAYS = 30  # rolling window kept per key
 
@@ -94,6 +101,65 @@ def _save_chain(data: dict):
         json.dump(data, f, indent=2)
 
 
+def _load_capture_meta() -> dict:
+    if OI_CAPTURE_META_FILE.exists():
+        try:
+            with open(OI_CAPTURE_META_FILE) as f:
+                return json.load(f)
+        except Exception:
+            return {}
+    return {}
+
+
+def _save_capture_meta(data: dict):
+    try:
+        with open(OI_CAPTURE_META_FILE, "w") as f:
+            json.dump(data, f, indent=2)
+    except OSError:
+        pass  # best-effort — missing meta just falls back to date-only / live spot
+
+
+def _finite(x, default=None):
+    """Coerce x to a finite float, else `default`.
+
+    Guards against NaN / Infinity — which json.dumps emits as bare NaN/Infinity
+    tokens that the browser's JSON.parse rejects (a single one poisons the whole
+    response) — and against the `NaN or 0 == NaN` trap (NaN is truthy in Python).
+    yfinance can hand back a NaN price without raising, so spot must pass through
+    here before it reaches a snapshot or the chart payload.
+    """
+    try:
+        f = float(x)
+    except (TypeError, ValueError):
+        return default
+    return f if math.isfinite(f) else default
+
+
+def _capture_meta_for(meta: dict, expiry: str, capture_date: str) -> dict:
+    """Normalize a meta entry to {at, spot}, tolerating the legacy plain-string
+    (timestamp-only) format from before spot was stored."""
+    raw = meta.get(f"{expiry}|{capture_date}")
+    if isinstance(raw, dict):
+        return {"at": raw.get("at"), "spot": _finite(raw.get("spot"))}
+    if isinstance(raw, str):          # legacy: value was just the ISO timestamp
+        return {"at": raw, "spot": None}
+    return {"at": None, "spot": None}
+
+
+def _record_capture_meta(expiry: str, capture_date: str, spot=None):
+    """Record when this expiry/date snapshot was written (local time, ISO) and
+    the underlying's spot at that moment. Call only while holding _lock (it does
+    its own read-modify-write of the sidecar). Re-records on overwrite so the
+    metadata tracks the data actually shown."""
+    meta = _load_capture_meta()
+    sp = _finite(spot)
+    meta[f"{expiry}|{capture_date}"] = {
+        "at":   datetime.now().astimezone().isoformat(timespec="seconds"),
+        "spot": round(sp, 2) if sp else None,
+    }
+    _save_capture_meta(meta)
+
+
 def _compute_mid(bid, ask, last=None):
     """Mid from bid/ask, falling back to last trade. None if nothing usable."""
     b = bid or 0
@@ -108,18 +174,24 @@ def _compute_mid(bid, ask, last=None):
 
 
 def _snapshot_row(row: dict) -> dict:
-    """One strike's stored fields: OI + mid price for calls and puts.
+    """One strike's stored fields: OI + mid price for calls and puts, plus gamma.
 
     Both sides carry OI and a mid price. The chain fetcher pulls bid/ask/lastPrice
     from yfinance's puts frame (not just calls), so put_mid is real whenever the
     source quotes the put. put_mid stays None only when that strike's put has no
     usable quote, in which case put dollar-values fall back to 0.
+
+    gamma is the Black-Scholes gamma the fetcher computes per strike — identical
+    for the call and put at a given strike — so one value covers both sides. It
+    feeds the gamma-pin analysis; None on legacy rows or when IV was unavailable.
     """
+    gamma = _finite(row.get("gamma"))
     return {
         "call_oi":  int(row["openInterest"]) if row.get("openInterest") is not None else None,
         "put_oi":   int(row["put_oi"]) if row.get("put_oi") is not None else None,
         "call_mid": _compute_mid(row.get("bid"), row.get("ask"), row.get("lastPrice")),
         "put_mid":  _compute_mid(row.get("put_bid"), row.get("put_ask"), row.get("put_last")),
+        "gamma":    round(gamma, 6) if gamma is not None else None,
     }
 
 
@@ -133,7 +205,7 @@ def _has_put_mids(strikes: dict) -> bool:
     return any(v.get("put_mid") is not None for v in strikes.values() if isinstance(v, dict))
 
 
-def record_chain_snapshot(expiry: str, chain_rows: list, force: bool = False):
+def record_chain_snapshot(expiry: str, chain_rows: list, force: bool = False, spot=None):
     """Store a full call+put OI + mid snapshot for an expiry.
 
     First-write-wins per date so the cron's pre-market reading stays canonical —
@@ -170,6 +242,7 @@ def record_chain_snapshot(expiry: str, chain_rows: list, force: bool = False):
             for d in [k for k in data[expiry] if k < cutoff]:
                 del data[expiry][d]
             _save_chain(data)
+            _record_capture_meta(expiry, today_str, spot)
 
 
 def get_chain_oi_change(expiry: str) -> list:
@@ -218,53 +291,164 @@ def get_chain_oi_change(expiry: str) -> list:
     return result
 
 
-def get_capture_dates(expiry: str) -> list:
-    """All snapshot dates for an expiry, oldest → newest. Drives the date scrubber."""
-    data = _load_chain()
-    return sorted(data.get(expiry, {}).keys())
+def get_chain_history(expiry: str) -> list:
+    """Every non-empty snapshot for an expiry, oldest → newest, in one payload so
+    the chart can scrub/play client-side with no per-frame network round-trip.
+    Each frame carries its capture time and the spot at capture, so the chart can
+    render a frozen morning snapshot (OI, mids, and spot all as-of the pull).
 
-
-def get_chain_at(expiry: str, capture_date: str = None) -> dict:
-    """Per-strike OI + mids for one capture date (default: latest), with the
-    1-day OI change vs the prior captured date.
-
-    Returns {capture_date, prior_date, strikes:[{strike, call_oi, put_oi,
-    call_mid, put_mid, call_change_1d, put_change_1d}]}. Empty strikes if the
-    expiry has no history yet.
+    Snapshots whose total OI is zero are skipped. Open interest is a once-daily
+    figure (OCC settles a session's trades overnight and publishes it the next
+    morning), so an early or failed capture can land 0 across every strike before
+    the feed refreshes; first-write-wins then freezes that empty reading for the
+    day (it can't self-heal once the date is in the past). Those frozen-empty
+    dates carry no information and would render a blank chart, so we drop them
+    from the scrubber entirely. The 1-day OI change is chained against the prior
+    *non-empty* snapshot so it stays meaningful across any gaps.
     """
     data = _load_chain()
     expiry_data = data.get(expiry, {})
-    dates = sorted(expiry_data.keys())
-    if not dates:
-        return {"capture_date": None, "prior_date": None, "strikes": []}
-
-    # Resolve requested date; fall back to latest if missing/unspecified.
-    if capture_date not in expiry_data:
-        capture_date = dates[-1]
-    idx = dates.index(capture_date)
-    prior_date = dates[idx - 1] if idx > 0 else None
-
-    current = expiry_data[capture_date]
-    prior = expiry_data.get(prior_date, {}) if prior_date else {}
-
-    strikes = []
-    for strike_str, vals in current.items():
-        call_oi = vals.get("call_oi")
-        put_oi  = vals.get("put_oi")
-        prev = prior.get(strike_str, {})
-        prev_call = prev.get("call_oi")
-        prev_put  = prev.get("put_oi")
-        strikes.append({
-            "strike":         float(strike_str),
-            "call_oi":        call_oi,
-            "put_oi":         put_oi,
-            "call_mid":       vals.get("call_mid"),
-            "put_mid":        vals.get("put_mid"),
-            "call_change_1d": (call_oi - prev_call) if (call_oi is not None and prev_call is not None) else None,
-            "put_change_1d":  (put_oi  - prev_put)  if (put_oi  is not None and prev_put  is not None) else None,
+    meta = _load_capture_meta()
+    snapshots = []
+    prev_strikes = {}
+    for d in sorted(expiry_data.keys()):
+        strikes_map = expiry_data[d]
+        if _total_oi(strikes_map) <= 0:
+            continue
+        rows = []
+        for strike_str, vals in strikes_map.items():
+            call_oi = vals.get("call_oi")
+            put_oi  = vals.get("put_oi")
+            prev = prev_strikes.get(strike_str, {})
+            prev_call = prev.get("call_oi")
+            prev_put  = prev.get("put_oi")
+            rows.append({
+                "strike":         float(strike_str),
+                "call_oi":        call_oi,
+                "put_oi":         put_oi,
+                "call_mid":       vals.get("call_mid"),
+                "put_mid":        vals.get("put_mid"),
+                "gamma":          vals.get("gamma"),
+                "call_change_1d": (call_oi - prev_call) if (call_oi is not None and prev_call is not None) else None,
+                "put_change_1d":  (put_oi  - prev_put)  if (put_oi  is not None and prev_put  is not None) else None,
+            })
+        rows.sort(key=lambda r: r["strike"])
+        m = _capture_meta_for(meta, expiry, d)
+        snapshots.append({
+            "capture_date": d,
+            "captured_at":  m["at"],
+            "spot":         m["spot"],
+            "strikes":      rows,
         })
-    strikes.sort(key=lambda s: s["strike"])
-    return {"capture_date": capture_date, "prior_date": prior_date, "strikes": strikes}
+        prev_strikes = strikes_map
+    return snapshots
+
+
+def compute_pin_analysis(strikes: list, spot) -> dict:
+    """Locate price 'pins' (magnet strikes) and score their strength from one
+    frame's per-strike open interest (and gamma, when stored).
+
+    Returns None if there's no usable OI. Otherwise:
+      max_pain      — the listed strike that minimizes total option-writer payout
+                      if the underlying settled there (pure OI; the classic pin).
+      pin_strike    — the strongest gamma wall: the strike with the most dealer
+                      gamma to hedge, weight = gamma x (call_oi + put_oi). When no
+                      gamma is stored (older snapshots) it falls back to OI weighted
+                      toward spot — gamma is an at-the-money-peaked bell — and sets
+                      method='oi' so the UI can label it an estimate.
+      pin_strength  — the pin's share of total weight across the near-spot window
+                      (0-1), bucketed weak / moderate / strong / dominant.
+      pin_gex       — dealer gamma notional at the pin per 1% move ($), gamma only.
+      call_wall /   — largest call / put OI strike near spot (overhead resistance /
+      put_wall        downside support).
+      pins          — top 3 magnets [{strike, total_oi, strength}] for chart markers.
+    """
+    rows = []
+    for r in strikes or []:
+        if r.get("strike") is None:
+            continue
+        coi = r.get("call_oi") or 0
+        poi = r.get("put_oi") or 0
+        rows.append({
+            "strike":   float(r["strike"]),
+            "call_oi":  coi,
+            "put_oi":   poi,
+            "total_oi": coi + poi,
+            "gamma":    r.get("gamma"),
+        })
+    if not rows:
+        return None
+    rows.sort(key=lambda r: r["strike"])
+    if sum(r["total_oi"] for r in rows) <= 0:
+        return None
+
+    spot = _finite(spot) or 0.0
+
+    # Max pain — settlement strike minimizing total writer payout (over all strikes).
+    def _payout(settle):
+        total = 0.0
+        for r in rows:
+            total += r["call_oi"] * max(0.0, settle - r["strike"])
+            total += r["put_oi"]  * max(0.0, r["strike"] - settle)
+        return total
+    max_pain = min((r["strike"] for r in rows), key=_payout)
+
+    # Keep walls + the pin search near spot so the magnets stay actionable.
+    if spot > 0:
+        lo, hi = spot * 0.90, spot * 1.10
+        window = [r for r in rows if lo <= r["strike"] <= hi] or rows
+    else:
+        window = rows
+
+    call_wall = max(window, key=lambda r: r["call_oi"])["strike"] if any(r["call_oi"] > 0 for r in window) else None
+    put_wall  = max(window, key=lambda r: r["put_oi"])["strike"]  if any(r["put_oi"]  > 0 for r in window) else None
+
+    # Pin = strongest gamma concentration. True gamma when stored; otherwise OI
+    # shaped by an at-the-money gamma bell (so far-OTM size doesn't masquerade as a pin).
+    has_gamma = any(r["gamma"] for r in window)
+    if has_gamma:
+        for r in window:
+            r["weight"] = (r["gamma"] or 0.0) * r["total_oi"]
+        method = "gamma"
+    else:
+        band = spot * 0.04 if spot > 0 else 0.0
+        for r in window:
+            if band > 0:
+                z = (r["strike"] - spot) / band
+                r["weight"] = r["total_oi"] * math.exp(-0.5 * z * z)
+            else:
+                r["weight"] = float(r["total_oi"])
+        method = "oi"
+
+    total_weight = sum(r["weight"] for r in window) or 1.0
+    ranked = sorted(window, key=lambda r: r["weight"], reverse=True)
+    pin = ranked[0]
+    strength = pin["weight"] / total_weight
+    label = ("dominant" if strength >= 0.35 else
+             "strong"   if strength >= 0.20 else
+             "moderate" if strength >= 0.10 else "weak")
+
+    pin_gex = None
+    if method == "gamma" and spot > 0:
+        # gamma x OI x 100 (multiplier) x spot^2 x 0.01  → $ dealer gamma per 1% move
+        pin_gex = round((pin["gamma"] or 0.0) * pin["total_oi"] * 100 * spot * spot * 0.01, 0)
+
+    return {
+        "max_pain":         round(max_pain, 2),
+        "call_wall":        round(call_wall, 2) if call_wall is not None else None,
+        "put_wall":         round(put_wall, 2)  if put_wall  is not None else None,
+        "pin_strike":       round(pin["strike"], 2),
+        "pin_total_oi":     pin["total_oi"],
+        "pin_strength":     round(strength, 4),
+        "pin_label":        label,
+        "pin_gex":          pin_gex,
+        "method":           method,
+        "spot_vs_pain_pct": round((spot - max_pain) / max_pain * 100, 2) if (spot > 0 and max_pain) else None,
+        "pins": [
+            {"strike": round(r["strike"], 2), "total_oi": r["total_oi"], "strength": round(r["weight"] / total_weight, 4)}
+            for r in ranked[:3]
+        ],
+    }
 
 
 def get_changes_batch(keys: list) -> dict:
@@ -377,13 +561,24 @@ def _run_snapshot_job():
         # Lazy import: avoids an import cycle (data_fetcher ↔ oi_tracker) at load.
         from data_fetcher import DataFetcher
         fetcher = DataFetcher()
-        expiries = fetcher.get_screener_expiries(max_dte=_SNAPSHOT_MAX_DTE) or []
+        # Spot at capture time — stored per snapshot so the chart can freeze the
+        # underlying's price to this morning pull instead of drifting intraday.
+        try:
+            spot = fetcher.get_spy_price().get("price", 0) or 0
+        except Exception:
+            spot = 0
+        # Union of the screener window and the OI-chart expiries so the chart
+        # always has a fresh morning frame (chart expiries are normally a subset,
+        # but a far-dated chart weekly could fall outside the screener window).
+        screener = fetcher.get_screener_expiries(max_dte=_SNAPSHOT_MAX_DTE) or []
+        chart    = fetcher.get_oi_chart_expiries() or []
+        expiries = list(dict.fromkeys(list(screener) + list(chart)))
         ok = 0
         for exp in expiries:
             try:
                 chain = fetcher.get_options_chain(exp)
                 if chain:
-                    record_chain_snapshot(exp, chain)
+                    record_chain_snapshot(exp, chain, spot=spot)
                     ok += 1
             except Exception as exc:
                 print(f"[snapshot-job] {exp} failed: {exc}")

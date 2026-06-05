@@ -39,6 +39,7 @@ backend/av_cache/
 backend/av_usage.json
 backend/oi_chain_history.json
 backend/oi_history.json
+backend/oi_capture_meta.json
 backend/oi_tracker_data.json
 backend/recommendations_log.json
 backend/.last_oi_snapshot_full

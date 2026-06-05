@@ -1,4 +1,5 @@
 import json
+import math
 import os
 import uuid
 from collections import defaultdict
@@ -118,8 +119,43 @@ STARTED_AT  = datetime.now().astimezone().isoformat()
 
 @app.get("/api/version")
 def get_version():
-    """What build is live. Curl this after a deploy to confirm the reload took."""
+    """What build is live. Curl this after a deploy to confirm the reload took.
+    started_at changes on every (re)start, so the app polls it to confirm a
+    restart actually took effect."""
     return {"version": APP_VERSION, "git_sha": GIT_SHA, "started_at": STARTED_AT}
+
+
+@app.post("/api/system/restart")
+def restart_backend(current_user: User = Depends(auth_module.get_current_user)):
+    """Restart the backend so it loads the latest code — the in-app equivalent of
+    `harvestctl.sh reload`, callable from Settings.
+
+    Re-execs this process after the response flushes: same PID and same launch
+    flags (so `--reload` is preserved if it was on). Re-exec is atomic — if it
+    fails, the server keeps running rather than being left down (unlike a
+    stop-then-start, which can fail between the two). The triggering request's
+    connection drops as the image is replaced; the client polls /api/version and
+    watches started_at change to confirm the new process is live.
+    """
+    import sys
+    import time
+    import threading
+
+    backend_dir = str(Path(__file__).resolve().parent)
+
+    def _reexec():
+        time.sleep(0.6)  # let this HTTP response reach the client before we vanish
+        try:
+            os.chdir(backend_dir)  # main:app + .env resolve relative to backend/
+            args = [sys.executable, "-m", "uvicorn", "main:app", "--host", "127.0.0.1", "--port", "8000"]
+            if "--reload" in sys.argv:
+                args.append("--reload")  # preserve dev auto-reload mode if it was on
+            os.execv(sys.executable, args)
+        except Exception as exc:  # never leave the box down silently
+            print(f"[restart] re-exec failed, server still up: {exc}")
+
+    threading.Thread(target=_reexec, daemon=True).start()
+    return {"ok": True, "message": "Backend restarting…", "was_started_at": STARTED_AT}
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -584,6 +620,13 @@ def get_positions(
                 p["delta"] = None
                 p["theta"] = None
                 p["daily_pnl"] = None
+            # When the data provider is down, get_option_price() falls back to 0
+            # and the chain fetch yields no greeks — which would otherwise read as
+            # "option worth $0 → 100% profit → Take Profit." Flag that state so the
+            # UI shows "price unavailable" instead of a fabricated max gain. A
+            # genuinely worthless option still carries greeks from the chain, so we
+            # only flag when BOTH the price is 0 and greeks are missing.
+            p["price_unavailable"] = ((current is None or current == 0) and p.get("delta") is None)
             intrinsic_val = round(max(0.0, spy_price - float(pos["strike"])), 2) if spy_price > 0 else 0.0
             p["intrinsic_value"] = intrinsic_val
             p["time_premium"] = round(max(0.0, (p.get("current_price") or 0.0) - intrinsic_val), 2)
@@ -2163,15 +2206,17 @@ def get_oi_expiries():
 @app.post("/api/oi/snapshot")
 def run_oi_snapshot(current_user: User = Depends(auth_module.get_current_user)):
     """Capture today's OI snapshot for the near-term chart expiries on demand.
-    Synchronous so the chart can refetch and show data immediately. First-write-
-    wins per day, so this is a no-op for expiries already captured today."""
+    Synchronous so the chart can refetch and show data immediately. force=True
+    overwrites today's frame with this fresh pull (and re-stamps its capture time
+    + spot), since the user explicitly asked to refresh."""
+    spot = fetcher.get_spy_price().get("price", 0) or 0
     expiries = fetcher.get_oi_chart_expiries()
     captured, errors = 0, []
     for exp in expiries:
         try:
             chain = fetcher.get_options_chain(exp)
             if chain:
-                oi_tracker.record_chain_snapshot(exp, chain, force=True)
+                oi_tracker.record_chain_snapshot(exp, chain, force=True, spot=spot)
                 captured += 1
         except Exception as e:
             errors.append(f"{exp}: {e}")
@@ -2183,80 +2228,96 @@ def run_oi_snapshot(current_user: User = Depends(auth_module.get_current_user)):
     }
 
 
-@app.get("/api/oi/chain")
-def get_oi_chain(
+def _json_safe(obj):
+    """Recursively replace non-finite floats (NaN / Infinity) with None.
+
+    json.dumps emits those as bare NaN/Infinity tokens that the browser's
+    JSON.parse rejects — a single one anywhere makes the whole response
+    unparseable and the chart shows "Could not load." This is the last line of
+    defense after spot/gamma are coerced upstream.
+    """
+    if isinstance(obj, float):
+        return obj if math.isfinite(obj) else None
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    return obj
+
+
+@app.get("/api/oi/chain/history")
+def get_oi_chain_history(
     expiry: str = Query(...),
-    capture_date: str = Query(None),
     current_user: User = Depends(auth_module.get_current_user),
 ):
-    # Always do a live capture so today's snapshot stays fresh (first-write-wins
-    # protects any pre-market cron entry from being overwritten).
-    chain = fetcher.get_options_chain(expiry)
-    oi_tracker.record_chain_snapshot(expiry, chain)
+    """Every non-empty snapshot for an expiry in a single payload — a frozen
+    morning view, not a live feed.
 
-    available_dates = oi_tracker.get_capture_dates(expiry)
-    snapshot = oi_tracker.get_chain_at(expiry, capture_date)
-    spot = fetcher.get_spy_price().get("price", 0) or 0
+    The chart loads this once per expiry and then scrubs / auto-plays purely in
+    memory (no per-frame fetch), so the history slider is instant. Each frame is
+    rendered exactly as captured: open interest, option mids, and the underlying
+    spot are all the morning-pull values, so nothing drifts intraday. Open
+    interest is a once-daily figure anyway (OCC settles a session's trades
+    overnight and publishes them the next morning); the daily capture is owned by
+    the pre-open snapshot job + first-request self-heal, so this endpoint is
+    read-only and never re-fetches the chain.
+    """
+    snapshots = oi_tracker.get_chain_history(expiry)
     today_str = date.today().isoformat()
-    is_live = snapshot["capture_date"] == today_str
 
-    def _mid(bid, ask, last=None):
-        b = bid or 0
-        a = ask or 0
-        if b > 0 and a > 0:
-            return round((b + a) / 2, 2)
-        if b > 0 or a > 0:
-            return round(b or a, 2)
-        if last and last > 0:
-            return round(float(last), 2)
-        return None
+    # Fallback spot only for frames captured before per-frame spot was stored
+    # (legacy data). Cached + cheap, and skipped entirely once every frame has a
+    # stored morning spot. yfinance can return a NaN price without raising, and
+    # `NaN or 0` stays NaN (NaN is truthy) — which would poison the JSON — so this
+    # must be coerced to a finite value, not just `or 0`.
+    fallback_spot = 0
+    if any(s.get("spot") is None for s in snapshots):
+        try:
+            raw = fetcher.get_spy_price().get("price", 0)
+            fallback_spot = raw if (isinstance(raw, (int, float)) and math.isfinite(raw) and raw > 0) else 0
+        except Exception:
+            fallback_spot = 0
 
-    # If viewing today's snapshot, prefer live mids over stored ones so the
-    # chart reflects intraday price moves on top of the morning's OI snapshot.
-    if is_live:
-        live_mids = {}
-        for r in chain:
-            if r.get("strike") is None:
-                continue
-            k = round(float(r["strike"]), 2)
-            live_mids[k] = {
-                "call_mid": _mid(r.get("bid"),     r.get("ask"),     r.get("lastPrice")),
-                "put_mid":  _mid(r.get("put_bid"), r.get("put_ask"), r.get("put_last")),
-            }
-        for s in snapshot["strikes"]:
-            m = live_mids.get(round(float(s["strike"]), 2), {})
-            if m.get("call_mid") is not None:
-                s["call_mid"] = m["call_mid"]
-            if m.get("put_mid") is not None:
-                s["put_mid"] = m["put_mid"]
+    out = []
+    for snap in snapshots:
+        frame_spot = snap.get("spot") or fallback_spot
+        strikes = []
+        for s in snap["strikes"]:
+            strike_f = float(s["strike"])
+            cm = s.get("call_mid") or 0.0
+            pm = s.get("put_mid")  or 0.0
+            call_intrinsic = max(0.0, frame_spot - strike_f) if frame_spot else 0.0
+            put_intrinsic  = max(0.0, strike_f - frame_spot) if frame_spot else 0.0
+            call_time_prem = max(0.0, cm - call_intrinsic)
+            put_time_prem  = max(0.0, pm - put_intrinsic)
+            strikes.append({
+                "strike":          strike_f,
+                "call_oi":         s.get("call_oi") or 0,
+                "put_oi":          s.get("put_oi")  or 0,
+                "call_change_1d":  s.get("call_change_1d"),
+                "put_change_1d":   s.get("put_change_1d"),
+                "call_time_value": round((s.get("call_oi") or 0) * call_time_prem * 100, 2),
+                "put_time_value":  round((s.get("put_oi")  or 0) * put_time_prem  * 100, 2),
+            })
+        out.append({
+            "capture_date": snap["capture_date"],
+            "captured_at":  snap["captured_at"],
+            "is_today":     snap["capture_date"] == today_str,
+            "spot":         round(float(frame_spot), 2) if frame_spot else None,
+            "pin":          oi_tracker.compute_pin_analysis(snap["strikes"], frame_spot),
+            "strikes":      strikes,
+        })
 
-    # Compute dollar values from each strike's OI × mid (snapshot-resident).
-    # Note: intrinsic/time-premium uses today's spot regardless of capture_date,
-    # which is a minor approximation for historical views.
-    for s in snapshot["strikes"]:
-        strike_f = float(s["strike"])
-        call_intrinsic = max(0.0, spot - strike_f) if spot else 0.0
-        put_intrinsic  = max(0.0, strike_f - spot) if spot else 0.0
-        call_mid = s.get("call_mid") or 0.0
-        put_mid  = s.get("put_mid")  or 0.0
-        call_time_prem = max(0.0, call_mid - call_intrinsic)
-        put_time_prem  = max(0.0, put_mid  - put_intrinsic)
-        s["call_time_prem"]  = round(call_time_prem, 4)
-        s["put_time_prem"]   = round(put_time_prem,  4)
-        s["call_value"]      = round((s.get("call_oi") or 0) * call_mid * 100, 2)
-        s["put_value"]       = round((s.get("put_oi")  or 0) * put_mid  * 100, 2)
-        s["call_time_value"] = round((s.get("call_oi") or 0) * call_time_prem * 100, 2)
-        s["put_time_value"]  = round((s.get("put_oi")  or 0) * put_time_prem  * 100, 2)
+    latest_spot = out[-1]["spot"] if out else (fallback_spot or 0)
+    return _json_safe({
+        "expiry":        expiry,
+        "ticker":        "SPY",
+        "spy_price":     latest_spot or 0,
+        "today":         today_str,
+        "snapshots":     out,
+        "num_snapshots": len(out),
+    })
 
-    return {
-        "expiry":          expiry,
-        "capture_date":    snapshot["capture_date"],
-        "prior_date":      snapshot["prior_date"],
-        "available_dates": available_dates,
-        "is_live":         is_live,
-        "strikes":         snapshot["strikes"],
-        "spy_price":       spot,
-    }
 
 @app.post("/api/oi/snapshot")
 def trigger_oi_snapshot(current_user: User = Depends(auth_module.get_current_user)):

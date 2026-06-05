@@ -8,6 +8,7 @@ Files for running Harvest on this Mac in production. See `PLAN_SELF_HOST.md` for
 |---|---|---|
 | `com.harvest.backend.plist` | launchd job for FastAPI on `127.0.0.1:8000` | None if user is `leslie` and path is `/Users/leslie/CC-Income-Analyzer` |
 | `com.harvest.marketing.plist` | launchd job for Next.js marketing on `127.0.0.1:3001` (only if §5 Option B) | None, same assumptions |
+| `com.harvest.oisnapshot.plist` | launchd job that triggers the pre-open OI snapshot each weekday morning (pings `/api/version`) | Adjust `Hour`/`Minute` to your market open in local time |
 | `cloudflared-config.yml` | Cloudflare Tunnel ingress template | Replace `<TUNNEL_ID>` (×2) and `harvestoptions.net` if your domain differs |
 
 ## Installation order
@@ -57,6 +58,11 @@ cloudflared tunnel route dns harvest app.harvestoptions.net
 ```bash
 cp deploy/com.harvest.backend.plist ~/Library/LaunchAgents/
 launchctl load ~/Library/LaunchAgents/com.harvest.backend.plist
+
+# Pre-open OI snapshot (captures the morning open-interest figure once per
+# trading day). Edit Hour/Minute in the plist to your market open first.
+cp deploy/com.harvest.oisnapshot.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.harvest.oisnapshot.plist
 
 # Option B only:
 cp deploy/com.harvest.marketing.plist ~/Library/LaunchAgents/
