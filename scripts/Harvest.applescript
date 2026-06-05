@@ -1,7 +1,9 @@
 -- Harvest desktop control panel.
 -- Double-clickable status + start/reload/stop monitor for the local Harvest app.
--- Compile to a .app with:  osacompile -o ~/Desktop/Harvest.app scripts/Harvest.applescript
--- All real logic lives in scripts/harvestctl.sh — this is just the clickable face.
+-- (Re)build with:  scripts/build-desktop-app.sh   (compiles, sets the icon, then
+-- re-signs LAST — a bare `osacompile` followed by dropping the icon in breaks the
+-- code signature). All real logic lives in scripts/harvestctl.sh — this is just
+-- the clickable face.
 
 property ctl : "/Users/leslie/CC-Income-Analyzer/scripts/harvestctl.sh"
 
