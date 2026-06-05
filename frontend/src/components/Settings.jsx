@@ -694,6 +694,105 @@ function BrokerageConnectionsPanel({ onImported }) {
   )
 }
 
+function RestartBackendPanel() {
+  const { apiFetch } = useAuth()
+  const [phase, setPhase] = useState('idle')   // idle | confirm | restarting | done | error
+  const [msg, setMsg] = useState(null)
+
+  async function restart() {
+    setPhase('restarting')
+    setMsg('Sending restart…')
+    let wasStartedAt = null
+    try {
+      const res = await apiFetch('/api/system/restart', { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      wasStartedAt = data.was_started_at || null
+    } catch {
+      // The connection can drop as the process re-execs — expected, keep going.
+    }
+    setMsg('Backend restarting — reconnecting…')
+    const began = Date.now()
+    const poll = async () => {
+      try {
+        const r = await fetch('/api/version', { cache: 'no-store' })
+        if (r.ok) {
+          const v = await r.json().catch(() => ({}))
+          // started_at changes on a fresh process — confirms the restart took.
+          if (!wasStartedAt || v.started_at !== wasStartedAt) {
+            setPhase('done')
+            setMsg('Back online — reloading…')
+            setTimeout(() => window.location.reload(), 900)
+            return
+          }
+        }
+      } catch {
+        // server is down mid-restart — keep polling
+      }
+      if (Date.now() - began > 40000) {
+        setPhase('error')
+        setMsg('Still not back after 40s. Run scripts/harvestctl.sh status in a terminal to check.')
+        return
+      }
+      setTimeout(poll, 1200)
+    }
+    setTimeout(poll, 1800)   // give it a beat to drop before we start polling
+  }
+
+  const busy = phase === 'restarting' || phase === 'done'
+
+  return (
+    <div className="p-5 border space-y-3" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Restart Backend</div>
+          <div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+            Reload the server to pick up updates or clear a stuck state. The app reconnects on its own — usually a few seconds.
+          </div>
+        </div>
+        <div className="shrink-0">
+          {phase === 'idle' && (
+            <button
+              onClick={() => setPhase('confirm')}
+              className="text-xs px-3 py-1.5 border transition-colors"
+              style={{ borderColor: 'var(--blue)', color: 'var(--blue)', backgroundColor: 'transparent', borderRadius: 'var(--radius-md)' }}
+            >
+              ⟳ Restart
+            </button>
+          )}
+          {phase === 'confirm' && (
+            <div className="flex items-center gap-2">
+              <button
+                onClick={restart}
+                className="text-xs px-3 py-1.5 border transition-colors"
+                style={{ borderColor: 'var(--red)', color: 'var(--red)', backgroundColor: 'transparent', borderRadius: 'var(--radius-md)' }}
+              >
+                Confirm restart
+              </button>
+              <button onClick={() => setPhase('idle')} className="text-xs px-2 py-1.5" style={{ color: 'var(--muted)', backgroundColor: 'transparent' }}>
+                Cancel
+              </button>
+            </div>
+          )}
+          {busy && (
+            <span className="text-xs font-mono inline-flex items-center gap-1.5" style={{ color: 'var(--muted)' }}>
+              <span style={{ display: 'inline-block', width: 7, height: 7, borderRadius: 9999, background: phase === 'done' ? 'var(--green)' : 'var(--amber)' }} />
+              {msg}
+            </span>
+          )}
+        </div>
+      </div>
+      {phase === 'confirm' && (
+        <div className="text-xs" style={{ color: 'var(--muted)' }}>
+          The app will be briefly unavailable while it restarts, then reload automatically.
+        </div>
+      )}
+      {phase === 'error' && (
+        <div className="text-xs" style={{ color: 'var(--red)' }}>{msg}</div>
+      )}
+    </div>
+  )
+}
+
 export default function Settings({ onRefresh, alphaUsage }) {
   const [showAdd, setShowAdd] = useState(false)
 
@@ -773,6 +872,9 @@ export default function Settings({ onRefresh, alphaUsage }) {
           <p>Position storage: <span style={{ color: 'var(--text)' }}>positions.json (local file)</span></p>
         </div>
       </div>
+
+      {/* Restart backend — in-app equivalent of harvestctl.sh reload */}
+      <RestartBackendPanel />
     </div>
   )
 }

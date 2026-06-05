@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useAuth } from '../auth.jsx'
 
 const FREE_FEATURES = [
   '3 positions tracked',
@@ -19,10 +20,30 @@ const PRO_FEATURES = [
 ]
 
 export default function UpgradeModal({ onClose, triggerReason }) {
+  const { apiFetch, user } = useAuth()
   const [billing, setBilling] = useState('annual')
+  const [phase, setPhase] = useState('idle')   // idle | joining | done | error
 
   const price = billing === 'annual' ? '$20/mo' : '$29/mo'
   const subtext = billing === 'annual' ? 'billed $240/year' : 'billed monthly'
+
+  // Stripe checkout (PIPE-031) isn't live yet — until it is, "Start Pro" joins the
+  // Pro early-access list with the signed-in user's email instead of being a dead CTA.
+  async function startPro() {
+    if (phase === 'joining' || phase === 'done') return
+    if (!user?.email) { setPhase('error'); return }
+    setPhase('joining')
+    try {
+      const res = await apiFetch('/api/waitlist', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: user.email }),
+      })
+      setPhase(res.ok ? 'done' : 'error')
+    } catch {
+      setPhase('error')
+    }
+  }
 
   return (
     <div
@@ -145,6 +166,8 @@ export default function UpgradeModal({ onClose, triggerReason }) {
 
         {/* CTA */}
         <button
+          onClick={startPro}
+          disabled={phase === 'joining' || phase === 'done'}
           style={{
             width: '100%',
             padding: '13px',
@@ -154,16 +177,29 @@ export default function UpgradeModal({ onClose, triggerReason }) {
             fontSize: 14,
             border: 'none',
             borderRadius: 'var(--radius-md)',
-            cursor: 'pointer',
+            cursor: phase === 'joining' || phase === 'done' ? 'default' : 'pointer',
+            opacity: phase === 'done' ? 0.9 : 1,
             letterSpacing: '0.01em',
           }}
         >
-          Start Pro — {price}
+          {phase === 'done' ? "✓ You're on the early-access list"
+            : phase === 'joining' ? 'Adding you…'
+            : `Start Pro — ${price}`}
         </button>
 
-        <p className="text-center text-xs mt-3" style={{ color: 'var(--muted)' }}>
-          Cancel anytime. No tricks, no lock-in.
-        </p>
+        {phase === 'done' ? (
+          <p className="text-center text-xs mt-3" style={{ color: 'var(--muted)' }}>
+            Pro checkout is launching soon — we’ll email {user?.email} the moment it’s live.
+          </p>
+        ) : phase === 'error' ? (
+          <p className="text-center text-xs mt-3" style={{ color: 'var(--red)' }}>
+            Couldn’t add you just now — please try again in a moment.
+          </p>
+        ) : (
+          <p className="text-center text-xs mt-3" style={{ color: 'var(--muted)' }}>
+            Cancel anytime. No tricks, no lock-in.
+          </p>
+        )}
       </div>
     </div>
   )
