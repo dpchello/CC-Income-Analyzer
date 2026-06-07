@@ -23,6 +23,8 @@ PROMPT_FILE="$REPO/scripts/nightly-upgrade.prompt.md"
 LOG_DIR="$HOME/Library/Logs/harvest"
 LOCK="$REPO/.git/nightly-upgrade.lock"
 SUMMARY="/tmp/harvest-nightly-summary.md"
+CLAUDE_OUT="/tmp/harvest-nightly-claude-result.json"
+USAGE_LOG="$HOME/Library/Logs/harvest/nightly-usage.jsonl"   # one line per run, for trend review
 BASE_BRANCH="main"
 MAX_RUNTIME=14400   # 4h hard backstop -> a 1AM start gets force-killed by ~5AM
 SOFT_FRACTION=80    # at this % of the window the agent checkpoints + stops gracefully
@@ -99,15 +101,40 @@ $(cat "$PROMPT_FILE")"
 WATCHDOG=$!
 
 log "Invoking claude (subscription auth, no \$ cap; soft checkpoint ${SOFT_HM}, hard cutoff ${HARD_HM})..."
+rm -f "$CLAUDE_OUT"
 claude -p "$PROMPT" \
   --dangerously-skip-permissions \
   --add-dir "$REPO" \
-  2>&1 | sed 's/^/  [claude] /'
-CLAUDE_RC=${PIPESTATUS[0]}
+  --output-format json \
+  >"$CLAUDE_OUT" 2> >(sed 's/^/  [claude:err] /')
+CLAUDE_RC=$?
 
 kill "$WATCHDOG" 2>/dev/null
 
 log "claude exited with code $CLAUDE_RC"
+
+# --- Log this run's usage (best-effort; the JSON is absent if claude was killed) ---
+if [ -s "$CLAUDE_OUT" ] && command -v jq >/dev/null 2>&1; then
+  COST=$(jq -r '.total_cost_usd // empty' "$CLAUDE_OUT" 2>/dev/null)
+  TURNS=$(jq -r '.num_turns // empty' "$CLAUDE_OUT" 2>/dev/null)
+  DUR_MS=$(jq -r '.duration_ms // empty' "$CLAUDE_OUT" 2>/dev/null)
+  IN=$(jq -r '.usage.input_tokens // 0' "$CLAUDE_OUT" 2>/dev/null)
+  OUT=$(jq -r '.usage.output_tokens // 0' "$CLAUDE_OUT" 2>/dev/null)
+  CACHE_R=$(jq -r '.usage.cache_read_input_tokens // 0' "$CLAUDE_OUT" 2>/dev/null)
+  CACHE_W=$(jq -r '.usage.cache_creation_input_tokens // 0' "$CLAUDE_OUT" 2>/dev/null)
+  log "USAGE: cost_equiv=\$${COST:-?} turns=${TURNS:-?} in=${IN} out=${OUT} cache_read=${CACHE_R} cache_write=${CACHE_W} duration=${DUR_MS:-?}ms"
+  # Append a structured line for trend review (cost_equiv is an estimate, not a charge on subscription auth)
+  jq -c --arg ts "$(date '+%Y-%m-%dT%H:%M:%S')" \
+        --argjson rc "$CLAUDE_RC" \
+     '{ts:$ts, exit:$rc, cost_equiv_usd:(.total_cost_usd//null), turns:(.num_turns//null), input_tokens:(.usage.input_tokens//0), output_tokens:(.usage.output_tokens//0), cache_read:(.usage.cache_read_input_tokens//0), cache_write:(.usage.cache_creation_input_tokens//0), duration_ms:(.duration_ms//null)}' \
+     "$CLAUDE_OUT" >> "$USAGE_LOG" 2>/dev/null \
+     && log "Usage line appended to $USAGE_LOG"
+  # Surface the agent's own final summary into the log
+  RESULT_TEXT=$(jq -r '.result // empty' "$CLAUDE_OUT" 2>/dev/null | head -c 1500)
+  [ -n "$RESULT_TEXT" ] && { echo "  [claude:result] -------"; echo "$RESULT_TEXT" | sed 's/^/  [claude:result] /'; }
+else
+  log "No result JSON (claude was killed or errored before finishing) — usage not logged. Committed work is still safe."
+fi
 
 # --- Push to main if the session produced commits ---
 COMMITS=$(git rev-list --count "origin/$BASE_BRANCH..$BASE_BRANCH" 2>/dev/null || echo 0)
