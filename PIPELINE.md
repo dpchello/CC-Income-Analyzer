@@ -43,7 +43,8 @@
 ---
 
 ### PIPE-001 · Surface Roll Targets + Defense in Action Cards
-**Status:** `approved`
+**Status:** `done`
+**Implementation notes:** Roll scenarios were already fetched/rendered in `TaxAwareActionCard` + `RollScenarioCard` (from prior work). This sprint completed the remaining spec items: (1) Early exercise risk badge now shows a one-line "why" explanation (dividend vs time value for CRITICAL, thin time premium for HIGH/MEDIUM) in the position detail stats. (2) "Roll to this" button added to each `RollScenarioCard` — clicking it opens the Add Position form pre-filled with the scenario's ticker, strike, expiry, contracts, and mid price; a blue "Roll — New Position" header and info banner indicate roll mode; `AddPosition` accepts a `prefill` prop. (3) For ITM positions (`intrinsic_value > 0`), the DEFENSIVE scenario is relabeled "Defend These Shares" with a blue accent and roll-up-and-out description, tying to Goal #6. Files changed: `frontend/src/components/Portfolios.jsx` (RollScenarioCard, TaxAwareActionCard, PositionRow, Portfolios — prop plumbing + UI), `frontend/src/components/AddPosition.jsx` (prefill prop + roll banner). Build passed.
 **Description:** Wire the EXISTING roll/defense backend into the My Positions action cards so users can see and act on roll suggestions, 3-scenario roll targets, and early-exercise risk. This is surfacing work — the backend already computes everything; the UI just never calls it. (Approved from the 2026-05-31 `/whats-next` memo, recommendation #1 — highest North-Star-per-effort because the value is built but invisible.)
 
 **Use the endpoints that already exist (do NOT build a new roll-suggest endpoint):**

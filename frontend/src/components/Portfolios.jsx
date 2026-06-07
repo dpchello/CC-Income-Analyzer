@@ -110,27 +110,29 @@ function FeedbackForm({ pos, action, onClose }) {
   )
 }
 
-function RollScenarioCard({ scenario: s, contracts }) {
+function RollScenarioCard({ scenario: s, contracts, isITM, onRollTo }) {
   const creditColor = (s.net_credit ?? 0) >= 0 ? 'var(--green)' : 'var(--amber)'
   const creditLabel = (s.net_credit ?? 0) >= 0 ? 'Credit' : 'Debit'
   const intrinsicColor = (s.new_intrinsic ?? 0) > 0 ? 'var(--amber)' : 'var(--muted)'
+  // For ITM positions, relabel the DEFENSIVE scenario to tie it to Goal #6 (Position Defense)
+  const displayLabel = (isITM && s.scenario === 'DEFENSIVE') ? 'Defend These Shares' : s.label
   if (!s.viable) {
     return (
       <div className="px-3 py-2 border text-xs" style={{ borderColor: 'var(--border)', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(128,128,128,0.04)' }}>
-        <div className="font-semibold mb-0.5" style={{ color: 'var(--muted)' }}>{s.label}</div>
+        <div className="font-semibold mb-0.5" style={{ color: 'var(--muted)' }}>{displayLabel}</div>
         <div style={{ color: 'var(--muted)' }}>No suitable target available right now.</div>
       </div>
     )
   }
   return (
-    <div className="px-3 py-2.5 border text-xs" style={{ borderColor: 'var(--border)', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(128,128,128,0.04)' }}>
+    <div className="px-3 py-2.5 border text-xs" style={{ borderColor: 'var(--border)', borderRadius: 'var(--radius-sm)', backgroundColor: isITM && s.scenario === 'DEFENSIVE' ? 'rgba(74,158,255,0.06)' : 'rgba(128,128,128,0.04)' }}>
       <div className="flex items-center justify-between mb-1.5">
-        <span className="font-semibold" style={{ color: 'var(--text)' }}>{s.label}</span>
+        <span className="font-semibold" style={{ color: isITM && s.scenario === 'DEFENSIVE' ? 'var(--blue)' : 'var(--text)' }}>{displayLabel}</span>
         <span className="text-[10px] font-mono px-1.5 py-0.5" style={{ color: creditColor, backgroundColor: `${creditColor}20`, border: `1px solid ${creditColor}40`, borderRadius: 'var(--radius-sm)' }}>
           {(s.net_credit ?? 0) >= 0 ? '+' : ''}${(s.net_credit ?? 0).toFixed(2)} {creditLabel}
         </span>
       </div>
-      <p className="mb-2 leading-snug" style={{ color: 'var(--muted)' }}>{s.description}</p>
+      <p className="mb-2 leading-snug" style={{ color: 'var(--muted)' }}>{isITM && s.scenario === 'DEFENSIVE' ? 'Move to a higher strike to keep your shares and stay out of the money — this is a roll up and out.' : s.description}</p>
       <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono text-[11px]">
         <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>New strike:</span><span style={{ color: 'var(--text)' }}>${s.new_strike}</span></div>
         <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Expiry:</span><span style={{ color: 'var(--text)' }}>{s.new_expiry} ({s.new_dte}d)</span></div>
@@ -144,11 +146,20 @@ function RollScenarioCard({ scenario: s, contracts }) {
           Assignment risk at new strike: Δ {s.new_delta.toFixed(2)}
         </div>
       )}
+      {onRollTo && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRollTo(s) }}
+          className="mt-2 w-full py-1.5 text-xs font-semibold border transition-colors"
+          style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: 'var(--gold-dim)', borderRadius: 'var(--radius-sm)' }}
+        >
+          Roll to this
+        </button>
+      )}
     </div>
   )
 }
 
-function TaxAwareActionCard({ pos, action }) {
+function TaxAwareActionCard({ pos, action, onRollTo }) {
   const { apiFetch } = useAuth()
   const [expanded] = useState(true)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
@@ -273,7 +284,7 @@ function TaxAwareActionCard({ pos, action }) {
             {shouldShowRolls && rollTargets?.scenarios && (
               <div className="space-y-2">
                 {rollTargets.scenarios.map(s => (
-                  <RollScenarioCard key={s.scenario} scenario={s} contracts={pos.contracts} />
+                  <RollScenarioCard key={s.scenario} scenario={s} contracts={pos.contracts} isITM={(pos.intrinsic_value ?? 0) > 0} onRollTo={onRollTo ? (scenario) => onRollTo({ pos, scenario }) : undefined} />
                 ))}
               </div>
             )}
@@ -951,7 +962,7 @@ function sortPositions(list, { key, dir }) {
   })
 }
 
-function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, onMove }) {
+function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, onMove, onRollTo }) {
   const { apiFetch } = useAuth()
   const [expanded, setExpanded] = useState(false)
   const [isClosing, setIsClosing] = useState(false)
@@ -1103,7 +1114,7 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
                   { label: 'Current Price', value: `$${pos.current_price?.toFixed(2) ?? '—'}` },
                   pos.time_premium != null ? { label: 'Time Value', value: `$${pos.time_premium.toFixed(2)}`, color: 'var(--green)' } : null,
                   pos.intrinsic_value != null ? { label: 'Intrinsic', value: `$${pos.intrinsic_value.toFixed(2)}`, color: pos.intrinsic_value > 0 ? 'var(--red)' : 'var(--muted)' } : null,
-                  pos.early_exercise_risk && pos.early_exercise_risk !== 'NONE' ? { label: 'Exercise Risk', value: pos.early_exercise_risk, color: (pos.early_exercise_risk === 'CRITICAL' || pos.early_exercise_risk === 'HIGH') ? 'var(--red)' : pos.early_exercise_risk === 'MEDIUM' ? 'var(--amber)' : 'var(--muted)' } : null,
+                  pos.early_exercise_risk && pos.early_exercise_risk !== 'NONE' ? { label: 'Exercise Risk', value: pos.early_exercise_risk, color: (pos.early_exercise_risk === 'CRITICAL' || pos.early_exercise_risk === 'HIGH') ? 'var(--red)' : pos.early_exercise_risk === 'MEDIUM' ? 'var(--amber)' : 'var(--muted)', subtitle: pos.early_exercise_risk === 'CRITICAL' ? `Dividend ($${(pos.upcoming_dividend ?? 0).toFixed(2)}) exceeds time value ($${(pos.time_premium ?? 0).toFixed(2)}) — early exercise very likely` : pos.early_exercise_risk === 'HIGH' ? `Time value only $${(pos.time_premium ?? 0).toFixed(2)} — buyer has little reason to wait` : pos.early_exercise_risk === 'MEDIUM' ? `Time value $${(pos.time_premium ?? 0).toFixed(2)} is thinning — monitor closely` : 'Low time premium remaining' } : null,
                   pos.days_until_ex_div != null && pos.days_until_ex_div >= 0 ? { label: 'Ex-Div', value: `${pos.next_ex_div_date} (${pos.days_until_ex_div}d)`, color: pos.days_until_ex_div <= 14 ? 'var(--amber)' : 'var(--muted)' } : null,
                   { label: '% of Max Income', value: `${pos.profit_capture_pct?.toFixed(1) ?? '—'}%`, color: (pos.profit_capture_pct || 0) >= 50 ? 'var(--green)' : 'var(--text)' },
                   { label: 'Assignment Risk (Δ)', value: pos.delta != null ? pos.delta.toFixed(2) : '—', color: (pos.delta || 0) > 0.35 ? 'var(--red)' : (pos.delta || 0) > 0.25 ? 'var(--amber)' : 'var(--text)' },
@@ -1113,12 +1124,13 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
                   <div key={f.label}>
                     <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: 'var(--muted)' }}>{f.label}</div>
                     <div className="font-mono font-semibold" style={{ color: f.color || 'var(--text)' }}>{f.value}</div>
+                    {f.subtitle && <div className="text-[10px] mt-0.5 leading-snug max-w-[180px]" style={{ color: 'var(--muted)' }}>{f.subtitle}</div>}
                   </div>
                 ))}
               </div>
 
               {/* Action card (close / wait / roll) */}
-              {action && <TaxAwareActionCard pos={pos} action={action} />}
+              {action && <TaxAwareActionCard pos={pos} action={action} onRollTo={onRollTo} />}
 
               {/* Notes */}
               <div>
@@ -1358,6 +1370,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
   const [newName, setNewName] = useState('')
   const [showArchived, setShowArchived] = useState(false)
   const [showAddPosition, setShowAddPosition] = useState(false)
+  const [rollPrefill, setRollPrefill] = useState(null)
   const [showAddHolding, setShowAddHolding] = useState(false)
   const [editingHolding, setEditingHolding] = useState(null)
   const [creating, setCreating] = useState(false)
@@ -1365,6 +1378,19 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
   const [brokerageSyncOnly, setBrokerageSyncOnly] = useState(false)
   const [collapsedBrokers, setCollapsedBrokers] = useState({})
   const [posSort, setPosSort] = useState({ key: null, dir: 'asc' })   // Open Positions sort
+
+  // "Roll to this" handler — pre-fills the close form on the current position
+  // and opens AddPosition with the new scenario's strike/expiry/mid
+  function handleRollTo({ pos, scenario }) {
+    setRollPrefill({
+      ticker: pos.ticker,
+      strike: String(scenario.new_strike),
+      expiry: scenario.new_expiry,
+      contracts: pos.contracts,
+      sell_price: scenario.new_mid != null ? scenario.new_mid.toFixed(2) : '',
+    })
+    setShowAddPosition(true)
+  }
 
   // Auto-select first portfolio on load
   useEffect(() => {
@@ -1710,7 +1736,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                   style={{ borderColor: 'var(--blue)', color: 'var(--blue)', backgroundColor: showAddHolding ? 'rgba(74,158,255,0.1)' : 'transparent' }}>
                   {showAddHolding ? '✕ Cancel' : '+ Add Holding'}
                 </button>
-                <button onClick={() => setShowAddPosition(s => !s)}
+                <button onClick={() => { setShowAddPosition(s => !s); if (showAddPosition) setRollPrefill(null) }}
                   className="px-3 py-1.5 text-xs border transition-colors"
                   style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: showAddPosition ? 'var(--gold-dim)' : 'transparent' }}>
                   {showAddPosition ? '✕ Cancel' : '+ Add Position'}
@@ -1727,8 +1753,8 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
             )}
             {showAddPosition && (
               <div className="p-5 border" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}>
-                <div className="text-xs uppercase tracking-wider mb-3 font-mono" style={{ color: 'var(--muted)' }}>Add Position</div>
-                <AddPosition portfolioId={selectedId} holdings={myHoldings} onAdded={() => { setShowAddPosition(false); onRefresh() }} />
+                <div className="text-xs uppercase tracking-wider mb-3 font-mono" style={{ color: rollPrefill ? 'var(--blue)' : 'var(--muted)' }}>{rollPrefill ? 'Roll — New Position' : 'Add Position'}</div>
+                <AddPosition portfolioId={selectedId} holdings={myHoldings} prefill={rollPrefill} onAdded={() => { setShowAddPosition(false); setRollPrefill(null); onRefresh() }} />
               </div>
             )}
 
@@ -1877,6 +1903,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                           onClose={onRefresh}
                           onDelete={deletePosition}
                           onMove={onRefresh}
+                          onRollTo={handleRollTo}
                         />
                       ))}
                     </tbody>

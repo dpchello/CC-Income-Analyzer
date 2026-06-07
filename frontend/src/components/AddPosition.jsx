@@ -7,13 +7,15 @@ const inputStyle = {
   color: 'var(--text)',
 }
 
-export default function AddPosition({ onAdded, holdings }) {
+export default function AddPosition({ onAdded, holdings, prefill }) {
   const { apiFetch } = useAuth()
   const [expiries, setExpiries] = useState([])
   const holdingTickers = [...new Set((holdings || []).map(h => h.ticker).filter(Boolean))]
   const [form, setForm] = useState({
-    ticker: holdingTickers[0] || '', type: 'short_call', strike: '', expiry: '',
-    contracts: 6, sell_price: '', premium_collected: '',
+    ticker: prefill?.ticker || holdingTickers[0] || '', type: 'short_call',
+    strike: prefill?.strike || '', expiry: prefill?.expiry || '',
+    contracts: prefill?.contracts || 6,
+    sell_price: prefill?.sell_price || '', premium_collected: '',
   })
   const [loading, setLoading] = useState(false)
   const [fetching, setFetching] = useState(false)
@@ -21,8 +23,10 @@ export default function AddPosition({ onAdded, holdings }) {
 
   useEffect(() => {
     apiFetch('/api/options/expiries').then(r => r.json()).then(data => {
-      setExpiries(data)
-      if (data.length > 0) setForm(f => ({ ...f, expiry: data[0] }))
+      // If a prefill expiry exists and isn't in the API list, append it so the select works
+      const list = prefill?.expiry && !data.includes(prefill.expiry) ? [...data, prefill.expiry] : data
+      setExpiries(list)
+      if (!prefill?.expiry && list.length > 0) setForm(f => ({ ...f, expiry: list[0] }))
     }).catch(() => {})
   }, [])
 
@@ -68,6 +72,11 @@ export default function AddPosition({ onAdded, holdings }) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4 max-w-md">
+      {prefill && (
+        <div className="px-3 py-2 text-xs border" style={{ backgroundColor: 'rgba(74,158,255,0.08)', borderColor: 'var(--blue)', color: 'var(--blue)', borderRadius: 'var(--radius-sm)' }}>
+          Pre-filled from roll scenario — review and confirm the new position details.
+        </div>
+      )}
       <div>
         <label className={label} style={{ color: 'var(--muted)' }}>Ticker</label>
         {holdingTickers.length > 0 ? (
