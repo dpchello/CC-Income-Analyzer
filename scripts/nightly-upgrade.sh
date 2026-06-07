@@ -24,8 +24,8 @@ LOG_DIR="$HOME/Library/Logs/harvest"
 LOCK="$REPO/.git/nightly-upgrade.lock"
 SUMMARY="/tmp/harvest-nightly-summary.md"
 BASE_BRANCH="main"
-MAX_RUNTIME=14400   # 4h watchdog -> a 1AM start can run until ~5AM, then gets killed
-MAX_BUDGET_USD="${MAX_BUDGET_USD:-8}"   # cost ceiling per nightly run; tune to taste
+MAX_RUNTIME=14400   # 4h hard backstop -> a 1AM start gets force-killed by ~5AM
+SOFT_FRACTION=80    # at this % of the window the agent checkpoints + stops gracefully
 
 # launchd/cron run with a minimal PATH; make claude, gh, git, node reachable.
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -69,18 +69,39 @@ git checkout "$BASE_BRANCH" >/dev/null 2>&1 || { log "Cannot checkout $BASE_BRAN
 git pull --ff-only origin "$BASE_BRANCH" 2>&1 | sed 's/^/  /' || log "Pull failed or no remote tracking — continuing on local $BASE_BRANCH."
 log "Working directly on $BASE_BRANCH"
 
-# --- Run Claude headless with a watchdog so it can't run past the window ---
-rm -f "$SUMMARY"
-PROMPT="$(cat "$PROMPT_FILE")"
+# --- Time budget for this run (soft checkpoint + hard backstop) ---
+NOW_EPOCH=$(date +%s)
+SOFT_EPOCH=$(( NOW_EPOCH + MAX_RUNTIME * SOFT_FRACTION / 100 ))
+HARD_EPOCH=$(( NOW_EPOCH + MAX_RUNTIME ))
+NOW_HM=$(date +%H:%M)
+SOFT_HM=$(date -r "$SOFT_EPOCH" +%H:%M)
+HARD_HM=$(date -r "$HARD_EPOCH" +%H:%M)
 
-( sleep "$MAX_RUNTIME"; log "Watchdog: ${MAX_RUNTIME}s elapsed, killing claude."; pkill -P $$ claude 2>/dev/null ) &
+TIME_BUDGET="## Time budget for THIS run (read first)
+Current local time: ${NOW_HM}. Hard cutoff: ${HARD_HM} — you will be force-killed then.
+Soft checkpoint deadline: ${SOFT_HM} (${SOFT_FRACTION}% of the window).
+
+Run \`date '+%H:%M'\` periodically to check the clock. The moment the time reaches
+${SOFT_HM}, STOP starting new work: finish only the edit in your hand, commit it,
+write/refresh HANDOFF.md describing exactly where you left off, commit that too, and
+end the session. Do NOT gamble on squeezing in one more change before ${HARD_HM}.
+Committing often throughout the night is the real safety net — your plan usage can be
+cut off at any moment, and only committed work survives.
+"
+
+# --- Run Claude headless; watchdog is the hard backstop ---
+rm -f "$SUMMARY"
+PROMPT="${TIME_BUDGET}
+
+$(cat "$PROMPT_FILE")"
+
+( sleep "$MAX_RUNTIME"; log "Watchdog: hard cutoff ${HARD_HM} reached, killing claude."; pkill -P $$ claude 2>/dev/null ) &
 WATCHDOG=$!
 
-log "Invoking claude (budget cap \$${MAX_BUDGET_USD})..."
+log "Invoking claude (subscription auth, no \$ cap; soft checkpoint ${SOFT_HM}, hard cutoff ${HARD_HM})..."
 claude -p "$PROMPT" \
   --dangerously-skip-permissions \
   --add-dir "$REPO" \
-  --max-budget-usd "$MAX_BUDGET_USD" \
   2>&1 | sed 's/^/  [claude] /'
 CLAUDE_RC=${PIPESTATUS[0]}
 

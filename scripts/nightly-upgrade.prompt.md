@@ -6,9 +6,27 @@ goes live in the repo. Keep every commit clean, buildable, and reviewable — th
 maintainer reads it in the morning AFTER it has already landed.
 
 ## Read first (in this order)
-1. `CLAUDE.md` — project rules. STRATEGY.md is the source of truth; obey it.
-2. `STRATEGY.md` — positioning, audience, locked decisions.
-3. `PIPELINE.md` — the backlog and its status legend.
+1. `HANDOFF.md` (repo root) — IF it exists, a prior night ran out of time mid-item.
+   It tells you what was in progress and what's next. Resume THAT work first instead
+   of picking a new pipeline item. Once the item is fully done, delete HANDOFF.md.
+2. `CLAUDE.md` — project rules. STRATEGY.md is the source of truth; obey it.
+3. `STRATEGY.md` — positioning, audience, locked decisions.
+4. `PIPELINE.md` — the backlog and its status legend.
+
+## Checkpoint discipline (usage/time safety)
+- Commit after every logical unit of work — a passing change, a completed function,
+  a finished file. Small frequent commits, not one big commit at the end. Your plan
+  usage can be cut off without warning; only committed work is pushed and survives.
+- Never commit a broken tree. If a change doesn't build yet, either finish it or
+  revert it before committing.
+- At the soft checkpoint deadline (see "Time budget for THIS run" above), or whenever
+  you sense you're near a limit: stop, commit, and write HANDOFF.md (below).
+
+## HANDOFF.md format (when you stop mid-item)
+Write `HANDOFF.md` at the repo root with: the PIPE item id and title, what is DONE
+so far, what remains, the exact next step to take, and any gotchas. Keep it short and
+actionable — the next run reads it cold. Commit it. If you finished the whole item
+cleanly, delete HANDOFF.md instead (a stale handoff would mislead the next run).
 
 ## Decide what to do
 
