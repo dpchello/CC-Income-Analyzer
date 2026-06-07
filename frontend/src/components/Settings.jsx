@@ -793,6 +793,77 @@ function RestartBackendPanel() {
   )
 }
 
+function NightlyAgentPanel() {
+  const { apiFetch } = useAuth()
+  const [enabled, setEnabled] = useState(null)   // null = loading
+  const [saving, setSaving] = useState(false)
+  const [err, setErr] = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    apiFetch('/api/system/nightly-agent')
+      .then(r => r.json())
+      .then(d => { if (alive) setEnabled(!!d.enabled) })
+      .catch(() => { if (alive) setErr('Could not load status') })
+    return () => { alive = false }
+  }, [])
+
+  async function toggle() {
+    if (enabled === null || saving) return
+    const next = !enabled
+    setSaving(true); setErr(null)
+    try {
+      const res = await apiFetch('/api/system/nightly-agent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled: next }),
+      })
+      const d = await res.json()
+      setEnabled(!!d.enabled)
+    } catch {
+      setErr('Could not save — try again')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="p-5 border space-y-3" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}>
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Nightly Upgrade Agent</div>
+          <div className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+            Runs at 1 AM (when the Mac is awake) to advance one approved pipeline item, then commits to main. Toggling takes effect on the next run — it won't interrupt a run already in progress.
+          </div>
+        </div>
+        <div className="shrink-0">
+          {enabled === null ? (
+            <span className="text-xs" style={{ color: 'var(--muted)' }}>…</span>
+          ) : (
+            <button
+              onClick={toggle}
+              disabled={saving}
+              role="switch"
+              aria-checked={enabled}
+              className="text-xs px-3 py-1.5 border transition-colors"
+              style={{
+                borderColor: enabled ? 'var(--green)' : 'var(--border)',
+                color: enabled ? 'var(--green)' : 'var(--muted)',
+                backgroundColor: 'transparent',
+                borderRadius: 'var(--radius-md)',
+                opacity: saving ? 0.6 : 1,
+              }}
+            >
+              {enabled ? '● On' : '○ Off'}
+            </button>
+          )}
+        </div>
+      </div>
+      {err && <div className="text-xs" style={{ color: 'var(--red)' }}>{err}</div>}
+    </div>
+  )
+}
+
 export default function Settings({ onRefresh, alphaUsage }) {
   const [showAdd, setShowAdd] = useState(false)
 
@@ -872,6 +943,9 @@ export default function Settings({ onRefresh, alphaUsage }) {
           <p>Position storage: <span style={{ color: 'var(--text)' }}>positions.json (local file)</span></p>
         </div>
       </div>
+
+      {/* Nightly upgrade agent on/off */}
+      <NightlyAgentPanel />
 
       {/* Restart backend — in-app equivalent of harvestctl.sh reload */}
       <RestartBackendPanel />

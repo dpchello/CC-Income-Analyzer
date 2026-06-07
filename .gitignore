@@ -79,3 +79,6 @@ backend/scripts/seed_test_users.py
 
 # gstack local scratch (deploy reports, etc.)
 .gstack/
+
+# nightly upgrade agent on/off flag (per-machine state, set via Settings)
+.nightly-agent.enabled

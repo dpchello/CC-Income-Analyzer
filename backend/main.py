@@ -158,6 +158,42 @@ def restart_backend(current_user: User = Depends(auth_module.get_current_user)):
     return {"ok": True, "message": "Backend restarting…", "was_started_at": STARTED_AT}
 
 
+# ── Nightly upgrade agent toggle ────────────────────────────────────────────
+# The nightly self-upgrade agent (scripts/nightly-upgrade.sh, run by cron at 1AM)
+# reads this flag before doing any work and exits early if it is "off". These
+# endpoints are the in-app switch — same maintainer control surface as Restart.
+NIGHTLY_AGENT_FLAG = Path(__file__).resolve().parent.parent / ".nightly-agent.enabled"
+
+
+class NightlyAgentIn(BaseModel):
+    enabled: bool
+
+
+def _nightly_agent_enabled() -> bool:
+    try:
+        return NIGHTLY_AGENT_FLAG.read_text().strip().lower() != "off"
+    except FileNotFoundError:
+        return True  # absence means "not disabled" — default on
+    except Exception:
+        return True
+
+
+@app.get("/api/system/nightly-agent")
+def get_nightly_agent(current_user: User = Depends(auth_module.get_current_user)):
+    """Whether the 1AM nightly upgrade agent is enabled — reads the flag file that
+    scripts/nightly-upgrade.sh checks before each run."""
+    return {"enabled": _nightly_agent_enabled()}
+
+
+@app.post("/api/system/nightly-agent")
+def set_nightly_agent(body: NightlyAgentIn,
+                      current_user: User = Depends(auth_module.get_current_user)):
+    """Turn the nightly upgrade agent on or off. Writes the flag the cron job
+    reads — effective on the next 1AM run; does not interrupt a run in progress."""
+    NIGHTLY_AGENT_FLAG.write_text("on" if body.enabled else "off")
+    return {"enabled": body.enabled}
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _dte(expiry_str: str) -> int:

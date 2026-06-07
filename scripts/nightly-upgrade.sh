@@ -23,6 +23,7 @@ PROMPT_FILE="$REPO/scripts/nightly-upgrade.prompt.md"
 LOG_DIR="$HOME/Library/Logs/harvest"
 LOCK="$REPO/.git/nightly-upgrade.lock"
 SUMMARY="/tmp/harvest-nightly-summary.md"
+STATE_FLAG="$REPO/.nightly-agent.enabled"   # in-app toggle (Settings → Nightly Upgrade Agent); "off" disables
 CLAUDE_OUT="/tmp/harvest-nightly-claude-result.json"
 USAGE_LOG="$HOME/Library/Logs/harvest/nightly-usage.jsonl"   # one line per run, for trend review
 BASE_BRANCH="main"
@@ -45,6 +46,12 @@ if [ "${FORCE:-0}" != "1" ]; then
     log "Outside 1AM-5AM window (hour=$HOUR). Skipping. Set FORCE=1 to override."
     exit 0
   fi
+fi
+
+# --- Guard 1.5: in-app on/off toggle (Settings → Nightly Upgrade Agent) ---
+if [ -f "$STATE_FLAG" ] && [ "$(tr '[:upper:]' '[:lower:]' < "$STATE_FLAG" | tr -d '[:space:]')" = "off" ]; then
+  log "Nightly agent is switched OFF in the app (Settings). Skipping. Toggle it back on to resume."
+  exit 0
 fi
 
 # --- Guard 2: single instance ---
