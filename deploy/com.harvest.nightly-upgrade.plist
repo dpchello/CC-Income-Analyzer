@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd LaunchAgent for the Harvest nightly upgrade agent.
+
+  Why launchd and not cron: macOS cron silently skips its scheduled time when the
+  Mac is asleep or in a low-power "dark wake" (which is what scheduled pmset wakes
+  usually produce) — so the 1AM cron job almost never fired. launchd instead runs a
+  missed StartCalendarInterval job at the next real wake, coalescing multiple missed
+  fires into a single run. Paired with `pmset repeat wake … 00:55:00`, this actually
+  runs ~daily. The script itself gates to once-per-day, on/after 1AM.
+
+  Runs as a LaunchAgent (user session), NOT a LaunchDaemon — the nightly agent needs
+  the user's Claude subscription auth (keychain/OAuth), which only exists in the user
+  context. caffeinate -i keeps the Mac awake for the duration of the run.
+
+  Install:
+    cp deploy/com.harvest.nightly-upgrade.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.harvest.nightly-upgrade.plist
+
+  Verify:
+    launchctl print gui/$(id -u)/com.harvest.nightly-upgrade | grep -E 'state|runs'
+
+  Tail logs:
+    tail -f ~/Library/Logs/harvest/nightly-upgrade.log
+
+  Unload:
+    launchctl bootout gui/$(id -u)/com.harvest.nightly-upgrade
+
+  Pause without uninstalling: toggle it off in the app (Settings → Nightly Upgrade
+  Agent) or via scripts/harvestctl.sh agent-off — the script checks the flag and exits.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.harvest.nightly-upgrade</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-i</string>
+        <string>/Users/leslie/CC-Income-Analyzer/scripts/nightly-upgrade.sh</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>1</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Do not run the moment we load it (that would trigger a real run now).
+         launchd still fires the missed 1AM job on the next wake. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/leslie/Library/Logs/harvest/nightly-upgrade.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/leslie/Library/Logs/harvest/nightly-upgrade.log</string>
+</dict>
+</plist>

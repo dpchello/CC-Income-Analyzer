@@ -143,6 +143,22 @@ _status() {
   echo "Log: $LOG"
 }
 
+# ── nightly upgrade agent toggle ──────────────────────────────────────────────
+# Shared on/off flag, also read/written by the web UI (Settings → Nightly Upgrade
+# Agent) and checked by scripts/nightly-upgrade.sh. "off" disables; absence/"on" = on.
+AGENT_FLAG="$REPO/.nightly-agent.enabled"
+
+_agent_state() {   # prints ON or OFF
+  if [ -f "$AGENT_FLAG" ] && [ "$(tr '[:upper:]' '[:lower:]' < "$AGENT_FLAG" | tr -d '[:space:]')" = "off" ]; then
+    echo "OFF"
+  else
+    echo "ON"
+  fi
+}
+_agent_on()     { echo "on"  > "$AGENT_FLAG"; echo "Nightly upgrade agent: ON"; }
+_agent_off()    { echo "off" > "$AGENT_FLAG"; echo "Nightly upgrade agent: OFF"; }
+_agent_toggle() { if [ "$(_agent_state)" = "ON" ]; then _agent_off; else _agent_on; fi; }
+
 case "${1:-status}" in
   start)            _start ;;
   stop|end|kill)    _stop ;;
@@ -150,5 +166,9 @@ case "${1:-status}" in
   status)           _status ;;
   state)            _state ;;
   logs|log)         echo "$LOG" ;;
-  *) echo "usage: harvestctl {start|reload|stop|status|state|logs}"; exit 2 ;;
+  agent-state)      _agent_state ;;
+  agent-on)         _agent_on ;;
+  agent-off)        _agent_off ;;
+  agent-toggle)     _agent_toggle ;;
+  *) echo "usage: harvestctl {start|reload|stop|status|state|logs|agent-state|agent-on|agent-off|agent-toggle}"; exit 2 ;;
 esac

@@ -12,12 +12,20 @@ on run
 		set theStatus to do shell script "/bin/bash " & quoted form of ctl & " status"
 		set theState to do shell script "/bin/bash " & quoted form of ctl & " state"
 
-		if theState is "ONLINE" then
-			set acts to {"Reload app", "Stop app", "View logs", "Refresh", "Quit"}
-		else if theState is "FAULT" then
-			set acts to {"Reload app", "View logs", "Stop app", "Refresh", "Quit"}
+		-- Nightly upgrade agent on/off — label reflects current state.
+		set agentState to do shell script "/bin/bash " & quoted form of ctl & " agent-state"
+		if agentState is "ON" then
+			set agentItem to "Nightly agent: ON — turn off"
 		else
-			set acts to {"Start app", "View logs", "Refresh", "Quit"}
+			set agentItem to "Nightly agent: OFF — turn on"
+		end if
+
+		if theState is "ONLINE" then
+			set acts to {"Reload app", "Stop app", agentItem, "View logs", "Refresh", "Quit"}
+		else if theState is "FAULT" then
+			set acts to {"Reload app", "View logs", agentItem, "Stop app", "Refresh", "Quit"}
+		else
+			set acts to {"Start app", agentItem, "View logs", "Refresh", "Quit"}
 		end if
 
 		set picked to (choose from list acts with title "Harvest" with prompt theStatus default items {item 1 of acts} OK button name "Run" cancel button name "Close")
@@ -32,6 +40,8 @@ on run
 			display notification (do shell script "/bin/bash " & quoted form of ctl & " stop") with title "Harvest"
 		else if act is "Reload app" then
 			display notification (do shell script "/bin/bash " & quoted form of ctl & " reload") with title "Harvest"
+		else if act starts with "Nightly agent" then
+			display notification (do shell script "/bin/bash " & quoted form of ctl & " agent-toggle") with title "Harvest"
 		else if act is "View logs" then
 			do shell script "open -a Console " & quoted form of (do shell script "/bin/bash " & quoted form of ctl & " logs")
 		end if

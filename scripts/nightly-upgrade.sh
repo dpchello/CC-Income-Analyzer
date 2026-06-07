@@ -24,6 +24,7 @@ LOG_DIR="$HOME/Library/Logs/harvest"
 LOCK="$REPO/.git/nightly-upgrade.lock"
 SUMMARY="/tmp/harvest-nightly-summary.md"
 STATE_FLAG="$REPO/.nightly-agent.enabled"   # in-app toggle (Settings → Nightly Upgrade Agent); "off" disables
+RAN_STAMP="$HOME/Library/Logs/harvest/nightly-upgrade.lastrun"   # YYYY-MM-DD of last run, for once-per-day gating
 CLAUDE_OUT="/tmp/harvest-nightly-claude-result.json"
 USAGE_LOG="$HOME/Library/Logs/harvest/nightly-usage.jsonl"   # one line per run, for trend review
 BASE_BRANCH="main"
@@ -39,11 +40,20 @@ log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
 
 log "=== nightly-upgrade starting ==="
 
-# --- Guard 1: only run inside the 1AM-5AM window (unless forced for testing) ---
+# --- Guard 1: run at most once per calendar day, on/after 1AM ---
+# launchd fires at 1AM, or on the next real wake if the Mac was asleep/dark-waking
+# then (it coalesces missed calendar intervals into one run). We don't reject a late
+# catch-up (e.g. when the lid opens at 9AM) — but we don't want it twice in a day
+# either, so gate on a per-day stamp instead of a hard clock window.
+TODAY=$(date +%Y-%m-%d)
 HOUR=$(date +%H)
 if [ "${FORCE:-0}" != "1" ]; then
-  if [ "$HOUR" -lt 1 ] || [ "$HOUR" -ge 5 ]; then
-    log "Outside 1AM-5AM window (hour=$HOUR). Skipping. Set FORCE=1 to override."
+  if [ "$HOUR" -lt 1 ]; then
+    log "Before 1AM (hour=$HOUR) — too early. Skipping."
+    exit 0
+  fi
+  if [ -f "$RAN_STAMP" ] && [ "$(cat "$RAN_STAMP" 2>/dev/null)" = "$TODAY" ]; then
+    log "Already ran today ($TODAY) — once-per-day. Skipping."
     exit 0
   fi
 fi
@@ -106,6 +116,10 @@ $(cat "$PROMPT_FILE")"
 
 ( sleep "$MAX_RUNTIME"; log "Watchdog: hard cutoff ${HARD_HM} reached, killing claude."; pkill -P $$ claude 2>/dev/null ) &
 WATCHDOG=$!
+
+# Mark today as run now that we're committing to real work — prevents a second
+# same-day fire (e.g. a later wake) from starting another run.
+echo "$TODAY" > "$RAN_STAMP"
 
 log "Invoking claude (subscription auth, no \$ cap; soft checkpoint ${SOFT_HM}, hard cutoff ${HARD_HM})..."
 rm -f "$CLAUDE_OUT"
