@@ -159,6 +159,186 @@ function RollScenarioCard({ scenario: s, contracts, isITM, onRollTo }) {
   )
 }
 
+// ── Diagonal restructure panel (Position Defense — roll far out & higher) ──────
+// Lazy-loads /api/diagonal-restructure when opened. Unlike the 30–45d roll
+// scenarios above, this scans the full LEAP horizon so the holder can see how
+// far out (and how high a strike) they can go at a net credit — lifting the
+// ceiling, deferring the tax event, and optionally uncapping shares.
+const WEIGHT_FACTORS = [
+  { key: 'upside',   label: 'Upside',     hint: 'Keep more of the stock’s future gains (higher strike)' },
+  { key: 'tax',      label: 'Tax',        hint: 'Defer the taxable event into a later year' },
+  { key: 'credit',   label: 'Credit',     hint: 'Collect the most net premium' },
+  { key: 'safety',   label: 'Safety',     hint: 'Lowest chance of being assigned (lower delta)' },
+  { key: 'duration', label: 'Short lock', hint: 'Don’t tie the shares up for years' },
+]
+
+function DiagonalRestructurePanel({ pos, onRollTo }) {
+  const { apiFetch } = useAuth()
+  const [open, setOpen] = useState(false)
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+  const [weights, setWeights] = useState({ upside: 1, tax: 1, credit: 1, safety: 1, duration: 1 })
+
+  useEffect(() => {
+    if (!open) return
+    const qs = WEIGHT_FACTORS.map(f => `w_${f.key}=${weights[f.key]}`).join('&')
+    const t = setTimeout(() => {
+      setLoading(true); setError(null)
+      apiFetch(`/api/diagonal-restructure/${pos.id}?${qs}`)
+        .then(r => { if (!r.ok) throw new Error(); return r.json() })
+        .then(d => setData(d))
+        .catch(() => setError('Could not load restructure options.'))
+        .finally(() => setLoading(false))
+    }, 300)
+    return () => clearTimeout(t)
+  }, [open, weights]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const cov = data?.coverage
+  return (
+    <div className="mt-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="text-[11px] font-semibold"
+        style={{ color: 'var(--blue)' }}
+      >
+        {open ? '▾' : '▸'} Roll further out & higher (restructure)
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-3">
+          <p className="text-[11px] leading-snug" style={{ color: 'var(--muted)' }}>
+            Buy this call back and re-sell it <strong>further out</strong> — often at a
+            higher strike and still a net credit. Going longer lifts your ceiling,
+            pushes the tax event into a later year, and (if you sell fewer contracts)
+            frees shares to keep running.
+          </p>
+
+          {/* Priority weights — retune what "best" means and re-rank live */}
+          <div className="px-2.5 py-2 border" style={{ borderColor: 'var(--border)', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(128,128,128,0.04)' }}>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--muted)' }}>What matters most</span>
+              <button
+                onClick={() => setWeights({ upside: 1, tax: 1, credit: 1, safety: 1, duration: 1 })}
+                className="text-[10px]" style={{ color: 'var(--blue)' }}
+              >
+                Reset
+              </button>
+            </div>
+            <div className="space-y-1.5">
+              {WEIGHT_FACTORS.map(f => (
+                <div key={f.key} className="flex items-center gap-2" title={f.hint}>
+                  <span className="text-[11px] w-20 shrink-0" style={{ color: 'var(--text)' }}>{f.label}</span>
+                  <input
+                    type="range" min="0" max="3" step="0.5" value={weights[f.key]}
+                    onChange={e => setWeights(w => ({ ...w, [f.key]: parseFloat(e.target.value) }))}
+                    className="flex-1 h-1 accent-current" style={{ color: 'var(--blue)' }}
+                  />
+                  <span className="text-[10px] font-mono w-6 text-right" style={{ color: weights[f.key] === 0 ? 'var(--muted)' : 'var(--text)' }}>
+                    {weights[f.key] === 0 ? 'off' : `×${weights[f.key]}`}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {loading && <div className="text-[11px]" style={{ color: 'var(--muted)' }}>Scanning the LEAP chain…</div>}
+          {error && <div className="text-[11px]" style={{ color: 'var(--muted)' }}>{error}</div>}
+
+          {data && (
+            <>
+              {/* Coverage / contract-count lever */}
+              {cov && (
+                <div className="text-[11px] px-2.5 py-2 border" style={{ borderColor: 'var(--border)', borderRadius: 'var(--radius-sm)', color: 'var(--muted)', backgroundColor: 'rgba(128,128,128,0.04)' }}>
+                  <span style={{ color: 'var(--text)' }}>{cov.coverage_pct}% covered</span>
+                  {' · '}{cov.uncovered_shares?.toLocaleString()} shares
+                  {' ('}{cov.writable_contracts_free} contracts{') uncapped. '}
+                  Re-selling fewer than {pos.contracts} contracts leaves more upside uncapped.
+                </div>
+              )}
+
+              {/* Net-credit frontier — how far out / how high at a credit */}
+              {data.frontier?.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--muted)' }}>
+                    Highest strike still at a net credit, by expiry
+                  </div>
+                  <div className="space-y-0.5 font-mono text-[11px]">
+                    {data.frontier.map(f => (
+                      <div key={f.expiry} className="flex justify-between gap-2">
+                        <span style={{ color: 'var(--muted)' }}>{f.expiry} ({f.dte}d)</span>
+                        <span style={{ color: 'var(--text)' }}>
+                          ${f.max_credit_strike} <span style={{ color: 'var(--green)' }}>+${f.net_credit.toFixed(2)}</span>
+                          <span style={{ color: 'var(--muted)' }}> · ceiling +{f.ceiling_lift.toFixed(0)}</span>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Top composite-ranked candidates */}
+              {data.candidates?.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-[10px] uppercase tracking-wider" style={{ color: 'var(--muted)' }}>
+                    Best balance (upside · tax · credit · safety)
+                  </div>
+                  {data.candidates.slice(0, 3).map((c, i) => {
+                    const creditPos = (c.net_credit ?? 0) >= 0
+                    const creditColor = creditPos ? 'var(--green)' : 'var(--amber)'
+                    return (
+                      <div key={`${c.strike}-${c.expiry}`} className="px-3 py-2.5 border text-xs"
+                        style={{ borderColor: i === 0 ? 'var(--blue)' : 'var(--border)', borderRadius: 'var(--radius-sm)',
+                                 backgroundColor: i === 0 ? 'rgba(74,158,255,0.06)' : 'rgba(128,128,128,0.04)' }}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-semibold font-mono" style={{ color: i === 0 ? 'var(--blue)' : 'var(--text)' }}>
+                            ${c.strike} Call · {c.expiry}
+                          </span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5"
+                            style={{ color: creditColor, backgroundColor: `${creditColor}20`, border: `1px solid ${creditColor}40`, borderRadius: 'var(--radius-sm)' }}>
+                            {creditPos ? '+' : ''}${(c.net_credit ?? 0).toFixed(2)} {creditPos ? 'Credit' : 'Debit'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono text-[11px]">
+                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Days out:</span><span style={{ color: 'var(--text)' }}>{c.dte}d</span></div>
+                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Net total:</span><span style={{ color: creditColor }}>{creditPos ? '+' : ''}${Math.abs(c.net_credit_total ?? 0).toFixed(0)}</span></div>
+                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Ceiling lift:</span><span style={{ color: 'var(--green)' }}>+${(c.strike - pos.strike).toFixed(0)}</span></div>
+                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Assign. risk:</span><span style={{ color: 'var(--text)' }}>{c.delta != null ? `Δ ${c.delta.toFixed(2)}` : '—'}</span></div>
+                        </div>
+                        {c.sub_scores && (
+                          <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]" style={{ color: 'var(--muted)' }}>
+                            <span>Upside {Math.round(c.sub_scores.upside)}</span>
+                            <span>Tax {Math.round(c.sub_scores.tax)}</span>
+                            <span>Credit {Math.round(c.sub_scores.credit)}</span>
+                            <span>Safety {Math.round(c.sub_scores.safety)}</span>
+                            {c.sub_scores.duration != null && <span>Lock {Math.round(c.sub_scores.duration)}</span>}
+                          </div>
+                        )}
+                        {c.crosses_tax_year && (
+                          <div className="mt-1 text-[10px]" style={{ color: 'var(--green)' }}>✓ Defers the taxable event to {c.expiry.slice(0, 4)}</div>
+                        )}
+                        {onRollTo && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); onRollTo({ pos, scenario: { new_strike: c.strike, new_expiry: c.expiry, new_mid: c.mid } }) }}
+                            className="mt-2 w-full py-1.5 text-xs font-semibold border"
+                            style={{ borderColor: 'var(--gold)', color: 'var(--gold)', backgroundColor: 'var(--gold-dim)', borderRadius: 'var(--radius-sm)' }}
+                          >
+                            Restructure to this
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TaxAwareActionCard({ pos, action, onRollTo }) {
   const { apiFetch } = useAuth()
   const [expanded] = useState(true)
@@ -287,6 +467,10 @@ function TaxAwareActionCard({ pos, action, onRollTo }) {
                   <RollScenarioCard key={s.scenario} scenario={s} contracts={pos.contracts} isITM={(pos.intrinsic_value ?? 0) > 0} onRollTo={onRollTo ? (scenario) => onRollTo({ pos, scenario }) : undefined} />
                 ))}
               </div>
+            )}
+            {/* Deep-ITM defense: when a 30–45d roll can't lift the ceiling much, offer the LEAP restructure */}
+            {shouldShowRolls && (pos.intrinsic_value ?? 0) > 0 && (
+              <DiagonalRestructurePanel pos={pos} onRollTo={onRollTo} />
             )}
             {!shouldShowRolls && (
               <div className="space-y-1 text-xs" style={{ color: 'var(--muted)' }}>

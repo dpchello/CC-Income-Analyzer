@@ -377,6 +377,40 @@ def _roll_score(net_credit: float, new_time_prem: float, new_intrinsic: float, d
         s_dte = max(0.0, (1 - (dte - 50) / 30.0) * 10)
     return round(s_time_prem + s_credit_norm + s_intrinsic + s_dte, 1)
 
+_DURATION_FULL_DTE = 120    # ≤ this many days out scores a full 100 (no lock penalty)
+_DURATION_ZERO_DTE = 730    # ≥ this many days out scores 0 (a ~2-year lock)
+
+def _diagonal_components(net_credit_norm: float, delta: Optional[float], new_strike: float,
+                         spot: float, dte: int, crosses_tax_year: bool) -> dict:
+    """Five 0–100 sub-scores for a diagonal-restructure candidate.
+
+    The covered-call holder's objective, decomposed:
+      • upside   — how much of the stock's future upside the new ceiling keeps
+                   (further OTM = more retained upside)
+      • credit   — net premium of the restructure, pre-normalized across candidates
+      • tax      — does the new expiry push the earliest assignment into a later
+                   tax year (deferring the realized gain)
+      • safety   — how unlikely the new short is to be assigned (1 − delta)
+      • duration — how short the lock-up is (shorter = safer / more flexible). This
+                   deliberately opposes ``tax`` and ``credit``, which both reward going
+                   longer, so the composite doesn't always run to the furthest LEAP.
+    """
+    upside = max(0.0, min(100.0, (new_strike / spot - 1.0) / 0.12 * 100.0)) if spot else 0.0
+    credit = max(0.0, min(100.0, net_credit_norm))
+    if crosses_tax_year:
+        tax = 100.0
+    else:
+        # same tax year: small partial credit that grows toward year-end
+        days_to_year_end = (date(date.today().year, 12, 31) - date.today()).days or 1
+        tax = round(min(40.0, dte / days_to_year_end * 40.0), 1)
+    safety = round((1.0 - float(delta)) * 100.0, 1) if delta is not None else 50.0
+    safety = max(0.0, min(100.0, safety))
+    span = (_DURATION_ZERO_DTE - _DURATION_FULL_DTE) or 1
+    duration = round(max(0.0, min(100.0, (1.0 - (dte - _DURATION_FULL_DTE) / span) * 100.0)), 1)
+    return {"upside": round(upside, 1), "credit": round(credit, 1),
+            "tax": round(tax, 1), "safety": round(safety, 1), "duration": duration}
+
+
 def _portfolio_stats(portfolio_id: str, positions: list, spy_price: float, all_holdings: list) -> dict:
     mine      = [p for p in positions if p.get("portfolio_id") == portfolio_id]
     open_pos  = [p for p in mine if p.get("status") == "open"]
@@ -2487,6 +2521,143 @@ def get_roll_targets(position_id: str, current_user: User = Depends(auth_module.
                  "Income-First Roll",
                  "Go where the time value is richest. Best income potential; may carry assignment risk at the new strike if it's near the money."),
         ],
+    }
+
+
+# ── Diagonal restructure (Position Defense) ────────────────────────────────────
+
+@app.get("/api/diagonal-restructure/{position_id}")
+def get_diagonal_restructure(
+    position_id: str,
+    horizon_months: int = Query(18, ge=2, le=30),
+    min_dte: int = Query(45, ge=14, le=400),
+    w_upside: float = Query(1.0, ge=0.0, le=3.0),
+    w_tax: float = Query(1.0, ge=0.0, le=3.0),
+    w_credit: float = Query(1.0, ge=0.0, le=3.0),
+    w_safety: float = Query(1.0, ge=0.0, le=3.0),
+    w_duration: float = Query(1.0, ge=0.0, le=3.0),
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    """Diagonal restructure: buy back a tested short call and re-sell it *further
+    out and higher*, optionally on **fewer** contracts so part of the stock is
+    uncapped. Scans the full LEAP horizon (the 60-DTE roll-targets endpoint can't)
+    and ranks candidates on a four-factor composite — upside kept, tax deferral,
+    net credit, and assignment safety — with caller-tunable weights.
+
+    Pro-only: this is a Position-Defense feature (STRATEGY.md goal #6).
+    """
+    if current_user.tier != "pro":
+        raise HTTPException(status_code=403, detail="Diagonal restructure is a Pro feature.")
+    pos = db.get_position(current_user.id, position_id)
+    if not pos:
+        raise HTTPException(status_code=404, detail="Position not found")
+    if pos.get("status") != "open":
+        raise HTTPException(status_code=400, detail="Position is not open")
+
+    ticker   = (pos.get("ticker") or "SPY").upper()
+    contracts = int(pos.get("contracts") or 1)
+    try:
+        spot = fetcher.get_price_for(ticker)
+    except Exception:
+        spot = fetcher.get_spy_price().get("price", 0)
+    if not spot or spot <= 0:
+        raise HTTPException(status_code=502, detail="Could not fetch underlying price")
+
+    buyback_mid = fetcher.get_option_price(pos["expiry"], pos["strike"], "call") or 0.0
+    buyback_total = round(buyback_mid * contracts * 100, 2)
+    today = date.today()
+
+    # Coverage context (portfolio-level) — the contract-count lever.
+    holdings   = db.get_holdings(current_user.id, pos.get("portfolio_id"))
+    total_shares = sum(int(h.get("shares") or 0) for h in holdings if (h.get("ticker") or "").upper() == ticker)
+    open_pos   = [p for p in db.get_positions(current_user.id, pos.get("portfolio_id"))
+                  if p.get("status") == "open" and (p.get("ticker") or "").upper() == ticker
+                  and p.get("type") == "short_call"]
+    covered_shares = sum(int(p.get("contracts") or 0) * 100 for p in open_pos)
+    uncovered_shares = max(0, total_shares - covered_shares)
+
+    # Scan a wide expiry horizon and a strike grid above spot.
+    max_dte   = int(horizon_months * 30.4)
+    expiries  = fetcher.get_expiries_in_range(ticker, min_dte=min_dte, max_dte=max_dte)
+    raw: list = []
+    for exp in expiries:
+        try:
+            exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+        except Exception:
+            continue
+        dte = (exp_date - today).days
+        chain = fetcher.get_options_chain(exp) if ticker == "SPY" else fetcher.get_options_chain_for(ticker, exp)
+        for row in chain:
+            strike = row.get("strike")
+            if strike is None or float(strike) < spot:   # restructure = lift the ceiling at/above spot
+                continue
+            if float(strike) > spot * 1.30:              # past +30% OTM the call collects pennies
+                continue
+            row_delta = row.get("delta")
+            if row_delta is not None and row_delta < 0.12:  # too far OTM to be a real income ceiling
+                continue
+            bid = row.get("bid") or 0
+            ask = row.get("ask") or 0
+            mid = round((bid + ask) / 2, 2) if (bid or ask) else (row.get("lastPrice") or 0)
+            if not mid or mid <= 0:
+                continue
+            net_credit = round(mid - buyback_mid, 2)
+            raw.append({
+                "strike": float(strike), "expiry": exp, "dte": dte, "mid": round(mid, 2),
+                "net_credit": net_credit, "delta": row.get("delta"),
+                "iv_pct": round((row.get("impliedVolatility") or 0) * 100, 1),
+                "crosses_tax_year": exp_date.year > today.year,
+            })
+    if not raw:
+        raise HTTPException(status_code=502, detail="No restructure candidates found in the chain")
+
+    # Normalize net credit across the candidate set, then score.
+    nets = [c["net_credit"] for c in raw]
+    nmin, nmax = min(nets), max(nets)
+    weights = {"upside": w_upside, "tax": w_tax, "credit": w_credit,
+               "safety": w_safety, "duration": w_duration}
+    wsum = sum(weights.values()) or 1.0
+    for c in raw:
+        cn = (c["net_credit"] - nmin) / (nmax - nmin) * 100 if nmax > nmin else 50.0
+        comp = _diagonal_components(cn, c["delta"], c["strike"], spot, c["dte"], c["crosses_tax_year"])
+        c["sub_scores"] = comp
+        c["score"] = round(sum(comp[k] * weights[k] for k in weights) / wsum, 1)
+        c["net_credit_total"] = round(c["net_credit"] * contracts * 100, 2)
+
+    # Net-credit frontier: highest strike still at a credit, per expiry — answers
+    # "how far out, and how high can the ceiling go without paying a debit".
+    frontier = []
+    for exp in expiries:
+        pos_credit = [c for c in raw if c["expiry"] == exp and c["net_credit"] >= 0]
+        if pos_credit:
+            best = max(pos_credit, key=lambda c: c["strike"])
+            frontier.append({
+                "expiry": exp, "dte": best["dte"], "max_credit_strike": best["strike"],
+                "net_credit": best["net_credit"], "delta": best["delta"],
+                "ceiling_lift": round(best["strike"] - float(pos["strike"]), 2),
+            })
+    frontier.sort(key=lambda f: f["dte"])
+
+    ranked = sorted(raw, key=lambda c: -c["score"])[:8]
+
+    return {
+        "position_id": position_id,
+        "ticker": ticker,
+        "spot": round(spot, 2),
+        "position": {
+            "strike": pos["strike"], "expiry": pos["expiry"], "dte": _dte(pos["expiry"]),
+            "contracts": contracts, "sell_price": pos.get("sell_price"),
+            "buyback_mid": round(buyback_mid, 2), "buyback_total": buyback_total,
+        },
+        "coverage": {
+            "total_shares": total_shares, "covered_shares": covered_shares,
+            "uncovered_shares": uncovered_shares,
+            "coverage_pct": round(covered_shares / total_shares * 100, 1) if total_shares else None,
+            "writable_contracts_free": uncovered_shares // 100,
+        },
+        "weights": weights,
+        "frontier": frontier,
+        "candidates": ranked,
     }
 
 

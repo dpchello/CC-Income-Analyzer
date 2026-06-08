@@ -358,6 +358,39 @@ class DataFetcher:
         _cache.set("expiries", result)
         return result
 
+    def get_expiries_in_range(self, ticker: str = "SPY", min_dte: int = 30, max_dte: int = 600) -> list:
+        """All listed expiries for ``ticker`` whose DTE falls in [min_dte, max_dte].
+
+        Unlike get_available_expiries (capped at 21–60 DTE for the screener), this
+        spans the full LEAP horizon so the diagonal-restructure engine can answer
+        "how far out can I get". Down-sampled to one expiry per ~21-day bucket past
+        90 DTE so a 18-month scan stays a handful of chain fetches, not 30+.
+        """
+        cache_key = f"exp_range_{ticker}_{min_dte}_{max_dte}"
+        cached = _cache.get(cache_key)
+        if cached:
+            return cached
+        try:
+            t = _ticker(ticker)
+            today = datetime.today().date()
+            in_range = []
+            for exp in t.options:
+                dte = (datetime.strptime(exp, "%Y-%m-%d").date() - today).days
+                if min_dte <= dte <= max_dte:
+                    in_range.append((exp, dte))
+            # Keep every expiry inside 90 DTE; past that, one per ~21-day bucket.
+            result, last_far = [], None
+            for exp, dte in in_range:
+                if dte <= 90:
+                    result.append(exp)
+                elif last_far is None or dte - last_far >= 21:
+                    result.append(exp)
+                    last_far = dte
+        except Exception:
+            result = []
+        _cache.set(cache_key, result)
+        return result
+
     def get_oi_chart_expiries(self) -> list:
         """Near-term expiries for the OI chart: every daily expiry in the next
         7 days, then a few weeklies/monthlies for longer-dated context. SPY
