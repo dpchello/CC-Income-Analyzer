@@ -4,6 +4,25 @@ All notable changes to Harvest are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.3.5.0] - 2026-06-09
+
+### Fixed
+- **New positions now stay in the portfolio you added them to.** Adding a
+  position from a portfolio's "+ Add Position" form was silently filing it under
+  the Default portfolio instead of the one you were viewing. The form now sends
+  the correct portfolio, so the position lands where you created it. (Positions
+  already misfiled in Default before this fix can be moved with the row's move
+  action.)
+
+### Changed
+- **The Open Interest chart's spot line now tracks the live SPY price** on today's
+  snapshot, instead of the frozen morning-capture price. Historical frames still
+  show where price sat on each captured day.
+- **The OI chart's x-axis now spans ±3σ around the prior close** — the expected
+  move to that expiry, derived from the option's own at-the-money implied
+  volatility — instead of a fixed ±15%. Near-dated tabs come out tight, far-dated
+  ones wider, so you see the strike range that actually matters for each expiry.
+
 ## [0.3.4.0] - 2026-06-05
 
 ### Added
