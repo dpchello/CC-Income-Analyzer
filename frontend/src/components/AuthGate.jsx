@@ -152,7 +152,7 @@ export default function AuthGate() {
         </p>
 
         <p className="text-center text-xs mt-4" style={{ color: 'var(--muted)', opacity: 0.5 }}>
-          Free tier: 3 positions · 1 screener/day
+          Free tier: 3 positions · unlimited screener runs (top result)
         </p>
       </div>
     </div>

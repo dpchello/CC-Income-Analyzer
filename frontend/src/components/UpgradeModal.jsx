@@ -3,7 +3,7 @@ import { useAuth } from '../auth.jsx'
 
 const FREE_FEATURES = [
   '3 positions tracked',
-  '1 screener run per day',
+  'Unlimited screener runs (top result only)',
   '7-day history',
   'Covered call calculator',
 ]

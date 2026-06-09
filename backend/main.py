@@ -602,6 +602,14 @@ def get_positions(
     current_user: User = Depends(auth_module.get_current_user),
 ):
     positions = db.get_positions(current_user.id, portfolio_id=portfolio_id)
+
+    # ── Free-tier 3-position hard cap (PIPE-029) ──────────────────────────
+    FREE_POSITION_CAP = 3
+    if current_user.tier != "pro":
+        open_positions = [p for p in positions if p.get("status") == "open"]
+        closed_positions = [p for p in positions if p.get("status") != "open"]
+        positions = open_positions[:FREE_POSITION_CAP] + closed_positions
+
     spy_data  = fetcher.get_spy_price()
     spy_price = spy_data.get("price", 0)
     spy_change = spy_data.get("change", 0)
@@ -2183,6 +2191,7 @@ def get_scorecard(
     portfolio_id: Optional[str] = Query(None),
     current_user: User = Depends(auth_module.get_current_user),
 ):
+    _require_pro(current_user)
     positions = db.get_positions(current_user.id, portfolio_id=portfolio_id)
     rec_log = rec_logger.get_log(500)
     open_now_recs = [
@@ -2298,6 +2307,7 @@ def get_oi_chain_history(
     the pre-open snapshot job + first-request self-heal, so this endpoint is
     read-only and never re-fetches the chain.
     """
+    _require_pro(current_user)
     snapshots = oi_tracker.get_chain_history(expiry)
     today_str = date.today().isoformat()
 

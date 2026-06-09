@@ -64,7 +64,8 @@
 ---
 
 ### PIPE-029 · Freemium Gate Enforcement + Upgrade UI (Phase 3)
-**Status:** `approved`
+**Status:** `done`
+**Implementation notes:** Backend: added 3-position hard cap on `GET /api/positions` — free users see only the first 3 open positions (closed positions still visible for history). Added `_require_pro` gate to `GET /api/scorecard` and `GET /api/oi/chain/history`. Frontend: screener results limited to top 1 opportunity for free users with a locked teaser showing count of hidden results + upgrade CTA. Removed all stale "1 screener run per day" / `DAILY_LIMIT_REACHED` copy from `UpgradeModal.jsx`, `SignalTracker.jsx`, `AuthGate.jsx`, and `LockedFeature.jsx`. Components `UpgradeModal`, `LockedFeature`, `PositionLimitBanner` were already built and wired in prior work. Build passed (backend import + frontend `npm run build`).
 **Description:** Enforce free tier limits in the backend, wire up blur/lock overlays in the frontend, and add the upgrade modal so a free user hitting a limit can convert to Pro.
 
 **Gate model (updated 2026-05-31):** Free tier = **3-position hard cap** + **$1,000

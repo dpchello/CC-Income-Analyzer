@@ -247,12 +247,10 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
         ticker: tf,
       })
       const res = await apiFetch(`/api/screener?${params}`)
-      if (res.status === 403) {
+      if (res.status === 402 || res.status === 403) {
         const body = await res.json().catch(() => ({}))
         const code = body?.detail?.code || body?.code
-        if (code === 'DAILY_LIMIT_REACHED') {
-          setError('DAILY_LIMIT_REACHED')
-        } else if (code === 'UPGRADE_REQUIRED') {
+        if (code === 'UPGRADE_REQUIRED' || code === 'PRO_FEATURE') {
           setError('UPGRADE_REQUIRED')
         } else {
           setError(`Server error ${res.status}`)
@@ -601,24 +599,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
 
       </div>
 
-      {error === 'DAILY_LIMIT_REACHED' && (
-        <div className="px-5 py-8 text-center space-y-3">
-          <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Daily screener limit reached</p>
-          <p className="text-sm" style={{ color: 'var(--muted)' }}>
-            Free accounts get 1 screener run per day. Upgrade to Pro for unlimited runs.
-          </p>
-          {onUpgrade && (
-            <button
-              onClick={() => onUpgrade('You\'ve used your 1 free screener run for today.')}
-              className="text-xs px-3 py-1.5 font-semibold"
-              style={{ background: 'var(--gold)', color: '#1a1208', border: 'none', borderRadius: 'var(--radius-md)', cursor: 'pointer' }}
-            >
-              Upgrade to Pro →
-            </button>
-          )}
-        </div>
-      )}
-      {error && error !== 'DAILY_LIMIT_REACHED' && error !== 'UPGRADE_REQUIRED' && (
+      {error && error !== 'UPGRADE_REQUIRED' && (
         <div className="px-5 py-3 text-xs font-mono" style={{ color: 'var(--red)', backgroundColor: 'rgba(248,113,113,0.08)' }}>{error}</div>
       )}
 
@@ -742,7 +723,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
                 </tr>
               </thead>
               <tbody>
-                {sortedResults().filter(c => recFilter === 'all' || rec(c).text === recFilter).map((c, i) => {
+                {sortedResults().filter(c => recFilter === 'all' || rec(c).text === recFilter).slice(0, userTier === 'pro' ? undefined : 1).map((c, i) => {
                   const key = `${c.strike}-${c.expiry}`
                   const isAdded = added[key]
                   const isAdding = adding === key
@@ -953,6 +934,34 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
               </tbody>
             </table>
           </div>
+
+          {/* Free-tier results gate (PIPE-029) */}
+          {userTier !== 'pro' && sortedResults().length > 1 && (
+            <div className="px-5 py-6 text-center border-t" style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(128,128,128,0.04)' }}>
+              <span style={{ fontSize: 18 }}>🔒</span>
+              <p className="text-sm font-semibold mt-2" style={{ color: 'var(--text)' }}>
+                {sortedResults().length - 1} more opportunities found
+              </p>
+              <p className="text-xs mt-1" style={{ color: 'var(--muted)' }}>
+                Free accounts see the top opportunity. Upgrade to Pro to see all ranked results.
+              </p>
+              {onUpgrade && (
+                <button
+                  onClick={() => onUpgrade('Unlock all screener results — see every ranked opportunity.')}
+                  className="text-xs px-3 py-1.5 font-semibold mt-3"
+                  style={{
+                    background: 'var(--gold)',
+                    color: '#1a1208',
+                    border: 'none',
+                    borderRadius: 'var(--radius-md)',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Upgrade to Pro →
+                </button>
+              )}
+            </div>
+          )}
 
           {/* Footer legend */}
           <div className="px-5 py-3 border-t text-[11px] space-y-1.5" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>

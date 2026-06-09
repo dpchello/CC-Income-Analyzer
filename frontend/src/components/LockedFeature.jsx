@@ -20,12 +20,10 @@ export default function LockedFeature({ children, reason = 'pro', onUpgrade }) {
       >
         <span style={{ fontSize: 20 }}>🔒</span>
         <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
-          {reason === 'daily_limit' ? 'Daily limit reached' : 'Pro feature'}
+          Pro feature
         </p>
         <p className="text-xs" style={{ color: 'var(--muted)' }}>
-          {reason === 'daily_limit'
-            ? 'Upgrade for unlimited screener runs'
-            : 'Upgrade to unlock this feature'}
+          Upgrade to unlock this feature
         </p>
         {onUpgrade && (
           <button
