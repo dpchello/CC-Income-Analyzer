@@ -7,7 +7,7 @@ const inputStyle = {
   color: 'var(--text)',
 }
 
-export default function AddPosition({ onAdded, holdings, prefill }) {
+export default function AddPosition({ onAdded, holdings, prefill, portfolioId }) {
   const { apiFetch } = useAuth()
   const [expiries, setExpiries] = useState([])
   const holdingTickers = [...new Set((holdings || []).map(h => h.ticker).filter(Boolean))]
@@ -53,6 +53,7 @@ export default function AddPosition({ onAdded, holdings, prefill }) {
     try {
       const body = {
         ...form,
+        portfolio_id: portfolioId,
         strike: parseFloat(form.strike),
         contracts: parseInt(form.contracts),
         sell_price: parseFloat(form.sell_price),
