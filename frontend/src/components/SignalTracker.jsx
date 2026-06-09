@@ -1341,12 +1341,18 @@ export function OIChart() {
   const currentDate = current?.capture_date
   const isToday = !!current?.is_today
 
-  // Frozen morning snapshot: each frame keeps the spot it was captured at. Use a
-  // stable window (latest frame's spot) for the ±15% strike filter so the x-axis
-  // doesn't jump while scrubbing, but draw the spot line at THIS frame's spot so
-  // it moves to show where price sat on each captured day.
+  // Frozen morning snapshot: each historical frame keeps the spot it was captured
+  // at, so scrubbing shows where price sat on each captured day. But on TODAY's
+  // frame the dashed reference line tracks the live underlying (live_spot), not the
+  // frozen morning pull — that's the price the trader is acting on right now.
   const filterSpot = (latest?.spot ?? history?.spy_price) || 0
-  const lineSpot   = (current?.spot ?? filterSpot) || 0
+  const lineSpot   = (isToday && history?.live_spot ? history.live_spot : current?.spot ?? filterSpot) || 0
+
+  // X-axis window: ±3σ around the prior close (expected move to this expiry, from
+  // the option's own ATM IV — computed server-side). Falls back to ±15% around the
+  // stable spot for legacy payloads that predate the band fields.
+  const bandLow  = history?.band_low  ?? (filterSpot ? filterSpot * 0.85 : 0)
+  const bandHigh = history?.band_high ?? (filterSpot ? filterSpot * 1.15 : 0)
 
   const fmtDateLabel = d => d
     ? new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
@@ -1368,9 +1374,9 @@ export function OIChart() {
   // "Last updated" = when the most recent snapshot was captured (the morning pull).
   const lastUpdated = latest?.captured_at ? fmtDateTime(latest.captured_at) : fmtDateLabel(latest?.capture_date)
 
-  // Filter to ±15% around the (stable) spot (raw values — OIChartInner mirrors calls below zero)
+  // Filter to the ±3σ band (raw values — OIChartInner mirrors calls below zero)
   const chartData = (current?.strikes || [])
-    .filter(r => filterSpot === 0 || (r.strike >= filterSpot * 0.85 && r.strike <= filterSpot * 1.15))
+    .filter(r => (bandLow === 0 && bandHigh === 0) || (r.strike >= bandLow && r.strike <= bandHigh))
     .map(r => ({
       strike:      r.strike,
       put_oi:      r.put_oi  || 0,

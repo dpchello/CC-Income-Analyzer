@@ -2355,10 +2355,52 @@ def get_oi_chain_history(
         })
 
     latest_spot = out[-1]["spot"] if out else (fallback_spot or 0)
+
+    # Live underlying for the spot line on today's frame (the morning-pull spot is
+    # frozen; the dashed reference line should track where SPY is *now*). Also derive
+    # the prior session's close, which anchors the x-axis window below.
+    live = fetcher.get_spy_price()
+    raw_live = live.get("price", 0)
+    live_spot = round(float(raw_live), 2) if (isinstance(raw_live, (int, float)) and math.isfinite(raw_live) and raw_live > 0) else 0
+    prev_close = round(live_spot - float(live.get("change", 0) or 0), 2) if live_spot else 0
+
+    # ±3σ x-axis window, centred on the prior close. σ is the expected move *to this
+    # expiry* implied by the option's own ATM IV: σ = S · IV · √(DTE/365). Near-dated
+    # tabs come out tight, far-dated ones wider — the band a trader actually cares about.
+    band_low = band_high = None
+    atm_iv = None
+    center = prev_close or latest_spot or 0
+    if center > 0:
+        try:
+            exp_date = datetime.strptime(expiry, "%Y-%m-%d").date()
+            dte = (exp_date - date.today()).days
+            T = max(dte, 1) / 365.0
+            chain = fetcher.get_options_chain(expiry)
+            atm = min(
+                (r for r in chain if (r.get("impliedVolatility") or 0) > 0),
+                key=lambda r: abs(float(r.get("strike") or 0) - center),
+                default=None,
+            )
+            iv = float((atm or {}).get("impliedVolatility") or 0)
+            if iv > 0:
+                atm_iv = round(iv, 4)
+                sigma = center * iv * math.sqrt(T)
+                # Floor the half-width so a 0DTE tab isn't razor-thin (≥1.5% of spot).
+                half = max(3.0 * sigma, center * 0.015)
+                band_low = round(center - half, 2)
+                band_high = round(center + half, 2)
+        except Exception:
+            band_low = band_high = atm_iv = None
+
     return _json_safe({
         "expiry":        expiry,
         "ticker":        "SPY",
         "spy_price":     latest_spot or 0,
+        "live_spot":     live_spot or None,
+        "prev_close":    prev_close or None,
+        "band_low":      band_low,
+        "band_high":     band_high,
+        "atm_iv":        atm_iv,
         "today":         today_str,
         "snapshots":     out,
         "num_snapshots": len(out),
