@@ -197,6 +197,12 @@ Every shipped feature, what it does, and why it exists.
 | MKTG | Marketing site | Next.js, 15 static pages, JSON-LD SEO, calculator widget, pricing, /learn/[slug] — deployed to Vercel |
 | PIPE-034 | SnapTrade Brokerage Import | Full SnapTrade integration: register user, connect portal, account selection, holdings import with dedup (upsert by snaptrade_account_id), category mapping (long_stock/covered_call/options), avg_cost from average_purchase_price |
 | PIPE-035 | Brokerage Portfolio Folders | Auto-creates one portfolio per SnapTrade account on sync, grouped into collapsible brokerage folders in sidebar; starred portfolios float to top; any portfolio renameable inline; dedup fixed with unique index on (user_id, snaptrade_account_id) |
+| PIPE-001 | Roll Targets + Defense in Action Cards | Surfaces the existing roll/defense backend on every position card: 3-scenario roll targets, early-exercise risk with a "why", and "roll to this" pre-filling the Add Position form |
+| — | OI Chart History Scrubber | Replay open-interest buildup day by day; every snapshot preloaded so scrubbing and playback are instant (v0.3.4.0) |
+| — | Gamma Pins on OI Chart | Marks the gamma pin (with strength score), max-pain level, and call/put walls, each with a plain-English tooltip (v0.3.4.0) |
+| — | Pre-open OI Snapshot Scheduler | Captures the morning open-interest figure once per trading day so the chart is consistent regardless of when the app is opened (v0.3.4.0) |
+| — | OI Chart Live Spot + 3σ Axis | Spot line tracks live SPY on today's frame (not the frozen morning pull); x-axis spans ±3σ to the expiry from the option's own ATM IV instead of a fixed ±15% (v0.3.5.0) |
+| — | Position Portfolio Fix | New positions added via the form now stay in the portfolio they were created in, instead of silently defaulting to Default (v0.3.5.0) |
 
 ---
 
