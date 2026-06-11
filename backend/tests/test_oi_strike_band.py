@@ -50,8 +50,12 @@ def test_band_centered_on_live_spot_includes_strikes_below_spot():
 def test_centering_on_prev_close_reproduces_the_bug():
     """Guard: centering on the prior close on a gap day pushes the live spot to
     the edge / outside the band — exactly the one-sided chart that was reported.
-    This documents WHY we must center on the live spot, not the prior close."""
-    low, high = _strike_band(PREV_CLOSE, IV, DTE)
+    This documents WHY we must center on the live spot, not the prior close.
+
+    Pinned to sigmas=4.0 — the window width in effect when the bug was reported.
+    (A wider window can mask the centring bug by happening to reach back over the
+    live spot; the defect is the centring, which this asserts independent of width.)"""
+    low, high = _strike_band(PREV_CLOSE, IV, DTE, sigmas=4.0)
     # On this -11.62pt day the live spot falls at or below the band floor: the
     # chart would have nothing to draw to the left of it.
     assert LIVE_SPOT <= low, (

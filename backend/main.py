@@ -2290,7 +2290,7 @@ def _json_safe(obj):
     return obj
 
 
-def _strike_band(center: float, iv: float, dte: int, sigmas: float = 4.0):
+def _strike_band(center: float, iv: float, dte: int, sigmas: float = 6.0):
     """±`sigmas`σ x-axis window for the OI chart, symmetric around `center`.
 
     `center` must be the LIVE underlying (the price the chart's dashed spot line
@@ -2383,7 +2383,7 @@ def get_oi_chain_history(
     live_spot = round(float(raw_live), 2) if (isinstance(raw_live, (int, float)) and math.isfinite(raw_live) and raw_live > 0) else 0
     prev_close = round(live_spot - float(live.get("change", 0) or 0), 2) if live_spot else 0
 
-    # ±4σ x-axis window, centred on the LIVE underlying — the same price the dashed
+    # ±6σ x-axis window, centred on the LIVE underlying — the same price the dashed
     # spot line marks — so the window stays symmetric around where SPY is *now*, even
     # on a big gap/move day. (Centring on the prior close instead pushed the whole
     # band to one side on a -11pt day: the spot line sat at the far edge and every
