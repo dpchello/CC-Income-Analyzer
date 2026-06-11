@@ -26,6 +26,61 @@
 
 ## Pipeline
 
+### PIPE-039 · Portfolios vanish on cold restart (transient Supabase 500 → first-run empty state)
+**Status:** `approved`
+**Severity:** P0 — looks like total data loss to the user; data is actually intact.
+**Reported:** 2026-06-10 — user opened the app after the overnight cycle and saw the empty
+"Let's set up your first portfolio" screen instead of their portfolios (app header showed v0.3.4.0).
+
+**Root cause (investigated 2026-06-10 — data is NOT lost):**
+The overnight 1AM nightly-upgrade job did **nothing** — it refused to run because the working
+tree was dirty (`M WHATS_NEXT.md`) and skipped immediately. `git reflog` confirms zero overnight
+HEAD movement; zero commits between 2026-06-09 16:00 and the report. The trigger was the **7:35AM
+cold backend restart** (`harvestctl.sh reload`), which exposed two latent bugs:
+
+1. **Backend — no resilience on transient Supabase errors.** `backend/db.py:get_holdings/get_portfolios/
+   get_positions` call `sb.table(...).execute()` with no try/except and no retry. On a cold start the
+   Supabase HTTP pool throws `httpx.ReadError: [Errno 35] Resource temporarily unavailable`, so the
+   endpoint returns a 500. Confirmed in `~/Library/Logs/Harvest/backend.log`.
+2. **Frontend — a single failed fetch blanks the whole dashboard.** `frontend/src/App.jsx:48-59`
+   fetches `/api/dashboard|signals|positions|portfolios|holdings` in one `Promise.all` with **no
+   per-call `.catch()`** (the optional calls below them all have `.catch(() => null)`). A transient
+   500 on any one of the five drops `portfolios` to `[]`, and `frontend/src/components/Portfolios.jsx:1700`
+   then renders the first-run "Let's set up your first portfolio" empty state — indistinguishable from
+   data loss. The very next request returns 200 (logs show 500 bursts immediately followed by 200 OK),
+   so a manual refresh already restores the view.
+3. **Related (same migration-fragility family) — stale `portfolio_id=default`.** The client still
+   sends the old pre-migration string id `default` (now a UUID column post-2026-05-25 migration),
+   producing `invalid input syntax for type uuid: "default"` (Postgres 22P02) 500s on the screener.
+   The old string ids live in `backend/portfolios.json` (`"id": "default"`); persisted client state
+   (localStorage selected-portfolio) replays them.
+
+**Fix (minimal diff, three layers):**
+1. `backend/db.py` — add a small `_with_retry()` wrapper around `.execute()` for read paths
+   (`get_portfolios`, `get_positions`, `get_holdings`): retry 2–3x with short backoff on
+   `httpx.ReadError`/connection-reset/`[Errno 35]`; re-raise anything else. Optionally warm the
+   Supabase connection pool once on startup so the first real request isn't the cold one.
+2. `frontend/src/App.jsx` — give the five critical fetches the same resilience as the optional ones:
+   check `r.ok` / add `.catch()` so a transient failure does **not** overwrite good state, and never
+   render the first-run empty state on a fetch *error*. Distinguish three states: loading, load-failed
+   (show "Couldn't load — retry", not the setup screen), and genuinely-empty (zero portfolios).
+3. Stale id: validate the persisted/selected `portfolio_id` against the fetched portfolios; if it's not
+   a real UUID in the list (e.g. `"default"`), clear it and fall back to the first portfolio. Prevents
+   the 22P02 screener 500s.
+
+**Regression tests:**
+- Backend: simulate `httpx.ReadError` on the first `.execute()` and assert `get_portfolios` retries and
+  returns data (fails before the retry wrapper, passes after).
+- Frontend: mock `/api/portfolios` → 500 and assert the UI shows the retry/error state, NOT
+  "Let's set up your first portfolio", and that previously-loaded portfolios are not wiped.
+
+**Scope:** `backend/db.py`, `frontend/src/App.jsx`, `frontend/src/components/Portfolios.jsx` (empty-state
+guard), then rebuild dist. No backend API contract change.
+**Rationale:** Goal #5 (trust). A holder who sees "set up your first portfolio" believes the app ate
+their data — the fastest possible way to lose trust on a self-hosted app that cold-restarts every night.
+
+---
+
 ### PIPE-028 · Frontend Auth Gate (Phase 2)
 **Status:** `done`
 **Implementation notes:** Created `frontend/src/auth.jsx` — AuthProvider context with JWT stored in `harvest-token` localStorage key; validates token via `GET /api/auth/me` on mount; exposes `login()`, `signup()`, `logout()`, and `apiFetch()` (injects Bearer header, auto-logouts on 401). Created `frontend/src/components/AuthGate.jsx` — login/signup form using CSS variables, toggles between modes, shows inline error messages. Updated `frontend/src/App.jsx` — imports `useAuth`, shows spinner while token validates, shows `<AuthGate />` if no user, replaces all `fetch()` with `apiFetch()`, skips data fetch when not logged in, adds user email + Pro badge + Sign out button to header. Updated `frontend/src/main.jsx` — wraps with `<AuthProvider>` inside existing `<ThemeProvider>`. Build passed.
