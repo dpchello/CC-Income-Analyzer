@@ -2364,7 +2364,7 @@ def get_oi_chain_history(
     live_spot = round(float(raw_live), 2) if (isinstance(raw_live, (int, float)) and math.isfinite(raw_live) and raw_live > 0) else 0
     prev_close = round(live_spot - float(live.get("change", 0) or 0), 2) if live_spot else 0
 
-    # ±3σ x-axis window, centred on the prior close. σ is the expected move *to this
+    # ±4σ x-axis window, centred on the prior close. σ is the expected move *to this
     # expiry* implied by the option's own ATM IV: σ = S · IV · √(DTE/365). Near-dated
     # tabs come out tight, far-dated ones wider — the band a trader actually cares about.
     band_low = band_high = None
@@ -2386,7 +2386,7 @@ def get_oi_chain_history(
                 atm_iv = round(iv, 4)
                 sigma = center * iv * math.sqrt(T)
                 # Floor the half-width so a 0DTE tab isn't razor-thin (≥1.5% of spot).
-                half = max(3.0 * sigma, center * 0.015)
+                half = max(4.0 * sigma, center * 0.015)
                 band_low = round(center - half, 2)
                 band_high = round(center + half, 2)
         except Exception:

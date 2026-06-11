@@ -1348,7 +1348,7 @@ export function OIChart() {
   const filterSpot = (latest?.spot ?? history?.spy_price) || 0
   const lineSpot   = (isToday && history?.live_spot ? history.live_spot : current?.spot ?? filterSpot) || 0
 
-  // X-axis window: ±3σ around the prior close (expected move to this expiry, from
+  // X-axis window: ±4σ around the prior close (expected move to this expiry, from
   // the option's own ATM IV — computed server-side). Falls back to ±15% around the
   // stable spot for legacy payloads that predate the band fields.
   const bandLow  = history?.band_low  ?? (filterSpot ? filterSpot * 0.85 : 0)
@@ -1374,7 +1374,7 @@ export function OIChart() {
   // "Last updated" = when the most recent snapshot was captured (the morning pull).
   const lastUpdated = latest?.captured_at ? fmtDateTime(latest.captured_at) : fmtDateLabel(latest?.capture_date)
 
-  // Filter to the ±3σ band (raw values — OIChartInner mirrors calls below zero)
+  // Filter to the ±4σ band (raw values — OIChartInner mirrors calls below zero)
   const chartData = (current?.strikes || [])
     .filter(r => (bandLow === 0 && bandHigh === 0) || (r.strike >= bandLow && r.strike <= bandHigh))
     .map(r => ({
@@ -1417,8 +1417,8 @@ export function OIChart() {
             </h2>
             <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
               {isDollars
-                ? 'Green above = Call $ · Red below = Put $ (time value remaining × open interest) · dashed line = spot · ±15% around spot'
-                : 'Green above = Call OI · Red below = Put OI · dashed line = spot price · ±15% around spot'}
+                ? 'Green above = Call $ · Red below = Put $ (time value remaining × open interest) · dashed line = spot · ±4σ expected move'
+                : 'Green above = Call OI · Red below = Put OI · dashed line = spot price · ±4σ expected move'}
             </p>
             {lastUpdated && (
               <p className="text-[11px] mt-1.5 flex items-center gap-1.5 flex-wrap" style={{ color: 'var(--muted)' }}>
