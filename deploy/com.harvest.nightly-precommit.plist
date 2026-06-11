@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd LaunchAgent for the Harvest nightly pre-commit sweep.
+
+  Runs ~11PM, two hours before the 1AM nightly-upgrade agent. The agent refuses to
+  run on a dirty working tree (so it never clobbers your WIP); this job commits and
+  pushes any leftover uncommitted work first, so the agent always wakes to a clean
+  tree. See scripts/nightly-precommit.sh.
+
+  Why launchd and not cron: macOS cron silently skips its scheduled time when the
+  Mac is asleep. launchd runs a missed StartCalendarInterval job at the next real
+  wake instead. caffeinate -i keeps the Mac awake for the (brief) duration.
+
+  Runs as a LaunchAgent (user session), NOT a LaunchDaemon — git push needs the
+  user's GitHub credential helper / keychain, which only exists in the user context.
+
+  Install:
+    cp deploy/com.harvest.nightly-precommit.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.harvest.nightly-precommit.plist
+
+  Verify:
+    launchctl print gui/$(id -u)/com.harvest.nightly-precommit | grep -E 'state|runs'
+
+  Tail logs:
+    tail -f ~/Library/Logs/harvest/nightly-precommit.log
+
+  Unload:
+    launchctl bootout gui/$(id -u)/com.harvest.nightly-precommit
+
+  Pause without uninstalling: toggle the nightly agent off in the app
+  (Settings -> Nightly Upgrade Agent) — this job shares the same flag and will skip.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.harvest.nightly-precommit</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/caffeinate</string>
+        <string>-i</string>
+        <string>/Users/leslie/CC-Income-Analyzer/scripts/nightly-precommit.sh</string>
+    </array>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>23</integer>
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Do not run the moment we load it. launchd still fires the missed 11PM
+         job on the next wake. -->
+    <key>RunAtLoad</key>
+    <false/>
+
+    <key>StandardOutPath</key>
+    <string>/Users/leslie/Library/Logs/harvest/nightly-precommit.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/leslie/Library/Logs/harvest/nightly-precommit.log</string>
+</dict>
+</plist>
