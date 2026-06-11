@@ -2290,6 +2290,25 @@ def _json_safe(obj):
     return obj
 
 
+def _strike_band(center: float, iv: float, dte: int, sigmas: float = 4.0):
+    """±`sigmas`σ x-axis window for the OI chart, symmetric around `center`.
+
+    `center` must be the LIVE underlying (the price the chart's dashed spot line
+    marks) so the window brackets where the stock is now — not yesterday's close,
+    which on a gap day pushes the whole band to one side and hides the strikes the
+    trader cares about. σ is the expected move to expiry from the ATM IV:
+    σ = center · IV · √(DTE/365). The half-width is floored at 1.5% of center so a
+    0DTE tab isn't razor-thin. Returns (low, high), or (None, None) if inputs are
+    unusable. Pure + side-effect-free so the centring contract is unit-testable.
+    """
+    if not (center and center > 0 and iv and iv > 0):
+        return None, None
+    T = max(dte, 1) / 365.0
+    sigma = center * iv * math.sqrt(T)
+    half = max(sigmas * sigma, center * 0.015)
+    return round(center - half, 2), round(center + half, 2)
+
+
 @app.get("/api/oi/chain/history")
 def get_oi_chain_history(
     expiry: str = Query(...),
@@ -2364,17 +2383,20 @@ def get_oi_chain_history(
     live_spot = round(float(raw_live), 2) if (isinstance(raw_live, (int, float)) and math.isfinite(raw_live) and raw_live > 0) else 0
     prev_close = round(live_spot - float(live.get("change", 0) or 0), 2) if live_spot else 0
 
-    # ±4σ x-axis window, centred on the prior close. σ is the expected move *to this
-    # expiry* implied by the option's own ATM IV: σ = S · IV · √(DTE/365). Near-dated
-    # tabs come out tight, far-dated ones wider — the band a trader actually cares about.
+    # ±4σ x-axis window, centred on the LIVE underlying — the same price the dashed
+    # spot line marks — so the window stays symmetric around where SPY is *now*, even
+    # on a big gap/move day. (Centring on the prior close instead pushed the whole
+    # band to one side on a -11pt day: the spot line sat at the far edge and every
+    # strike past it was filtered out — see PIPE bug 2026-06-11.) σ is the expected
+    # move *to this expiry* from the option's own ATM IV: σ = S · IV · √(DTE/365).
+    # Near-dated tabs come out tight, far-dated ones wider.
     band_low = band_high = None
     atm_iv = None
-    center = prev_close or latest_spot or 0
+    center = live_spot or prev_close or latest_spot or 0
     if center > 0:
         try:
             exp_date = datetime.strptime(expiry, "%Y-%m-%d").date()
             dte = (exp_date - date.today()).days
-            T = max(dte, 1) / 365.0
             chain = fetcher.get_options_chain(expiry)
             atm = min(
                 (r for r in chain if (r.get("impliedVolatility") or 0) > 0),
@@ -2384,11 +2406,7 @@ def get_oi_chain_history(
             iv = float((atm or {}).get("impliedVolatility") or 0)
             if iv > 0:
                 atm_iv = round(iv, 4)
-                sigma = center * iv * math.sqrt(T)
-                # Floor the half-width so a 0DTE tab isn't razor-thin (≥1.5% of spot).
-                half = max(4.0 * sigma, center * 0.015)
-                band_low = round(center - half, 2)
-                band_high = round(center + half, 2)
+                band_low, band_high = _strike_band(center, iv, dte)
         except Exception:
             band_low = band_high = atm_iv = None
 
