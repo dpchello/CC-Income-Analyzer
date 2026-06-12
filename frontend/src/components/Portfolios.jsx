@@ -1111,7 +1111,7 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
                 {[
                   { label: 'Contracts', value: `${pos.contracts} × 100` },
                   { label: 'Sold At', value: `$${pos.sell_price?.toFixed(2)}` },
-                  { label: 'Current Price', value: `$${pos.current_price?.toFixed(2) ?? '—'}` },
+                  { label: 'Current Price', value: `$${pos.current_price?.toFixed(2) ?? '—'}`, subtitle: pos.pricing_stale ? `last close${pos.priced_as_of ? ` · ${pos.priced_as_of}` : ''} — market data not live yet` : undefined },
                   pos.time_premium != null ? { label: 'Time Value', value: `$${pos.time_premium.toFixed(2)}`, color: 'var(--green)' } : null,
                   pos.intrinsic_value != null ? { label: 'Intrinsic', value: `$${pos.intrinsic_value.toFixed(2)}`, color: pos.intrinsic_value > 0 ? 'var(--red)' : 'var(--muted)' } : null,
                   pos.early_exercise_risk && pos.early_exercise_risk !== 'NONE' ? { label: 'Exercise Risk', value: pos.early_exercise_risk, color: (pos.early_exercise_risk === 'CRITICAL' || pos.early_exercise_risk === 'HIGH') ? 'var(--red)' : pos.early_exercise_risk === 'MEDIUM' ? 'var(--amber)' : 'var(--muted)', subtitle: pos.early_exercise_risk === 'CRITICAL' ? `Dividend ($${(pos.upcoming_dividend ?? 0).toFixed(2)}) exceeds time value ($${(pos.time_premium ?? 0).toFixed(2)}) — early exercise very likely` : pos.early_exercise_risk === 'HIGH' ? `Time value only $${(pos.time_premium ?? 0).toFixed(2)} — buyer has little reason to wait` : pos.early_exercise_risk === 'MEDIUM' ? `Time value $${(pos.time_premium ?? 0).toFixed(2)} is thinning — monitor closely` : 'Low time premium remaining' } : null,

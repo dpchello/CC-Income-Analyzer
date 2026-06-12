@@ -17,6 +17,7 @@ from data_fetcher import DataFetcher
 from signals import SignalEngine
 import alpha_fetcher as av
 import oi_tracker
+import position_marks
 import rec_logger
 import macro_calendar
 import feedback_log
@@ -637,29 +638,22 @@ def get_positions(
         p = dict(pos)
         p["dte"] = _dte(pos["expiry"]) if pos.get("status") == "open" and pos.get("expiry") else None
         if pos.get("status") == "open":
-            current = fetcher.get_option_price(pos["expiry"], pos["strike"], "call")
-            p["current_price"] = current
             sell_price = pos["sell_price"]
             contracts  = pos["contracts"]
-            p["pnl"] = round((sell_price - current) * contracts * 100, 2)
-            p["pnl_pct"] = round((sell_price - current) / sell_price * 100, 2) if sell_price else 0
-            p["profit_capture_pct"] = p["pnl_pct"]
             strike = pos["strike"]
             if spy_price > 0 and strike and strike > 0:
                 p["distance_to_strike_pct"] = round(((strike - spy_price) / spy_price) * 100, 2)
             else:
                 p["distance_to_strike_pct"] = None
+
+            # --- Live pull: option mark + greeks ---
+            current = fetcher.get_option_price(pos["expiry"], pos["strike"], "call")
+            live_delta = live_theta = None
             try:
                 chain = fetcher.get_options_chain(pos["expiry"])
                 chain_row = next((r for r in chain if r.get("strike") == float(strike)), None)
-                p["delta"] = round(float(chain_row["delta"]), 4) if chain_row and chain_row.get("delta") is not None else None
-                p["theta"] = round(float(chain_row["theta"]), 4) if chain_row and chain_row.get("theta") is not None else None
-                if p["delta"] is not None and p["theta"] is not None:
-                    daily_theta = -p["theta"]
-                    daily_delta = -p["delta"] * spy_change
-                    p["daily_pnl"] = round((daily_theta + daily_delta) * contracts * 100, 2)
-                else:
-                    p["daily_pnl"] = None
+                live_delta = round(float(chain_row["delta"]), 4) if chain_row and chain_row.get("delta") is not None else None
+                live_theta = round(float(chain_row["theta"]), 4) if chain_row and chain_row.get("theta") is not None else None
                 if chain_row and chain_row.get("openInterest"):
                     oi_tracker.record_batch([{
                         "expiry": pos["expiry"],
@@ -667,16 +661,39 @@ def get_positions(
                         "oi": chain_row["openInterest"],
                     }])
             except Exception:
-                p["delta"] = None
-                p["theta"] = None
+                live_delta = live_theta = None
+
+            # --- Last-known fallback ---
+            # Before the market opens (and on provider hiccups) the live pull comes
+            # back with a 0 mark and no greeks, which would blank every metric on the
+            # Portfolios tab or — worse — read the 0 mark as "100% profit, take it."
+            # Record good live data, and when the pull is empty fall back to the last
+            # mark we stored, flagged stale + dated so the UI says "as of <date>"
+            # rather than showing nothing or a fabricated max gain.
+            position_marks.record(pos["expiry"], strike, "call", current, live_delta, live_theta)
+            last_known = position_marks.get(pos["expiry"], strike, "call")
+            current, delta, theta, pricing_stale, priced_as_of = position_marks.merge(
+                current, live_delta, live_theta, last_known
+            )
+
+            p["current_price"] = current
+            p["delta"] = delta
+            p["theta"] = theta
+            p["pricing_stale"] = pricing_stale
+            p["priced_as_of"]  = priced_as_of
+            p["pnl"] = round((sell_price - current) * contracts * 100, 2)
+            p["pnl_pct"] = round((sell_price - current) / sell_price * 100, 2) if sell_price else 0
+            p["profit_capture_pct"] = p["pnl_pct"]
+            if delta is not None and theta is not None:
+                daily_theta = -theta
+                daily_delta = -delta * spy_change
+                p["daily_pnl"] = round((daily_theta + daily_delta) * contracts * 100, 2)
+            else:
                 p["daily_pnl"] = None
-            # When the data provider is down, get_option_price() falls back to 0
-            # and the chain fetch yields no greeks — which would otherwise read as
-            # "option worth $0 → 100% profit → Take Profit." Flag that state so the
-            # UI shows "price unavailable" instead of a fabricated max gain. A
-            # genuinely worthless option still carries greeks from the chain, so we
-            # only flag when BOTH the price is 0 and greeks are missing.
-            p["price_unavailable"] = ((current is None or current == 0) and p.get("delta") is None)
+            # Only truly unavailable when even the last-known fallback came up empty:
+            # no usable mark AND no greeks anywhere. A genuinely worthless option
+            # still carries greeks, so requiring both avoids the fake "max gain."
+            p["price_unavailable"] = ((current is None or current == 0) and delta is None)
             intrinsic_val = round(max(0.0, spy_price - float(pos["strike"])), 2) if spy_price > 0 else 0.0
             p["intrinsic_value"] = intrinsic_val
             p["time_premium"] = round(max(0.0, (p.get("current_price") or 0.0) - intrinsic_val), 2)
