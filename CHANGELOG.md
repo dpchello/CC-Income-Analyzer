@@ -4,6 +4,31 @@ All notable changes to Harvest are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.0.0] - 2026-06-12
+
+### Added
+- **Roll further out & higher (restructure).** When a position is deep in the money,
+  the action card now has a "restructure" panel that scans the full LEAP horizon —
+  not just the next 30–45 days — and shows how far out you can go and how high a
+  strike you can reach while still collecting a net credit. It ranks the choices on
+  what you actually care about (upside kept, tax deferral, premium collected,
+  assignment safety, and how long your shares stay locked up), with live sliders to
+  retune what "best" means and a "Defers the taxable event to next year" flag.
+- **Claude doctor in the desktop control panel.** Harvest.app now has "Investigate &
+  fix" and "Diagnose" actions. Diagnose reports a root cause and changes nothing;
+  Investigate & fix has Claude find the problem, fix it, reload the app, verify it's
+  healthy, and commit the fix. Both run in the background and open a live log.
+
+### Fixed
+- **Position prices not updating.** Open option prices in the Positions tab could
+  show $0 (and a fake "100% profit") whenever the market-data feed returned no
+  bid/ask — common pre/post-market and intraday for many strikes. The price now
+  falls back to the last traded price, so marks and P&L stay real.
+- **Backend restart loop.** A conflict between the launchd service and the control
+  script could leave two servers fighting over port 8000, flooding the error log.
+  launchd is now the single supervisor and the control script delegates to it, so
+  start/stop/reload are clean.
+
 ## [0.3.5.0] - 2026-06-09
 
 ### Fixed

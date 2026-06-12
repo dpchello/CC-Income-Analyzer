@@ -66,6 +66,32 @@ def _clean_int(v):
     return int(v)
 
 
+def _pos_float(v):
+    """A strictly-positive float, or 0.0 for None/NaN/non-positive."""
+    try:
+        v = float(v)
+    except (TypeError, ValueError):
+        return 0.0
+    return v if (v == v and v > 0) else 0.0   # v == v filters NaN
+
+
+def _mark_from_quote(bid, ask, last):
+    """Best available option mark: the bid/ask midpoint when both quotes are live,
+    otherwise the last traded price.
+
+    yfinance routinely returns bid=ask=0 for SPY option strikes — pre/post-market,
+    and intraday for many strikes — while ``lastPrice`` still carries a valid quote.
+    Without this fallback the mark collapses to 0, so every open position reads as
+    "option worth $0 → 100% profit" and the live price never updates.
+    """
+    b, a, l = _pos_float(bid), _pos_float(ask), _pos_float(last)
+    if b > 0 and a > 0:
+        return round((b + a) / 2, 2)
+    if l > 0:
+        return round(l, 2)
+    return 0.0
+
+
 CACHE_TTL = 60  # seconds
 
 # ── Dividend cache (24h TTL — quarterly data doesn't change intraday) ─────────
@@ -282,8 +308,9 @@ class DataFetcher:
                 row["theta"] = theta
                 row["vega"]  = vega
 
-                # Intrinsic value & time premium
-                mid = round(((row.get("bid") or 0) + (row.get("ask") or 0)) / 2, 2)
+                # Intrinsic value & time premium. Use the same bid/ask→last
+                # fallback as get_option_price so a 0/0 quote doesn't zero the mark.
+                mid = _mark_from_quote(row.get("bid"), row.get("ask"), row.get("lastPrice"))
                 intrinsic = round(max(0.0, spot - float(row.get("strike") or 0)), 2)
                 row["intrinsic_value"] = intrinsic
                 row["time_premium"]    = round(max(0.0, mid - intrinsic), 2)
@@ -305,9 +332,7 @@ class DataFetcher:
             row = df[df["strike"] == strike]
             if row.empty:
                 row = df.iloc[(df["strike"] - strike).abs().argsort()[:1]]
-            bid = float(row["bid"].iloc[0])
-            ask = float(row["ask"].iloc[0])
-            mid = round((bid + ask) / 2, 2)
+            mid = _mark_from_quote(row["bid"].iloc[0], row["ask"].iloc[0], row["lastPrice"].iloc[0])
         except Exception:
             mid = 0.0
         _cache.set(cache_key, mid)
@@ -331,6 +356,39 @@ class DataFetcher:
         except Exception:
             result = []
         _cache.set("expiries", result)
+        return result
+
+    def get_expiries_in_range(self, ticker: str = "SPY", min_dte: int = 30, max_dte: int = 600) -> list:
+        """All listed expiries for ``ticker`` whose DTE falls in [min_dte, max_dte].
+
+        Unlike get_available_expiries (capped at 21–60 DTE for the screener), this
+        spans the full LEAP horizon so the diagonal-restructure engine can answer
+        "how far out can I get". Down-sampled to one expiry per ~21-day bucket past
+        90 DTE so a 18-month scan stays a handful of chain fetches, not 30+.
+        """
+        cache_key = f"exp_range_{ticker}_{min_dte}_{max_dte}"
+        cached = _cache.get(cache_key)
+        if cached:
+            return cached
+        try:
+            t = _ticker(ticker)
+            today = datetime.today().date()
+            in_range = []
+            for exp in t.options:
+                dte = (datetime.strptime(exp, "%Y-%m-%d").date() - today).days
+                if min_dte <= dte <= max_dte:
+                    in_range.append((exp, dte))
+            # Keep every expiry inside 90 DTE; past that, one per ~21-day bucket.
+            result, last_far = [], None
+            for exp, dte in in_range:
+                if dte <= 90:
+                    result.append(exp)
+                elif last_far is None or dte - last_far >= 21:
+                    result.append(exp)
+                    last_far = dte
+        except Exception:
+            result = []
+        _cache.set(cache_key, result)
         return result
 
     def get_oi_chart_expiries(self) -> list:

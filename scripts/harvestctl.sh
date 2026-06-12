@@ -22,11 +22,24 @@ HOST="127.0.0.1"
 PORT="8000"
 URL="http://$HOST:$PORT"
 
+# launchd is the single supervisor (boot autostart + crash recovery). This script
+# delegates to it when the LaunchAgent is installed, and only falls back to a raw
+# nohup when it isn't — so we never race launchd's KeepAlive by killing its child
+# out from under it (that loop logged ~25k "address already in use" errors).
+LABEL="com.harvest.backend"
+DOMAIN="gui/$(id -u 2>/dev/null || echo 501)"
+PLIST="$HOME/Library/LaunchAgents/$LABEL.plist"
+
 STATE_DIR="$HOME/.harvest"
 LOG_DIR="$HOME/Library/Logs/Harvest"
 PIDFILE="$STATE_DIR/backend.pid"
 LOG="$LOG_DIR/backend.log"
 mkdir -p "$STATE_DIR" "$LOG_DIR"
+
+# Claude doctor (investigate / fix) — logic lives in claude-doctor.sh; we just launch it.
+DOCTOR="$SCRIPT_DIR/claude-doctor.sh"
+DOCTOR_LOG="$LOG_DIR/claude-doctor.log"
+DOCTOR_SUMMARY="$LOG_DIR/claude-doctor.summary.md"
 
 # The desktop app runs us with a bare PATH (Apple events), so make the tools we
 # call (lsof, curl, ps, python3) findable regardless of how we were launched.
@@ -68,49 +81,68 @@ _state() {
 
 _python_ok() { "$PYTHON" -c 'import uvicorn' >/dev/null 2>&1; }
 
+# launchd helpers
+_launchd_loaded()  { launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; }
+_launchd_present() { [ -f "$PLIST" ]; }
+_wait_serving() {   # poll up to ~10s for a 200 on /
+  local i code=000
+  for i in $(seq 1 25); do code="$(_http_code "$URL/")"; [ "$code" = "200" ] && return 0; sleep 0.4; done
+  return 1
+}
+# Kill any process bound to :8000 that launchd is NOT supervising (a stray nohup
+# from the legacy code path). Never used against the launchd child.
+_kill_stray_listeners() {
+  local left; left="$(_listener_pids)"
+  [ -z "$left" ] && return 0
+  echo "$left" | xargs kill 2>/dev/null; sleep 1
+  left="$(_listener_pids)"; [ -n "$left" ] && { echo "$left" | xargs kill -9 2>/dev/null; sleep 0.5; }
+}
+
 # ── commands ─────────────────────────────────────────────────────────────────
 
 _start() {
-  local pids; pids="$(_listener_pids | tr '\n' ' ')"
-  if [ -n "$pids" ]; then echo "Already running (pid ${pids%% }) on $URL"; return 0; fi
+  if [ -n "$(_listener_pids)" ]; then echo "Already running on $URL"; return 0; fi
   if [ ! -d "$BACKEND" ]; then echo "ERROR: backend dir not found: $BACKEND"; return 1; fi
+
+  # Preferred path: let launchd own the process.
+  if _launchd_present; then
+    echo "$(date '+%Y-%m-%d %H:%M:%S') [harvestctl] start via launchd ($LABEL)" >> "$LOG"
+    if _launchd_loaded; then launchctl kickstart "$DOMAIN/$LABEL" >/dev/null 2>&1
+    else launchctl bootstrap "$DOMAIN" "$PLIST" >/dev/null 2>&1; fi
+    if _wait_serving; then echo "Started (launchd) — $URL is serving."
+    else echo "Launched via launchd but $URL not responding yet. See $LOG / backend.err.log"; fi
+    return
+  fi
+
+  # Fallback (no LaunchAgent installed): raw nohup, fully detached.
   if ! _python_ok; then
     echo "ERROR: '$PYTHON' can't import uvicorn. Install deps:"
     echo "  $PYTHON -m pip install -r $BACKEND/requirements.txt"
     return 1
   fi
-  echo "$(date '+%Y-%m-%d %H:%M:%S') [harvestctl] start $URL" >> "$LOG"
-  # Launch fully detached. The subshell's own stdout/stderr go to /dev/null so the
-  # background server never holds a caller's capture pipe — otherwise macOS
-  # `do shell script` (the desktop app) would block until the server is killed.
+  echo "$(date '+%Y-%m-%d %H:%M:%S') [harvestctl] start (nohup) $URL" >> "$LOG"
   ( cd "$BACKEND" && nohup "$PYTHON" -m uvicorn main:app --host "$HOST" --port "$PORT" \
       < /dev/null >> "$LOG" 2>&1 & echo $! > "$PIDFILE" ) >/dev/null 2>&1 &
-  local i code=000
-  for i in $(seq 1 25); do
-    code="$(_http_code "$URL/")"; [ "$code" = "200" ] && break; sleep 0.4
-  done
-  # Record the actual listener pid (the launcher pid can differ by one).
-  local real; real="$(_listener_pids | head -1)"; [ -n "$real" ] && echo "$real" > "$PIDFILE"
-  if [ "$code" = "200" ]; then
+  if _wait_serving; then
+    local real; real="$(_listener_pids | head -1)"; [ -n "$real" ] && echo "$real" > "$PIDFILE"
     echo "Started (pid $(cat "$PIDFILE" 2>/dev/null)) — $URL is serving."
   else
-    echo "Launched but $URL not responding yet (code $code). See log:"
-    echo "  $LOG"
+    echo "Launched but $URL not responding yet. See log: $LOG"
   fi
 }
 
 _stop() {
-  local pids; pids="$(_listener_pids)"
-  [ -f "$PIDFILE" ] && pids="$pids $(cat "$PIDFILE" 2>/dev/null)"
-  pids="$(printf '%s\n' $pids | grep -E '^[0-9]+$' | sort -u)"
-  if [ -z "$pids" ]; then echo "Not running."; rm -f "$PIDFILE"; return 0; fi
-  echo "Stopping: $(echo $pids | tr '\n' ' ')"
-  echo "$pids" | xargs kill 2>/dev/null
-  sleep 1.5
-  local left; left="$(_listener_pids)"
-  [ -n "$left" ] && { echo "$left" | xargs kill -9 2>/dev/null; sleep 0.5; }
+  # Bootout removes the job from the domain so KeepAlive does NOT respawn it —
+  # the crux of the old bug, where a kill-by-port tripped an endless restart loop.
+  if _launchd_present && _launchd_loaded; then
+    echo "Stopping launchd job $LABEL…"
+    launchctl bootout "$DOMAIN/$LABEL" >/dev/null 2>&1
+    sleep 1
+  fi
+  _kill_stray_listeners   # clean up any legacy nohup straggler too
   rm -f "$PIDFILE"
-  if [ -z "$(_listener_pids)" ]; then echo "Stopped — $URL is offline."; else echo "WARN: something is still bound to :$PORT"; fi
+  if [ -z "$(_listener_pids)" ]; then echo "Stopped — $URL is offline."
+  else echo "WARN: something is still bound to :$PORT"; fi
 }
 
 _status() {
@@ -159,16 +191,49 @@ _agent_on()     { echo "on"  > "$AGENT_FLAG"; echo "Nightly upgrade agent: ON"; 
 _agent_off()    { echo "off" > "$AGENT_FLAG"; echo "Nightly upgrade agent: OFF"; }
 _agent_toggle() { if [ "$(_agent_state)" = "ON" ]; then _agent_off; else _agent_on; fi; }
 
+# ── Claude doctor ─────────────────────────────────────────────────────────────
+# Launch claude-doctor.sh fully detached and return immediately, so the desktop
+# control panel never blocks while Claude investigates (can take minutes).
+_doctor_launch() {   # $1 = fix|diagnose
+  local mode="$1"
+  export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+  if [ ! -f "$DOCTOR" ]; then echo "ERROR: doctor script not found: $DOCTOR"; return 1; fi
+  if ! command -v claude >/dev/null 2>&1; then
+    echo "ERROR: 'claude' CLI not found on PATH — install Claude Code to use the doctor."; return 1
+  fi
+  echo "$(date '+%Y-%m-%d %H:%M:%S') [harvestctl] launching doctor:$mode" >> "$DOCTOR_LOG"
+  ( nohup /bin/bash "$DOCTOR" "$mode" < /dev/null >> "$DOCTOR_LOG" 2>&1 & ) >/dev/null 2>&1 &
+  if [ "$mode" = "fix" ]; then
+    echo "🩺 Claude is investigating and will fix + reload, then commit to main. Watch the log."
+  else
+    echo "🔍 Claude is diagnosing (read-only). Watch the log; report lands in the summary."
+  fi
+}
+
 case "${1:-status}" in
   start)            _start ;;
   stop|end|kill)    _stop ;;
-  reload|restart)   echo "Reloading…"; _stop; _start ;;
+  reload|restart)
+    if _launchd_present && _launchd_loaded; then
+      echo "Reloading (launchd kickstart -k)…"
+      _kill_stray_listeners                       # clear any legacy nohup holding :8000
+      launchctl kickstart -k "$DOMAIN/$LABEL" >/dev/null 2>&1
+      if _wait_serving; then echo "Reloaded — $URL is serving."
+      else echo "Reloaded but $URL not responding yet. See $LOG / backend.err.log"; fi
+    else
+      echo "Reloading…"; _stop; _start
+    fi
+    ;;
   status)           _status ;;
   state)            _state ;;
   logs|log)         echo "$LOG" ;;
+  doctor|fix)       _doctor_launch fix ;;
+  diagnose|check-ai) _doctor_launch diagnose ;;
+  doctor-log)       echo "$DOCTOR_LOG" ;;
+  doctor-summary)   echo "$DOCTOR_SUMMARY" ;;
   agent-state)      _agent_state ;;
   agent-on)         _agent_on ;;
   agent-off)        _agent_off ;;
   agent-toggle)     _agent_toggle ;;
-  *) echo "usage: harvestctl {start|reload|stop|status|state|logs|agent-state|agent-on|agent-off|agent-toggle}"; exit 2 ;;
+  *) echo "usage: harvestctl {start|reload|stop|status|state|logs|doctor|diagnose|doctor-log|doctor-summary|agent-state|agent-on|agent-off|agent-toggle}"; exit 2 ;;
 esac

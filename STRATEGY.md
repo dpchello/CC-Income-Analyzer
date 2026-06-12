@@ -122,9 +122,13 @@ keep") into the moment it matters most.
 3. **Track the runway** — show *cost-to-close* and *financing runway*: how many income cycles, at
    the current premium pace, to neutralize the position.
 
-**Status:** active goal, **not yet built.** Scored as goal #6 in the `/whats-next` strategist
-rubric; leading indicator is *positions defended without a forced assignment* and the trend in
-their cost-to-close.
+**Status:** **partially built.** Item #1 (roll up / out / up-and-out) is live: near-dated
+3-scenario roll targets surface in the action cards (PIPE-001), and the **diagonal-restructure
+LEAP engine** (PIPE-002) extends it across the full long-dated horizon — ranking candidates on
+upside kept, tax deferral, net credit, and assignment safety, and exposing the coverage-ratio
+(contract-count) lever. Item #2 (finance-the-buyback) and item #3 (runway) remain queued
+(PIPE-036). Scored as goal #6 in the `/whats-next` strategist rubric; leading indicator is
+*positions defended without a forced assignment* and the trend in their cost-to-close.
 
 **Why it's a wedge:** holder-focused tools *warn* you about assignment; none *engineer the way
 out*. A visible "roll-to-credit + finance-the-buyback, with a runway" workflow is differentiated
@@ -198,6 +202,7 @@ Every shipped feature, what it does, and why it exists.
 | PIPE-034 | SnapTrade Brokerage Import | Full SnapTrade integration: register user, connect portal, account selection, holdings import with dedup (upsert by snaptrade_account_id), category mapping (long_stock/covered_call/options), avg_cost from average_purchase_price |
 | PIPE-035 | Brokerage Portfolio Folders | Auto-creates one portfolio per SnapTrade account on sync, grouped into collapsible brokerage folders in sidebar; starred portfolios float to top; any portfolio renameable inline; dedup fixed with unique index on (user_id, snaptrade_account_id) |
 | PIPE-001 | Roll Targets + Defense in Action Cards | Surfaces the existing roll/defense backend on every position card: 3-scenario roll targets, early-exercise risk with a "why", and "roll to this" pre-filling the Add Position form |
+| PIPE-002 | Diagonal Restructure (LEAP roll engine) | `/api/diagonal-restructure` scans the full LEAP horizon and ranks rolls on a 4-factor composite (upside kept · tax deferral · net credit · assignment safety); surfaces a net-credit frontier ("how far out / how high") + coverage-ratio lever in the action card. Extends Position Defense item #1 beyond near-dated rolls |
 | — | OI Chart History Scrubber | Replay open-interest buildup day by day; every snapshot preloaded so scrubbing and playback are instant (v0.3.4.0) |
 | — | Gamma Pins on OI Chart | Marks the gamma pin (with strength score), max-pain level, and call/put walls, each with a plain-English tooltip (v0.3.4.0) |
 | — | Pre-open OI Snapshot Scheduler | Captures the morning open-interest figure once per trading day so the chart is consistent regardless of when the app is opened (v0.3.4.0) |
