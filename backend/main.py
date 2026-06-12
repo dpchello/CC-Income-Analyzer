@@ -47,6 +47,12 @@ app.add_middleware(
 )
 
 
+@app.on_event("startup")
+def _warmup():
+    """Warm the Supabase HTTP pool so the first real request isn't the cold one."""
+    db.warm_connection()
+
+
 @app.middleware("http")
 async def daily_snapshot_guard(request, call_next):
     """Self-healing: first request of each day kicks the OI snapshot in the

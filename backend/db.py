@@ -5,7 +5,9 @@ All queries use the service role key and include explicit user_id filters on
 every operation. RLS policies in 001_schema.sql provide defense-in-depth.
 """
 
+import logging
 import os
+import time
 import uuid
 from datetime import date
 from pathlib import Path
@@ -13,6 +15,8 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from supabase import create_client, Client
+
+logger = logging.getLogger(__name__)
 
 load_dotenv(Path(__file__).parent / ".env")
 
@@ -26,6 +30,39 @@ if not _SUPABASE_URL or not _SUPABASE_KEY:
     )
 
 sb: Client = create_client(_SUPABASE_URL, _SUPABASE_KEY)
+
+
+def _with_retry(fn, retries=3, backoff=0.5):
+    """Retry a Supabase query on transient connection errors (cold-start httpx)."""
+    last_exc = None
+    for attempt in range(retries):
+        try:
+            return fn()
+        except Exception as exc:
+            err_str = str(exc).lower()
+            transient = (
+                "resource temporarily unavailable" in err_str
+                or "errno 35" in err_str
+                or "read error" in err_str
+                or "connection reset" in err_str
+                or "connect timeout" in err_str
+            )
+            if not transient:
+                raise
+            last_exc = exc
+            wait = backoff * (2 ** attempt)
+            logger.warning("Supabase transient error (attempt %d/%d), retrying in %.1fs: %s",
+                           attempt + 1, retries, wait, exc)
+            time.sleep(wait)
+    raise last_exc
+
+
+def warm_connection():
+    """Fire a cheap query to warm the Supabase HTTP pool on startup."""
+    try:
+        sb.table("users").select("id").limit(1).execute()
+    except Exception:
+        pass  # best-effort; the retry wrapper handles real failures
 
 
 # ── Users ─────────────────────────────────────────────────────────────────────
@@ -84,11 +121,13 @@ def increment_usage(user_id: str, action: str, log_date: str) -> dict:
 # ── Portfolios ────────────────────────────────────────────────────────────────
 
 def get_portfolios(user_id: str) -> list:
-    r = (sb.table("portfolios")
-           .select("*")
-           .eq("user_id", user_id)
-           .order("created_date")
-           .execute())
+    r = _with_retry(lambda: (
+        sb.table("portfolios")
+          .select("*")
+          .eq("user_id", user_id)
+          .order("created_date")
+          .execute()
+    ))
     return r.data or []
 
 def get_portfolio(user_id: str, portfolio_id: str) -> Optional[dict]:
@@ -169,10 +208,12 @@ def star_portfolio(user_id: str, portfolio_id: str, starred: bool) -> Optional[d
 # ── Positions ─────────────────────────────────────────────────────────────────
 
 def get_positions(user_id: str, portfolio_id: Optional[str] = None) -> list:
-    q = sb.table("positions").select("*").eq("user_id", user_id)
-    if portfolio_id:
-        q = q.eq("portfolio_id", portfolio_id)
-    r = q.order("created_at").execute()
+    def _query():
+        q = sb.table("positions").select("*").eq("user_id", user_id)
+        if portfolio_id:
+            q = q.eq("portfolio_id", portfolio_id)
+        return q.order("created_at").execute()
+    r = _with_retry(_query)
     return r.data or []
 
 def get_position(user_id: str, position_id: str) -> Optional[dict]:
@@ -215,10 +256,12 @@ def get_open_positions(user_id: str) -> list:
 # ── Holdings ──────────────────────────────────────────────────────────────────
 
 def get_holdings(user_id: str, portfolio_id: Optional[str] = None) -> list:
-    q = sb.table("holdings").select("*").eq("user_id", user_id)
-    if portfolio_id:
-        q = q.eq("portfolio_id", portfolio_id)
-    r = q.order("created_at").execute()
+    def _query():
+        q = sb.table("holdings").select("*").eq("user_id", user_id)
+        if portfolio_id:
+            q = q.eq("portfolio_id", portfolio_id)
+        return q.order("created_at").execute()
+    r = _with_retry(_query)
     return r.data or []
 
 def get_holding(user_id: str, holding_id: str) -> Optional[dict]:
