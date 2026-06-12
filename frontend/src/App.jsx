@@ -37,40 +37,48 @@ export default function App() {
   const [alphaData, setAlphaData]   = useState({ news: null, technicals: null, usage: null })
   const [pnlData, setPnlData]       = useState(null)
   const [loading, setLoading]       = useState(true)
+  const [fetchError, setFetchError] = useState(false)
   const [upgradeModal, setUpgradeModal] = useState(null)
   const [screenerTicker, setScreenerTicker] = useState(null)
   const [snapHealth, setSnapHealth] = useState(null)
   // TODO PIPE-REC-02: Replace with real count once GET /recommendations ships
   const [recCount, setRecCount] = useState(0)
 
+  const safeFetch = useCallback((url) =>
+    apiFetch(url).then(r => {
+      if (!r.ok) throw new Error(`${url} ${r.status}`)
+      return r.json()
+    }),
+  [apiFetch])
+
   const fetchAll = useCallback(async () => {
-    try {
-      const [dash, sig, pos, ptf, hld, news, tech, usage, pnl, snapH] = await Promise.all([
-        apiFetch('/api/dashboard').then(r => r.json()),
-        apiFetch('/api/signals').then(r => r.json()),
-        apiFetch('/api/positions').then(r => r.json()),
-        apiFetch('/api/portfolios').then(r => r.json()),
-        apiFetch('/api/holdings').then(r => r.json()),
-        apiFetch('/api/alpha/news').then(r => r.json()).catch(() => null),
-        apiFetch('/api/alpha/technicals').then(r => r.json()).catch(() => null),
-        apiFetch('/api/alpha/usage').then(r => r.json()).catch(() => null),
-        apiFetch('/api/pnl-summary').then(r => r.json()).catch(() => null),
-        apiFetch('/api/snaptrade/health').then(r => r.json()).catch(() => null),
-      ])
-      setDashData(dash)
-      setSignalData(sig)
-      setPositions(pos)
-      setPortfolios(ptf)
-      setHoldings(hld)
-      setAlphaData({ news, technicals: tech, usage })
-      setPnlData(pnl)
-      setSnapHealth(snapH)
-    } catch (e) {
-      console.error('Fetch error:', e)
-    } finally {
-      setLoading(false)
-    }
-  }, [apiFetch])
+    const [dash, sig, pos, ptf, hld, news, tech, usage, pnl, snapH] = await Promise.all([
+      safeFetch('/api/dashboard').catch(() => undefined),
+      safeFetch('/api/signals').catch(() => undefined),
+      safeFetch('/api/positions').catch(() => undefined),
+      safeFetch('/api/portfolios').catch(() => undefined),
+      safeFetch('/api/holdings').catch(() => undefined),
+      safeFetch('/api/alpha/news').catch(() => null),
+      safeFetch('/api/alpha/technicals').catch(() => null),
+      safeFetch('/api/alpha/usage').catch(() => null),
+      safeFetch('/api/pnl-summary').catch(() => null),
+      safeFetch('/api/snaptrade/health').catch(() => null),
+    ])
+    // Only update state for critical fetches that succeeded (not undefined).
+    // A transient 500 must NOT overwrite previously loaded data with [].
+    const anyCoreFailed = dash === undefined || sig === undefined ||
+      pos === undefined || ptf === undefined || hld === undefined
+    if (dash !== undefined) setDashData(dash)
+    if (sig !== undefined) setSignalData(sig)
+    if (pos !== undefined) setPositions(pos)
+    if (ptf !== undefined) setPortfolios(ptf)
+    if (hld !== undefined) setHoldings(hld)
+    setAlphaData({ news: news ?? null, technicals: tech ?? null, usage: usage ?? null })
+    setPnlData(pnl ?? null)
+    setSnapHealth(snapH ?? null)
+    setFetchError(anyCoreFailed)
+    setLoading(false)
+  }, [safeFetch])
 
   useEffect(() => {
     if (!user) return
@@ -146,6 +154,26 @@ export default function App() {
         )}
 
         <main style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}>
+          {fetchError && !loading && (
+            <div style={{
+              padding: '10px 24px', fontSize: 13, marginBottom: 16,
+              background: 'rgba(255,80,80,0.08)', border: '1px solid rgba(255,80,80,0.25)',
+              borderRadius: 'var(--radius-md)', color: 'var(--fg)',
+              display: 'flex', alignItems: 'center', gap: 12,
+            }}>
+              <span>Couldn't load some data — this is usually temporary.</span>
+              <button
+                onClick={fetchAll}
+                style={{
+                  fontSize: 12, padding: '4px 12px', cursor: 'pointer',
+                  border: '1px solid var(--border)', borderRadius: 'var(--radius-md)',
+                  background: 'var(--surface)', color: 'var(--fg)',
+                }}
+              >
+                Retry
+              </button>
+            </div>
+          )}
           {loading ? (
             <LoadingState />
           ) : (

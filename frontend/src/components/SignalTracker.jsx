@@ -186,7 +186,7 @@ export function ScreenerPanel({ portfolios, holdings, positions, onRefresh, regi
   const { apiFetch } = useAuth()
   const activePortfolios = (portfolios || []).filter(p => !p.archived)
   const [selectedPortfolioId, setSelectedPortfolioId] = useState(
-    () => activePortfolios[0]?.id || 'default'
+    () => activePortfolios[0]?.id || ''
   )
   // DTE range presets: label, min_dte, max_dte
   const DTE_RANGES = [
