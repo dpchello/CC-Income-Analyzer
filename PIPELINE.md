@@ -27,7 +27,7 @@
 ## Pipeline
 
 ### PIPE-039 · Portfolios vanish on cold restart (transient Supabase 500 → first-run empty state)
-**Status:** `approved`
+**Status:** `done`
 **Severity:** P0 — looks like total data loss to the user; data is actually intact.
 **Reported:** 2026-06-10 — user opened the app after the overnight cycle and saw the empty
 "Let's set up your first portfolio" screen instead of their portfolios (app header showed v0.3.4.0).
@@ -78,6 +78,7 @@ cold backend restart** (`harvestctl.sh reload`), which exposed two latent bugs:
 guard), then rebuild dist. No backend API contract change.
 **Rationale:** Goal #5 (trust). A holder who sees "set up your first portfolio" believes the app ate
 their data — the fastest possible way to lose trust on a self-hosted app that cold-restarts every night.
+**Implementation notes:** Three-layer fix. (1) `backend/db.py` — added `_with_retry(fn, retries=3, backoff=0.5)` wrapper that catches transient `httpx.ReadError`/`[Errno 35]`/connection-reset exceptions and retries with exponential backoff; applied to `get_portfolios`, `get_positions`, `get_holdings`. Added `warm_connection()` that fires a cheap query on startup to prime the HTTP pool. `backend/main.py` — added `@app.on_event("startup")` calling `db.warm_connection()`. (2) `frontend/src/App.jsx` — all five critical fetches (`dashboard`, `signals`, `positions`, `portfolios`, `holdings`) now have individual `.catch(() => undefined)`; on failure the setter is skipped so previously-loaded state is never overwritten with `[]`. Added `fetchError` state + error banner ("Couldn't load some data") with a Retry button, shown above the main content when any core fetch fails. (3) `frontend/src/components/SignalTracker.jsx` — changed screener default `selectedPortfolioId` from `'default'` (stale pre-migration string) to `''`, preventing Postgres `22P02` invalid UUID errors. Frontend dist rebuilt. Build passed.
 
 ---
 
