@@ -36,6 +36,7 @@ function Stat({ label, value, sub, accent }) {
         fontSize: 22, fontWeight: 600, lineHeight: 1.1,
         color: accent ? 'var(--acid)' : 'var(--fg)',
         fontVariantNumeric: 'tabular-nums',
+        minWidth: 0, overflowWrap: 'break-word',
       }}>
         {value}
       </div>
@@ -382,6 +383,7 @@ export default function StrategyPerformance({ strategyId, ticker = 'SPY', shareC
               <div style={{
                 fontSize: 12, color: 'var(--fg-mute)', marginBottom: 14,
                 fontVariantNumeric: 'tabular-nums',
+                minWidth: 0, overflowWrap: 'break-word',
               }}>
                 {data.ticker} · {data.lookback_days}-day lookback ({data.data_window?.start} → {data.data_window?.end}) ·
                 {' '}{data.entry_dates_evaluated} entry dates evaluated
@@ -443,7 +445,7 @@ export default function StrategyPerformance({ strategyId, ticker = 'SPY', shareC
                   <span style={{ color: 'var(--fg-mute)', marginLeft: 6, fontSize: 11 }}>
                     regime-gated minus unconditional · this is the engine's lift, not absolute alpha
                   </span>
-                  <div style={{ marginTop: 6, display: 'flex', gap: 18, flexWrap: 'wrap' }}>
+                  <div style={{ marginTop: 6, display: 'flex', gap: 18, flexWrap: 'wrap', minWidth: 0 }}>
                     {data.engine_edge.alpha_lift_dollar != null && (
                       <span>
                         Alpha lift:{' '}

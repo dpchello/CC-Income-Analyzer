@@ -251,7 +251,7 @@ function UpcomingEventsPanel() {
           {events.map((ev, i) => (
             <div key={i} className="flex items-center justify-between gap-2 text-xs px-2 py-1.5 border" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg)', borderRadius: 'var(--radius-sm)' }}>
               <span className="font-mono shrink-0" style={{ color: 'var(--text)' }}>{ev.date}</span>
-              <span className="flex-1" style={{ color: 'var(--muted)' }}>{ev.description}</span>
+              <span className="flex-1" style={{ color: 'var(--muted)', minWidth: 0, overflowWrap: 'break-word' }}>{ev.description}</span>
               <button
                 onClick={() => handleRemove(ev.date, ev.description)}
                 className="text-[10px] px-1.5 py-0.5"
@@ -428,7 +428,7 @@ function FeedbackNotificationsPanel() {
                 onChange={e => setSmtpHost(e.target.value)}
                 placeholder="smtp.gmail.com"
                 className="text-xs px-2 py-1.5 border flex-1"
-                style={inputStyle}
+                style={{ ...inputStyle, minWidth: 0 }}
               />
               <input
                 type="number"
@@ -446,7 +446,7 @@ function FeedbackNotificationsPanel() {
                 onChange={e => setSmtpUser(e.target.value)}
                 placeholder="SMTP username"
                 className="text-xs px-2 py-1.5 border flex-1"
-                style={inputStyle}
+                style={{ ...inputStyle, minWidth: 0 }}
               />
               <input
                 type="password"
@@ -454,7 +454,7 @@ function FeedbackNotificationsPanel() {
                 onChange={e => setSmtpPass(e.target.value)}
                 placeholder="Password (leave blank to keep existing)"
                 className="text-xs px-2 py-1.5 border flex-1"
-                style={inputStyle}
+                style={{ ...inputStyle, minWidth: 0 }}
               />
             </div>
           </div>
@@ -927,7 +927,7 @@ export default function Settings({ onRefresh, alphaUsage }) {
           ].map(([k, v]) => (
             <div key={k} className="flex gap-3">
               <span className="w-36 shrink-0" style={{ color: 'var(--text)' }}>{k}</span>
-              <span>{v}</span>
+              <span style={{ minWidth: 0, overflowWrap: 'break-word' }}>{v}</span>
             </div>
           ))}
         </div>

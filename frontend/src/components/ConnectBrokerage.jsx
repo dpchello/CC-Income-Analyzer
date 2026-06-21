@@ -134,6 +134,7 @@ export default function ConnectBrokerage({ onClose, onImported, syncOnly = false
       position: 'fixed', inset: 0, zIndex: 50,
       display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: 'rgba(0,0,0,0.65)',
+      padding: 16,
     }}>
       <div style={{
         background: 'var(--surface)', border: '1px solid var(--border)',
@@ -318,7 +319,7 @@ export default function ConnectBrokerage({ onClose, onImported, syncOnly = false
                             <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {acc.name || acc.number || 'Account'}
                             </div>
-                            <div style={{ fontSize: 11, color: 'var(--fg-mute)', marginTop: 1 }}>
+                            <div style={{ fontSize: 11, color: 'var(--fg-mute)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {[acc.brokerage_name, acc.type, acc.number].filter(Boolean).join(' · ')}
                             </div>
                           </div>
@@ -431,7 +432,7 @@ export default function ConnectBrokerage({ onClose, onImported, syncOnly = false
                   <div key={i} style={{
                     padding: 12, background: 'var(--bg)',
                     border: '1px solid var(--border)', borderRadius: 'var(--radius-md)',
-                    fontSize: 12, fontFamily: 'monospace',
+                    fontSize: 12, fontFamily: 'monospace', minWidth: 0, overflowWrap: 'break-word',
                   }}>
                     <span style={{ color: 'var(--gold)' }}>{c.incoming?.ticker}</span>
                     {' '}${c.incoming?.strike} exp {c.incoming?.expiry}

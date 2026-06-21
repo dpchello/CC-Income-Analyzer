@@ -596,7 +596,7 @@ function RecCard({ rec, highlight, onHighlight, onNavigate, cardRef }) {
       }}
     >
       {/* 1. Meta row */}
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 8 }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 8, minWidth: 0 }}>
         <span style={{ fontFamily: 'var(--mono)', fontSize: 18, color: 'var(--fg)', fontWeight: 600 }}>
           {rec.sym}
         </span>
@@ -613,7 +613,7 @@ function RecCard({ rec, highlight, onHighlight, onNavigate, cardRef }) {
       </div>
 
       {/* 2. Action string */}
-      <div style={{ fontSize: 15, fontWeight: 500, letterSpacing: '-0.005em', marginBottom: 8, color: 'var(--fg)' }}>
+      <div style={{ fontSize: 15, fontWeight: 500, letterSpacing: '-0.005em', marginBottom: 8, color: 'var(--fg)', overflowWrap: 'break-word' }}>
         {rec.action}
       </div>
 
@@ -684,7 +684,7 @@ function LoadingSkeleton() {
       {/* Cards skeleton */}
       <div style={{ padding: '28px 0 0' }}>
         <Skeleton width={160} height={12} className="mb-4" />
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(480px, 1fr))', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(480px, 100%), 1fr))', gap: 12 }}>
           {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="h-card" style={{ padding: 20 }}>
               <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
@@ -901,7 +901,7 @@ export default function Recommendations({ portfolios: rawPortfolios = [], holdin
                 id="rec-cards-container"
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: 'repeat(auto-fill, minmax(480px, 1fr))',
+                  gridTemplateColumns: 'repeat(auto-fill, minmax(min(480px, 100%), 1fr))',
                   gap: 12,
                 }}
               >

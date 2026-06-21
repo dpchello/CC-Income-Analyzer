@@ -118,12 +118,14 @@ html, body {
   background: var(--bg-card);
   border: 1px solid var(--line);
   border-radius: var(--r-2);
+  overflow-wrap: anywhere;   /* backstop: long values wrap instead of bleeding past the border */
 }
 
 .h-elev {
   background: var(--bg-elev);
   border: 1px solid var(--line);
   border-radius: var(--r-2);
+  overflow-wrap: anywhere;
 }
 
 .h-hair { border: 0; border-top: 1px solid var(--line); margin: 0; }
@@ -284,6 +286,37 @@ html, body {
 
 /* ── Compat aliases — maps old dark-theme tokens to Harvest equivalents.
      Keeps un-migrated components functional while we migrate each screen. ── */
+
+/* ── Responsive utilities (PIPE-024) ───────────────────────────────────────── */
+
+/* Horizontal-scroll track for dense financial tables. Wrap a wide grid/table in
+   this so the *track* scrolls sideways and the page never does. */
+.h-scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+
+/* Mobile reflow — keep in sync with MOBILE_BP in hooks/useMediaQuery.js. */
+@media (max-width: 768px) {
+  html, body { font-size: 14px; }
+
+  /* Hero serif display steps down so it leads without wrapping on a phone. */
+  .h-display { font-size: 36px; }
+
+  /* Larger tap targets for touch. */
+  .h-btn      { min-height: 40px; }
+  .h-btn.sm   { min-height: 34px; }
+
+  /* Inputs ≥16px so iOS Safari doesn't auto-zoom the viewport on focus. */
+  input, select, textarea { font-size: 16px; }
+
+  /* Tighten table cell padding to reclaim width inside scroll tracks. */
+  .h-table th, .h-table td { padding: 10px 10px; }
+
+  /* Respect the iOS notch / home indicator (paired with viewport-fit=cover). */
+  body { padding-bottom: env(safe-area-inset-bottom); }
+}
 
 :root {
   --surface:      var(--bg-card);

@@ -10,6 +10,7 @@ import { ChevronRight } from 'lucide-react'
 import { Eyebrow, Button } from './ui/primitives.jsx'
 import { Term } from './Tooltip.jsx'
 import { useAuth } from '../auth.jsx'
+import { useIsMobile } from '../hooks/useMediaQuery.js'
 
 // ── Urgency helpers ───────────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@ const RANGES = ['1M', '3M', 'YTD', '1Y', 'All']
 // ── Equity header row ─────────────────────────────────────────────────────────
 
 function EquityHeader({ holdings, positions, signalData }) {
+  const isMobile = useIsMobile()
   const totalValue = holdings.reduce((s, h) => s + (h.market_value || 0), 0)
   const totalUnrealized = holdings.reduce((s, h) => s + (h.unrealized_pnl || 0), 0)
   const unrealizedPct = totalValue > 0 ? (totalUnrealized / (totalValue - totalUnrealized)) * 100 : 0
@@ -85,17 +87,17 @@ function EquityHeader({ holdings, positions, signalData }) {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '1.4fr 1fr 1fr 1fr',
-      gap: 24,
-      padding: '28px 32px',
+      gridTemplateColumns: isMobile ? '1fr 1fr' : '1.4fr 1fr 1fr 1fr',
+      gap: isMobile ? 16 : 24,
+      padding: isMobile ? '20px 16px' : '28px 32px',
       borderBottom: '1px solid var(--line)',
     }}>
-      {/* Big equity display */}
-      <div>
+      {/* Big equity display — full-width on mobile so the hero number leads */}
+      <div style={{ gridColumn: isMobile ? '1 / -1' : 'auto' }}>
         <Eyebrow>Portfolio Value</Eyebrow>
         <div style={{
           fontFamily: 'var(--serif)',
-          fontSize: 52,
+          fontSize: isMobile ? 36 : 52,
           fontStyle: 'italic',
           letterSpacing: '-0.02em',
           lineHeight: 1,
@@ -488,6 +490,7 @@ function OpenContractsStrip({ positions, onNavigate }) {
 
 function HoldingsTable({ holdings, positions, onNavigate }) {
   const [openTicker, setOpenTicker] = useState(null)
+  const isMobile = useIsMobile()
 
   // Index open CC positions by ticker
   const ccByTicker = {}
@@ -514,6 +517,9 @@ function HoldingsTable({ holdings, positions, onNavigate }) {
 
   return (
     <div>
+     {/* On mobile the dense table scrolls horizontally inside its own track so the page never does */}
+     <div className={isMobile ? 'h-scroll-x' : undefined}>
+      <div style={{ minWidth: isMobile ? 720 : undefined }}>
       {/* Table header */}
       <div style={{
         display: 'grid',
@@ -611,6 +617,8 @@ function HoldingsTable({ holdings, positions, onNavigate }) {
           </div>
         )
       })}
+      </div>
+     </div>
 
       {/* Footer */}
       <div style={{ padding: '14px 32px', borderTop: '1px solid var(--line)' }}>
@@ -625,14 +633,15 @@ function HoldingsTable({ holdings, positions, onNavigate }) {
 // ── Covered call drawer ───────────────────────────────────────────────────────
 
 function CCDrawer({ ticker, holding, openCalls, onNavigate }) {
+  const isMobile = useIsMobile()
   return (
     <div style={{
-      padding: '20px 32px',
+      padding: isMobile ? '16px' : '20px 32px',
       background: 'var(--bg-elev)',
       borderTop: '1px solid var(--line)',
       borderBottom: '1px solid var(--line)',
     }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.8fr', gap: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1.8fr', gap: isMobile ? 16 : 24 }}>
 
         {/* Left: position summary */}
         <div style={{
@@ -713,6 +722,7 @@ function CCDrawer({ ticker, holding, openCalls, onNavigate }) {
 }
 
 function OpenCallCard({ pos }) {
+  const isMobile = useIsMobile()
   const action  = getAction(pos)
   const pnl     = pos.pnl ?? 0
   const urgent  = action?.urgency === 'URGENT'
@@ -732,12 +742,12 @@ function OpenCallCard({ pos }) {
       borderRadius: 2,
       padding: '14px 16px',
       display: 'grid',
-      gridTemplateColumns: '1.6fr 1fr 1fr 1fr 1fr',
-      gap: 16,
+      gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : '1.6fr 1fr 1fr 1fr 1fr',
+      gap: isMobile ? 12 : 16,
       alignItems: 'center',
     }}>
       {/* Info */}
-      <div>
+      <div style={{ gridColumn: isMobile ? '1 / -1' : 'auto' }}>
         <div style={{ fontFamily: 'var(--mono)', fontSize: 13, color: 'var(--fg)', marginBottom: 4 }}>
           ${pos.strike} Call · {pos.expiry}
         </div>
@@ -863,6 +873,7 @@ function StatusBanner({ positions, signalData }) {
 // ── P&L summary bar ───────────────────────────────────────────────────────────
 
 function PnlBar({ pnlData }) {
+  const isMobile = useIsMobile()
   if (!pnlData) return null
   const { total_realized, total_unrealized, estimated_tax_this_year, win_rate, closed_positions } = pnlData
 
@@ -886,7 +897,7 @@ function PnlBar({ pnlData }) {
           Based on {closed_positions} closed position{closed_positions !== 1 ? 's' : ''}
         </span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cells.length}, 1fr)` }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isMobile ? (cells.length <= 2 ? `repeat(${cells.length}, 1fr)` : 'repeat(2, 1fr)') : `repeat(${cells.length}, 1fr)` }}>
         {cells.map((c, i) => (
           <div key={c.label} style={{
             padding: '18px 20px',
@@ -915,10 +926,14 @@ export default function Dashboard({
   onNavigate,
 }) {
   const { apiFetch } = useAuth()
+  const isMobile = useIsMobile()
   const [chartRange, setChartRange] = useState('3M')
 
+  // Bleed past <main>'s padding so section dividers run edge-to-edge. The offset
+  // MUST match main's padding (App.jsx): 16px on mobile, 28/32px on desktop —
+  // otherwise the negative margin overflows the viewport on mobile.
   return (
-    <div style={{ margin: '-28px -32px', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ margin: isMobile ? '-16px -16px' : '-28px -32px', display: 'flex', flexDirection: 'column' }}>
 
       {/* Equity header */}
       <EquityHeader

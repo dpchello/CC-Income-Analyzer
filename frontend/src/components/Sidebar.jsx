@@ -30,35 +30,91 @@ const NAV = [
 
 // ── Sidebar ───────────────────────────────────────────────────────────────────
 
-export default function Sidebar({ activeTab, onNavigate, alertCount = 0, recCount = 0 }) {
+export default function Sidebar({
+  activeTab, onNavigate, alertCount = 0, recCount = 0,
+  isMobile = false, open = false, onClose,
+  collapsed = false, onToggleCollapse,
+}) {
   const { user, logout } = useAuth()
 
   const initials = user?.username
     ? user.username.slice(0, 2).toUpperCase()
     : 'HV'
 
+  // On mobile the sidebar is a fixed off-canvas drawer that slides in over the
+  // content (backdrop rendered by App.jsx). On desktop it's a sticky column.
+  const mobileStyle = {
+    position: 'fixed',
+    top: 0,
+    left: 0,
+    zIndex: 60, // above the backdrop (z40); see App.jsx note on iOS fixed-element paint order
+    width: 'min(280px, 84vw)',
+    height: '100dvh',
+    transform: open ? 'translateX(0)' : 'translateX(-110%)',
+    transition: 'transform var(--ui)',
+    boxShadow: open ? 'var(--shadow-modal)' : 'none',
+  }
+  const desktopStyle = {
+    position: 'sticky',
+    top: 0,
+    height: '100vh',
+    width: collapsed ? 60 : 240,
+    transition: 'width var(--ui)',
+  }
+
   return (
     <aside style={{
-      width: 240,
       flexShrink: 0,
       background: 'var(--bg-elev)',
       borderRight: '1px solid var(--line)',
       display: 'flex',
       flexDirection: 'column',
-      position: 'sticky',
-      top: 0,
-      height: '100vh',
       overflowY: 'auto',
+      overflowX: 'hidden',
+      ...(isMobile ? mobileStyle : desktopStyle),
     }}>
-      {/* Logo */}
-      <div style={{ padding: '20px 20px 24px' }}>
-        <HarvestLogo size={18} />
+      {/* Logo + collapse/close control */}
+      <div style={{
+        padding: collapsed ? '20px 0 24px' : '20px 20px 24px',
+        display: 'flex', alignItems: 'center',
+        justifyContent: collapsed ? 'center' : 'space-between',
+      }}>
+        {!collapsed && <HarvestLogo size={18} />}
+        {isMobile ? (
+          <button
+            onClick={onClose}
+            aria-label="Close menu"
+            style={{
+              all: 'unset', cursor: 'pointer', fontSize: 20, lineHeight: 1,
+              color: 'var(--fg-mute)', padding: 4,
+            }}
+          >
+            ✕
+          </button>
+        ) : (
+          <button
+            onClick={onToggleCollapse}
+            aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+            title={collapsed ? 'Expand' : 'Collapse'}
+            style={{
+              all: 'unset', cursor: 'pointer', fontSize: 16, lineHeight: 1,
+              color: 'var(--fg-mute)', padding: 4, borderRadius: 4,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            {collapsed ? '»' : '«'}
+          </button>
+        )}
       </div>
 
       {/* Nav items */}
       <nav style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
         {NAV.map((item, i) => {
           if (item.section) {
+            // Collapsed rail: section label becomes a thin divider.
+            if (collapsed) {
+              return <div key={`s${i}`} style={{ height: 1, background: 'var(--line)', margin: '12px 14px 6px' }} />
+            }
             return (
               <div key={`s${i}`} style={{
                 fontFamily: 'var(--mono)',
@@ -80,12 +136,14 @@ export default function Sidebar({ activeTab, onNavigate, alertCount = 0, recCoun
             <div
               key={item.id}
               onClick={() => onNavigate(item.id)}
+              title={collapsed ? item.label : undefined}
               style={{
-                margin: '0 10px',
-                padding: '8px 12px',
+                margin: collapsed ? '0 8px' : '0 10px',
+                padding: collapsed ? '9px 0' : '8px 12px',
                 borderRadius: 4,
                 display: 'flex',
                 alignItems: 'center',
+                justifyContent: collapsed ? 'center' : 'flex-start',
                 gap: 12,
                 cursor: 'pointer',
                 fontSize: 13,
@@ -96,56 +154,77 @@ export default function Sidebar({ activeTab, onNavigate, alertCount = 0, recCoun
                 transition: 'background var(--ui), color var(--ui)',
               }}
             >
-              <item.Icon
-                size={14}
-                strokeWidth={1.5}
-                style={{ color: active ? 'var(--acid)' : 'var(--fg-mute)', flexShrink: 0 }}
-              />
-              <span style={{ flex: 1 }}>{item.label}</span>
-              {badge > 0 && <Badge count={badge} />}
+              <span style={{ position: 'relative', display: 'flex', flexShrink: 0 }}>
+                <item.Icon
+                  size={collapsed ? 16 : 14}
+                  strokeWidth={1.5}
+                  style={{ color: active ? 'var(--acid)' : 'var(--fg-mute)' }}
+                />
+                {collapsed && badge > 0 && (
+                  <span style={{
+                    position: 'absolute', top: -3, right: -4,
+                    width: 6, height: 6, borderRadius: '50%', background: 'var(--warn)',
+                  }} />
+                )}
+              </span>
+              {!collapsed && <span style={{ flex: 1 }}>{item.label}</span>}
+              {!collapsed && badge > 0 && <Badge count={badge} />}
             </div>
           )
         })}
       </nav>
 
-      {/* Account card */}
+      {/* Account card — avatar only when collapsed (tap to sign out) */}
       <div style={{
-        margin: 12,
-        padding: 12,
+        margin: collapsed ? 8 : 12,
+        padding: collapsed ? 6 : 12,
         border: '1px solid var(--line)',
         borderRadius: 4,
         background: 'var(--bg-card)',
         flexShrink: 0,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{
-            width: 28, height: 28, borderRadius: 4,
-            background: 'var(--acid)',
-            color: 'var(--bg)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontFamily: 'var(--sans)', fontWeight: 600, fontSize: 11,
-            flexShrink: 0,
-          }}>
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          justifyContent: collapsed ? 'center' : 'flex-start',
+        }}>
+          <div
+            onClick={collapsed ? logout : undefined}
+            onKeyDown={collapsed ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); logout() } } : undefined}
+            role={collapsed ? 'button' : undefined}
+            tabIndex={collapsed ? 0 : undefined}
+            aria-label={collapsed ? 'Sign out' : undefined}
+            title={collapsed ? `${user?.username || 'Account'} — sign out` : undefined}
+            style={{
+              width: 28, height: 28, borderRadius: 4,
+              background: 'var(--acid)',
+              color: 'var(--bg)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: 'var(--sans)', fontWeight: 600, fontSize: 11,
+              flexShrink: 0,
+              cursor: collapsed ? 'pointer' : 'default',
+            }}>
             {initials}
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-              {user?.username || 'Account'}
+          {!collapsed && (
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--fg)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {user?.username || 'Account'}
+              </div>
+              <button
+                onClick={logout}
+                style={{
+                  all: 'unset',
+                  fontFamily: 'var(--mono)',
+                  fontSize: 10,
+                  color: 'var(--fg-mute)',
+                  cursor: 'pointer',
+                  letterSpacing: '0.04em',
+                }}
+              >
+                Sign out
+              </button>
             </div>
-            <button
-              onClick={logout}
-              style={{
-                all: 'unset',
-                fontFamily: 'var(--mono)',
-                fontSize: 10,
-                color: 'var(--fg-mute)',
-                cursor: 'pointer',
-                letterSpacing: '0.04em',
-              }}
-            >
-              Sign out
-            </button>
-          </div>
+          )}
         </div>
       </div>
     </aside>
@@ -178,7 +257,7 @@ function useClock() {
   return now
 }
 
-export function TopBar({ activeTab, alertCount = 0, onNavigate }) {
+export function TopBar({ activeTab, alertCount = 0, onNavigate, isMobile = false, onMenu }) {
   const now = useClock()
   const searchRef = useRef(null)
   const [searchVal, setSearchVal] = useState('')
@@ -215,13 +294,28 @@ export function TopBar({ activeTab, alertCount = 0, onNavigate }) {
       background: 'var(--bg)',
       display: 'flex',
       alignItems: 'center',
-      padding: '0 28px',
-      gap: 16,
+      padding: isMobile ? '0 14px' : '0 28px',
+      gap: isMobile ? 10 : 16,
       position: 'sticky',
       top: 0,
       zIndex: 20,
       flexShrink: 0,
     }}>
+      {/* Mobile hamburger — opens the nav drawer */}
+      {isMobile && (
+        <button
+          onClick={onMenu}
+          aria-label="Open menu"
+          style={{
+            all: 'unset', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            width: 36, height: 36, cursor: 'pointer', color: 'var(--fg-dim)',
+            fontSize: 20, flexShrink: 0,
+          }}
+        >
+          ☰
+        </button>
+      )}
+
       {/* Title + timestamp */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
         <span style={{
@@ -234,18 +328,21 @@ export function TopBar({ activeTab, alertCount = 0, onNavigate }) {
         }}>
           {TITLE_MAP[activeTab] || activeTab}
         </span>
-        <span className="num" style={{ fontSize: 11, color: 'var(--fg-mute)', letterSpacing: '0.04em', lineHeight: 1 }}>
-          {day} · {date} · {hh}:{mm} ·{' '}
-          <span style={{ color: mktOpen ? 'var(--acid)' : 'var(--fg-faint)' }}>
-            ● {mktOpen ? 'MKT OPEN' : 'MKT CLOSED'}
+        {!isMobile && (
+          <span className="num" style={{ fontSize: 11, color: 'var(--fg-mute)', letterSpacing: '0.04em', lineHeight: 1 }}>
+            {day} · {date} · {hh}:{mm} ·{' '}
+            <span style={{ color: mktOpen ? 'var(--acid)' : 'var(--fg-faint)' }}>
+              ● {mktOpen ? 'MKT OPEN' : 'MKT CLOSED'}
+            </span>
           </span>
-        </span>
+        )}
       </div>
 
       {/* Spacer */}
       <div style={{ flex: 1 }} />
 
-      {/* Search */}
+      {/* Search — desktop only */}
+      {!isMobile && (
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
         height: 32, padding: '0 10px',
@@ -286,8 +383,10 @@ export function TopBar({ activeTab, alertCount = 0, onNavigate }) {
           color: 'var(--fg-faint)', flexShrink: 0,
         }}>⌘K</span>
       </div>
+      )}
 
-      {/* Alerts button */}
+      {/* Alerts button — desktop only (alert badge still shows in the drawer nav) */}
+      {!isMobile && (
       <button
         className="h-btn sm"
         onClick={() => onNavigate('Alerts')}
@@ -303,16 +402,19 @@ export function TopBar({ activeTab, alertCount = 0, onNavigate }) {
           }} />
         )}
       </button>
+      )}
 
       {/* Primary CTA */}
-      <button className="h-btn primary sm" onClick={() => onNavigate('Screener')}>
+      <button className="h-btn primary sm" onClick={() => onNavigate('Screener')} style={{ flexShrink: 0 }}>
         Sell a call
       </button>
 
-      {/* Build version — baked in at build time via vite define */}
-      <div style={{ marginTop: 10, textAlign: 'center', fontSize: 10, letterSpacing: '0.04em', color: 'var(--fg-dim)', opacity: 0.55 }}>
-        v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'}
-      </div>
+      {/* Build version — desktop only (baked in at build time via vite define) */}
+      {!isMobile && (
+        <div style={{ marginTop: 10, textAlign: 'center', fontSize: 10, letterSpacing: '0.04em', color: 'var(--fg-dim)', opacity: 0.55 }}>
+          v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : 'dev'}
+        </div>
+      )}
     </div>
   )
 }

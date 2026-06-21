@@ -481,6 +481,11 @@ class PartialCloseIn(BaseModel):
     close_price: float
     close_date: Optional[str] = None
 
+class AssignIn(BaseModel):
+    contracts: Optional[int] = None        # default: all contracts
+    assignment_date: Optional[str] = None  # default: today
+    note: Optional[str] = None
+
 class HoldingIn(BaseModel):
     portfolio_id: str
     ticker: str = "SPY"
@@ -651,6 +656,9 @@ def get_positions(
         closed_positions = [p for p in positions if p.get("status") != "open"]
         positions = open_positions[:FREE_POSITION_CAP] + closed_positions
 
+    # Holdings for the assignment tax preview (embedded gain / term / wash-sale flag).
+    all_holdings = db.get_holdings(current_user.id)
+
     spy_data  = fetcher.get_spy_price()
     spy_price = spy_data.get("price", 0)
     spy_change = spy_data.get("change", 0)
@@ -753,6 +761,15 @@ def get_positions(
             p["oi_signal_label"]  = oi.get("signal_label")
             p["close_pnl_impact"] = p["pnl"]
             p["tax_event_on_close"] = True
+            # Tax preview of an assignment: embedded stock gain/loss, holding-period term,
+            # wash-sale flag. Covered calls only (puts hold no shares to relieve yet).
+            if not _is_put_position(pos):
+                matching = [h for h in all_holdings
+                            if h.get("ticker") == pos.get("ticker")
+                            and h.get("portfolio_id") == pos.get("portfolio_id")]
+                p["assignment_preview"] = _assignment_preview(pos, matching)
+            else:
+                p["assignment_preview"] = None
             p["roll_pnl_impact"] = 0.0
             p["break_even_price"] = float(pos["strike"])
             if sell_price and sell_price > 0:
@@ -1046,6 +1063,7 @@ def update_position_endpoint(position_id: str, update: PositionUpdate, current_u
         updates["close_price"] = update.close_price
         updates["final_pnl"]   = round((sell_price - update.close_price) * contracts * 100, 2)
         updates["close_date"]  = update.close_date or date.today().isoformat()
+        updates["close_reason"] = "bought_back"
         updates["close_signal"] = _capture_signal_snapshot()
     if update.notes is not None:
         updates["notes"] = update.notes
@@ -1062,6 +1080,7 @@ def reopen_position(position_id: str, current_user: User = Depends(check_write_a
         "status": "open",
         "close_price": None,
         "close_date": None,
+        "close_reason": None,
         "final_pnl": None,
         "close_signal": None,
     }
@@ -1087,6 +1106,7 @@ def partial_close_position(position_id: str, body: PartialCloseIn, current_user:
     closed_portion["status"] = "closed"
     closed_portion["close_price"] = body.close_price
     closed_portion["close_date"] = close_date
+    closed_portion["close_reason"] = "bought_back"
     closed_portion["final_pnl"] = round((sell_price - body.close_price) * n * 100, 2)
     closed_portion["close_signal"] = _capture_signal_snapshot()
     remaining = total - n
@@ -1096,6 +1116,258 @@ def partial_close_position(position_id: str, body: PartialCloseIn, current_user:
     })
     saved_closed = db.create_position(current_user.id, closed_portion)
     return {"open": updated_open, "closed": saved_closed}
+
+# ── Assignment tracking (PIPE-040) ────────────────────────────────────────────
+
+def _is_put_position(pos: dict) -> bool:
+    """True for short puts (cash-secured put), False for short calls (covered call)."""
+    cat = (pos.get("harvest_category") or "").lower()
+    typ = (pos.get("type") or "").lower()
+    if "put" in cat:
+        return True
+    if "call" in cat:
+        return False
+    return "put" in typ
+
+def _term_for(acquired, disposed: str):
+    """'long' if held > 1 year, else 'short'; None if the acquisition date is unknown."""
+    if not acquired:
+        return None
+    try:
+        a = datetime.strptime(str(acquired)[:10], "%Y-%m-%d").date()
+        d = datetime.strptime(str(disposed)[:10], "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+    return "long" if (d - a).days > 365 else "short"
+
+def _relieve_holdings_fifo(user_id: str, ticker: str, portfolio_id, shares_needed: float, disposed_date: str):
+    """
+    Relieve `shares_needed` shares FIFO (oldest purchase_date first) from holdings matching
+    ticker within the position's portfolio. Deletes a lot when it reaches 0, partially reduces
+    otherwise. Returns (relieved, cost_basis_total, term, first_holding_id).
+    """
+    matching = [h for h in db.get_holdings(user_id, portfolio_id=portfolio_id)
+                if h.get("ticker") == ticker and (h.get("shares") or 0) > 0]
+    # Oldest purchase_date first; undated lots last.
+    matching.sort(key=lambda h: (h.get("purchase_date") is None, h.get("purchase_date") or ""))
+    first_id = matching[0]["id"] if matching else None
+    remaining, relieved, basis_total = shares_needed, 0.0, 0.0
+    terms = set()
+    for h in matching:
+        if remaining <= 0:
+            break
+        avail = h.get("shares") or 0
+        take  = min(avail, remaining)
+        basis_total += (h.get("avg_cost") or 0) * take
+        relieved    += take
+        remaining   -= take
+        t = _term_for(h.get("purchase_date"), disposed_date)
+        if t:
+            terms.add(t)
+        new_sh = avail - take
+        if new_sh <= 0:
+            db.delete_holding(user_id, h["id"])
+        else:
+            db.update_holding(user_id, h["id"], {"shares": new_sh})
+    term = None if not terms else (next(iter(terms)) if len(terms) == 1 else "mixed")
+    return relieved, basis_total, term, first_id
+
+def _preview_fifo_basis(matching_holdings: list, shares_needed: float, disposed_date: str):
+    """
+    Non-mutating twin of _relieve_holdings_fifo: compute (relieved, cost_basis_total, term)
+    for relieving `shares_needed` shares FIFO across already-matched holdings. Reads only —
+    used to preview the tax impact of an assignment without touching the DB.
+    """
+    lots = [h for h in matching_holdings if (h.get("shares") or 0) > 0]
+    lots.sort(key=lambda h: (h.get("purchase_date") is None, h.get("purchase_date") or ""))
+    remaining, relieved, basis_total = shares_needed, 0.0, 0.0
+    terms = set()
+    for h in lots:
+        if remaining <= 0:
+            break
+        take = min(h.get("shares") or 0, remaining)
+        basis_total += (h.get("avg_cost") or 0) * take
+        relieved    += take
+        remaining   -= take
+        t = _term_for(h.get("purchase_date"), disposed_date)
+        if t:
+            terms.add(t)
+    term = None if not terms else (next(iter(terms)) if len(terms) == 1 else "mixed")
+    return relieved, basis_total, term
+
+def _assignment_preview(pos: dict, matching_holdings: list):
+    """
+    Tax preview if this covered call were assigned at its strike right now:
+    the stock gain/loss (premium folded into proceeds, IRS treatment), the holding-period
+    term of the shares that would be relieved (FIFO), and a wash-sale flag — because a
+    loss disallows rebuying substantially identical shares within 30 days. Calls only.
+    """
+    contracts  = pos.get("contracts") or 0
+    strike     = pos.get("strike") or 0
+    premium_ps = pos.get("sell_price") or 0
+    shares     = contracts * 100
+    if shares <= 0:
+        return None
+    today = date.today().isoformat()
+    relieved, basis_total, term = _preview_fifo_basis(matching_holdings, shares, today)
+    available        = sum((h.get("shares") or 0) for h in matching_holdings)
+    basis_known      = relieved >= shares and relieved > 0
+    premium_total    = round(premium_ps * shares, 2)
+    tax_proceeds     = round(strike * shares + premium_total, 2)
+    cost_basis_total = round(basis_total, 2) if relieved > 0 else None
+    stock_gain       = round(tax_proceeds - cost_basis_total, 2) if cost_basis_total is not None else None
+    is_loss          = stock_gain is not None and stock_gain < 0
+    return {
+        "shares":                 shares,
+        "shares_available":       available,
+        "covered":                available >= shares,
+        "basis_known":            basis_known,
+        "cost_basis_total":       cost_basis_total,
+        "tax_proceeds_total":     tax_proceeds,
+        "premium_total":          premium_total,
+        "stock_gain_if_assigned": stock_gain,
+        "term":                   term,
+        "is_loss":                is_loss,
+        "wash_sale_risk":         is_loss,   # a realized loss → 30-day rebuy window applies
+    }
+
+@app.post("/api/positions/{position_id}/assign")
+def assign_position(position_id: str, body: AssignIn, current_user: User = Depends(check_write_access)):
+    """
+    Mark an option position as assigned and record the share movement with tax-correct basis.
+    Covered call → shares called away (sold at strike, holdings relieved FIFO).
+    Cash-secured put → shares put to the user (bought at strike − premium, holding created/blended).
+    """
+    pos = db.get_position(current_user.id, position_id)
+    if not pos:
+        raise HTTPException(status_code=404, detail="Position not found")
+    if pos.get("status") != "open":
+        raise HTTPException(status_code=400, detail="Position is not open")
+
+    total = pos.get("contracts", 0) or 0
+    n = body.contracts if body.contracts is not None else total
+    if n <= 0 or n > total:
+        raise HTTPException(status_code=400, detail=f"contracts must be between 1 and {total}")
+
+    assignment_date = body.assignment_date or date.today().isoformat()
+    ticker        = pos.get("ticker")
+    portfolio_id  = pos.get("portfolio_id")
+    strike        = pos.get("strike") or 0
+    premium_ps    = pos.get("sell_price") or 0
+    shares        = n * 100
+    premium_total = round(premium_ps * shares, 2)
+    is_put        = _is_put_position(pos)
+
+    event = {
+        "position_id":       position_id,
+        "portfolio_id":      portfolio_id,
+        "ticker":            ticker,
+        "contracts":         n,
+        "shares":            shares,
+        "strike":            strike,
+        "premium_per_share": premium_ps,
+        "premium_total":     premium_total,
+        "assignment_date":   assignment_date,
+        "notes":             body.note,
+    }
+
+    if is_put:
+        # Cash-secured put assigned → BUY shares at strike; premium reduces basis (IRS).
+        basis_ps = round(strike - premium_ps, 4)
+        event.update({
+            "direction":            "put_to_user",
+            "cost_basis_per_share": basis_ps,
+            "cost_basis_total":     round(basis_ps * shares, 2),
+            "proceeds_total":       None,
+            "realized_gain":        None,
+            "acquired_date":        assignment_date,
+            "term":                 None,
+            "basis_known":          True,
+        })
+        existing = [h for h in db.get_holdings(current_user.id, portfolio_id=portfolio_id)
+                    if h.get("ticker") == ticker]
+        if existing:
+            h = existing[0]
+            old_sh, old_avg = (h.get("shares") or 0), (h.get("avg_cost") or 0)
+            new_sh  = old_sh + shares
+            new_avg = round((old_avg * old_sh + basis_ps * shares) / new_sh, 4) if new_sh else basis_ps
+            db.update_holding(current_user.id, h["id"], {"shares": new_sh, "avg_cost": new_avg})
+            event["holding_id"] = h["id"]
+        elif portfolio_id:
+            created = db.create_holding(current_user.id, {
+                "portfolio_id":  portfolio_id,
+                "ticker":        ticker,
+                "shares":        shares,
+                "avg_cost":      basis_ps,
+                "purchase_date": assignment_date,
+            })
+            event["holding_id"] = created["id"]
+        # Option leg books $0 — premium is folded into share basis, not income.
+        close_price = premium_ps
+    else:
+        # Covered call called away → SELL shares at strike; relieve holdings FIFO.
+        relieved, basis_total, term, hid = _relieve_holdings_fifo(
+            current_user.id, ticker, portfolio_id, shares, assignment_date)
+        basis_known      = relieved >= shares and relieved > 0
+        proceeds         = round(strike * shares, 2)
+        cost_basis_total = round(basis_total, 2) if relieved > 0 else None
+        realized_gain    = round(proceeds - cost_basis_total, 2) if cost_basis_total is not None else None
+        event.update({
+            "direction":            "called_away",
+            "cost_basis_per_share": round(basis_total / relieved, 4) if relieved > 0 else None,
+            "cost_basis_total":     cost_basis_total,
+            "proceeds_total":       proceeds,
+            "realized_gain":        realized_gain,
+            "acquired_date":        None,
+            "term":                 term,
+            "basis_known":          basis_known,
+            "holding_id":           hid,
+        })
+        # Option leg keeps the full premium as income (consistent with every other close).
+        close_price = 0
+
+    saved_event = db.create_assignment_event(current_user.id, event)
+
+    final_pnl = round((premium_ps - close_price) * n * 100, 2)
+    close_fields = {
+        "status":       "closed",
+        "close_price":  close_price,
+        "close_date":   assignment_date,
+        "close_reason": "assigned",
+        "final_pnl":    final_pnl,
+        "close_signal": _capture_signal_snapshot(),
+    }
+    if n >= total:
+        result_pos = db.update_position(current_user.id, position_id, close_fields)
+    else:
+        # Partial assignment: split off the assigned contracts, leave the rest open.
+        closed_portion = {k: v for k, v in pos.items() if k not in ("id", "user_id")}
+        closed_portion["id"] = str(uuid.uuid4())
+        closed_portion["contracts"] = n
+        closed_portion["premium_collected"] = round(premium_ps * n * 100, 2)
+        closed_portion.update(close_fields)
+        remaining_ct = total - n
+        db.update_position(current_user.id, position_id, {
+            "contracts":         remaining_ct,
+            "premium_collected": round(premium_ps * remaining_ct * 100, 2),
+        })
+        result_pos = db.create_position(current_user.id, closed_portion)
+
+    return {"event": saved_event, "position": result_pos}
+
+@app.get("/api/assignments")
+def list_assignments(
+    portfolio_id: Optional[str] = Query(None),
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    events = db.get_assignment_events(current_user.id, portfolio_id=portfolio_id)
+    for e in events:
+        # 1099-B-style tax proceeds for called-away lots: strike proceeds + folded-in premium.
+        if e.get("direction") == "called_away" and e.get("proceeds_total") is not None:
+            e["tax_proceeds_total"] = round((e.get("proceeds_total") or 0) + (e.get("premium_total") or 0), 2)
+        else:
+            e["tax_proceeds_total"] = None
+    return events
 
 @app.put("/api/positions/{position_id}/move")
 def move_position(position_id: str, body: PositionMove, current_user: User = Depends(check_write_access)):
@@ -3261,4 +3533,10 @@ if DIST_DIR.exists() and not os.getenv("HARVEST_DEV"):
 
     @app.get("/{full_path:path}")
     def spa_fallback(full_path: str):
-        return FileResponse(str(DIST_DIR / "index.html"))
+        # index.html must never be cached: it references content-hashed JS/CSS that
+        # change every build. A cached shell points at deleted hashes (stale app /
+        # broken UI). Hashed assets under /assets stay long-cached (immutable names).
+        return FileResponse(
+            str(DIST_DIR / "index.html"),
+            headers={"Cache-Control": "no-store, must-revalidate"},
+        )

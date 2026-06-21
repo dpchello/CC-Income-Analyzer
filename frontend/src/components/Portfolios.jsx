@@ -5,6 +5,7 @@ import { Term } from './Tooltip.jsx'
 import PositionLimitBanner from './PositionLimitBanner.jsx'
 import { useAuth } from '../auth.jsx'
 import ConnectBrokerage from './ConnectBrokerage.jsx'
+import { useIsMobile } from '../hooks/useMediaQuery.js'
 
 // ── Tax & P&L Aware Action Card (PIPE-019 + PIPE-020) ───────────────────────
 
@@ -134,12 +135,12 @@ function RollScenarioCard({ scenario: s, contracts, isITM, onRollTo }) {
       </div>
       <p className="mb-2 leading-snug" style={{ color: 'var(--muted)' }}>{isITM && s.scenario === 'DEFENSIVE' ? 'Move to a higher strike to keep your shares and stay out of the money — this is a roll up and out.' : s.description}</p>
       <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono text-[11px]">
-        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>New strike:</span><span style={{ color: 'var(--text)' }}>${s.new_strike}</span></div>
-        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Expiry:</span><span style={{ color: 'var(--text)' }}>{s.new_expiry} ({s.new_dte}d)</span></div>
-        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Time value:</span><span style={{ color: 'var(--green)' }}>${(s.new_time_premium ?? 0).toFixed(2)}</span></div>
-        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Intrinsic kept:</span><span style={{ color: intrinsicColor }}>{(s.new_intrinsic ?? 0) > 0 ? `$${(s.new_intrinsic).toFixed(2)}` : '—'}</span></div>
-        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Net {creditLabel.toLowerCase()}:</span><span style={{ color: creditColor }}>${Math.abs(s.net_credit_total ?? 0).toFixed(0)} total</span></div>
-        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Break-even:</span><span style={{ color: 'var(--text)' }}>${(s.break_even_price ?? 0).toFixed(2)}</span></div>
+        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>New strike:</span><span style={{ color: 'var(--text)', minWidth: 0, overflowWrap: 'break-word' }}>${s.new_strike}</span></div>
+        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Expiry:</span><span style={{ color: 'var(--text)', minWidth: 0, overflowWrap: 'break-word' }}>{s.new_expiry} ({s.new_dte}d)</span></div>
+        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Time value:</span><span style={{ color: 'var(--green)', minWidth: 0, overflowWrap: 'break-word' }}>${(s.new_time_premium ?? 0).toFixed(2)}</span></div>
+        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Intrinsic kept:</span><span style={{ color: intrinsicColor, minWidth: 0, overflowWrap: 'break-word' }}>{(s.new_intrinsic ?? 0) > 0 ? `$${(s.new_intrinsic).toFixed(2)}` : '—'}</span></div>
+        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Net {creditLabel.toLowerCase()}:</span><span style={{ color: creditColor, minWidth: 0, overflowWrap: 'break-word' }}>${Math.abs(s.net_credit_total ?? 0).toFixed(0)} total</span></div>
+        <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Break-even:</span><span style={{ color: 'var(--text)', minWidth: 0, overflowWrap: 'break-word' }}>${(s.break_even_price ?? 0).toFixed(2)}</span></div>
       </div>
       {s.new_delta != null && (
         <div className="mt-1.5 text-[10px]" style={{ color: 'var(--muted)' }}>
@@ -300,10 +301,10 @@ function DiagonalRestructurePanel({ pos, onRollTo }) {
                           </span>
                         </div>
                         <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono text-[11px]">
-                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Days out:</span><span style={{ color: 'var(--text)' }}>{c.dte}d</span></div>
-                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Net total:</span><span style={{ color: creditColor }}>{creditPos ? '+' : ''}${Math.abs(c.net_credit_total ?? 0).toFixed(0)}</span></div>
-                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Ceiling lift:</span><span style={{ color: 'var(--green)' }}>+${(c.strike - pos.strike).toFixed(0)}</span></div>
-                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Assign. risk:</span><span style={{ color: 'var(--text)' }}>{c.delta != null ? `Δ ${c.delta.toFixed(2)}` : '—'}</span></div>
+                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Days out:</span><span style={{ color: 'var(--text)', minWidth: 0, overflowWrap: 'break-word' }}>{c.dte}d</span></div>
+                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Net total:</span><span style={{ color: creditColor, minWidth: 0, overflowWrap: 'break-word' }}>{creditPos ? '+' : ''}${Math.abs(c.net_credit_total ?? 0).toFixed(0)}</span></div>
+                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Ceiling lift:</span><span style={{ color: 'var(--green)', minWidth: 0, overflowWrap: 'break-word' }}>+${(c.strike - pos.strike).toFixed(0)}</span></div>
+                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Assign. risk:</span><span style={{ color: 'var(--text)', minWidth: 0, overflowWrap: 'break-word' }}>{c.delta != null ? `Δ ${c.delta.toFixed(2)}` : '—'}</span></div>
                         </div>
                         {c.sub_scores && (
                           <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px]" style={{ color: 'var(--muted)' }}>
@@ -418,13 +419,13 @@ function TaxAwareActionCard({ pos, action, onRollTo }) {
             <div className="space-y-1" style={{ color: 'var(--muted)' }}>
               <div className="flex justify-between">
                 <span>P&L if you close:</span>
-                <span className="font-mono font-semibold" style={{ color: closePnl == null ? 'var(--muted)' : closePnlPos ? 'var(--green)' : 'var(--red)' }}>
+                <span className="font-mono font-semibold" style={{ color: closePnl == null ? 'var(--muted)' : closePnlPos ? 'var(--green)' : 'var(--red)', minWidth: 0, overflowWrap: 'break-word' }}>
                   {closePnl == null ? '—' : `${closePnlPos ? '+' : ''}$${Math.abs(closePnl).toFixed(0)}`}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span>Cost to buy back:</span>
-                <span className="font-mono">${costToClose.toFixed(0)}</span>
+                <span className="font-mono" style={{ minWidth: 0, overflowWrap: 'break-word' }}>${costToClose.toFixed(0)}</span>
               </div>
               <div className="flex justify-between">
                 <span>Tax impact:</span>
@@ -667,7 +668,7 @@ function AllPortfoliosView({ positions, portfolios, holdings }) {
         ].map(s => (
           <div key={s.labelKey} className="p-5 border" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}>
             <div className="text-xs uppercase tracking-wider mb-1" style={{ color: 'var(--muted)' }}>{s.label}</div>
-            <div className="text-3xl font-bold font-mono" style={{ color: s.color }}>{s.value}</div>
+            <div className="text-3xl font-bold font-mono" style={{ color: s.color, minWidth: 0, overflowWrap: 'break-word' }}>{s.value}</div>
           </div>
         ))}
       </div>
@@ -972,6 +973,7 @@ function PortfolioTab({ portfolio, active, indent, onClick, onStar, onRename, on
 // ── Holdings row ──────────────────────────────────────────────────────────────
 
 function HoldingRow({ holding, coveredShares, ccLots = [], onDelete, onEdit }) {
+  const isMobile   = useIsMobile()
   const shares     = holding.shares ?? 0
   const covered    = Math.min(coveredShares, shares)
   const coveragePct = shares > 0 ? Math.round(covered / shares * 100) : 0
@@ -999,6 +1001,52 @@ function HoldingRow({ holding, coveredShares, ccLots = [], onDelete, onEdit }) {
 
   const fmt = (n, dec = 2) => n != null ? `$${Number(n).toLocaleString(undefined, { minimumFractionDigits: dec, maximumFractionDigits: dec })}` : '—'
   const fmtShares = n => n != null ? Number(n).toLocaleString(undefined, { maximumFractionDigits: 4 }) : '—'
+
+  // ── Mobile: stacked card (uses full screen width instead of a 9-col scroll) ──
+  if (isMobile) {
+    const pnlText = pnl != null
+      ? `${pnlPos ? '+' : ''}$${Math.abs(Math.round(pnl)).toLocaleString()}${pnlPct != null ? ` (${pnlPct.toFixed(1)}%)` : ''}`
+      : '—'
+    const mktText = holding.market_value != null ? `$${Math.round(holding.market_value).toLocaleString()}` : '—'
+    const cells = [
+      ['Shares', fmtShares(shares), 'var(--fg)'],
+      ['Avg cost', fmt(holding.avg_cost), 'var(--fg)'],
+      ['Current', fmt(holding.current_price), 'var(--fg)'],
+      ['Wtd avg value', fmt(wtdAvgValue), 'var(--fg)'],
+      ['Mkt value', mktText, 'var(--fg)'],
+      ['Unreal. P&L', pnlText, pnl != null ? (pnlPos ? 'var(--acid)' : 'var(--red)') : 'var(--fg-mute)'],
+    ]
+    return (
+      <div style={{ padding: '12px 0', borderBottom: '1px solid var(--border)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+          <span style={{ fontSize: 14, fontFamily: 'var(--mono)', fontWeight: 700, color: 'var(--blue)', letterSpacing: '0.04em' }}>
+            {holding.ticker}
+          </span>
+          <div style={{ display: 'flex', gap: 16, flexShrink: 0 }}>
+            <button onClick={onEdit} style={{ fontSize: 12, color: 'var(--fg-mute)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>Edit</button>
+            <button onClick={onDelete} style={{ fontSize: 12, color: 'var(--fg-faint)', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>✕</button>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 16px' }}>
+          {cells.map(([label, value, color]) => (
+            <div key={label} style={{ minWidth: 0 }}>
+              <div className="h-eyebrow" style={{ fontSize: 9, marginBottom: 2 }}>{label}</div>
+              <div style={{ fontSize: 13, fontFamily: 'var(--mono)', fontWeight: 600, color, overflowWrap: 'break-word' }}>{value}</div>
+            </div>
+          ))}
+          <div style={{ gridColumn: '1 / -1', minWidth: 0 }}>
+            <div className="h-eyebrow" style={{ fontSize: 9, marginBottom: 3 }}>Call coverage</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div style={{ flex: 1, height: 4, background: 'var(--line)', borderRadius: 2 }}>
+                <div style={{ height: '100%', width: `${coveragePct}%`, background: coveragePct === 100 ? 'var(--acid)' : 'var(--fg-mute)', borderRadius: 2 }} />
+              </div>
+              <span style={{ fontSize: 10, fontFamily: 'var(--mono)', color: coveragePct === 100 ? 'var(--acid)' : 'var(--fg-mute)', whiteSpace: 'nowrap' }}>{coveragePct}%</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{
@@ -1150,6 +1198,7 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
   const { apiFetch } = useAuth()
   const [expanded, setExpanded] = useState(false)
   const [isClosing, setIsClosing] = useState(false)
+  const [closeMode, setCloseMode] = useState('bought_back')  // 'bought_back' | 'assigned'
   const [closePrice, setClosePrice] = useState('')
   const [contractsToClose, setContractsToClose] = useState(String(pos.contracts))
   const [moving, setMoving] = useState(false)
@@ -1185,20 +1234,47 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
     const n = parseInt(contractsToClose, 10)
     if (isNaN(price) || price < 0) return
     if (isNaN(n) || n <= 0 || n > pos.contracts) return
-    if (n < pos.contracts) {
-      await apiFetch(`/api/positions/${pos.id}/partial-close`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contracts_to_close: n, close_price: price }),
-      })
-    } else {
-      await apiFetch(`/api/positions/${pos.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'closed', close_price: price }),
-      })
+    const r = n < pos.contracts
+      ? await apiFetch(`/api/positions/${pos.id}/partial-close`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contracts_to_close: n, close_price: price }),
+        })
+      : await apiFetch(`/api/positions/${pos.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'closed', close_price: price }),
+        })
+    if (!r.ok) {
+      const detail = await r.json().catch(() => null)
+      alert(`Couldn't close the position (${r.status}). ${detail?.detail || 'Is the backend up to date?'}`)
+      return
     }
     setIsClosing(false)
+    setClosePrice('')
+    setContractsToClose(String(pos.contracts))
+    onClose()
+  }
+
+  // Cash-secured put (shares put to you) vs covered call (shares called away).
+  const isPut = /put/i.test(pos.harvest_category || '')
+    || (!/call/i.test(pos.harvest_category || '') && /put/i.test(pos.type || ''))
+
+  async function doAssign() {
+    const n = parseInt(contractsToClose, 10)
+    if (isNaN(n) || n <= 0 || n > pos.contracts) return
+    const r = await apiFetch(`/api/positions/${pos.id}/assign`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contracts: n }),
+    })
+    if (!r.ok) {
+      const detail = await r.json().catch(() => null)
+      alert(`Couldn't record the assignment (${r.status}). ${detail?.detail || 'Is the backend up to date?'}`)
+      return
+    }
+    setIsClosing(false)
+    setCloseMode('bought_back')
     setClosePrice('')
     setContractsToClose(String(pos.contracts))
     onClose()
@@ -1313,6 +1389,57 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
                 ))}
               </div>
 
+              {/* If-assigned tax preview: embedded gain/loss, term, wash-sale window */}
+              {pos.assignment_preview && (() => {
+                const ap = pos.assignment_preview
+                const g = ap.stock_gain_if_assigned
+                const money = v => (v == null ? '—' : (v < 0 ? '−$' : '$') + Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 }))
+                const termLabel = ap.term === 'long' ? 'long-term' : ap.term === 'short' ? 'short-term' : ap.term === 'mixed' ? 'mixed-term' : ''
+                const accent = !ap.basis_known ? 'var(--muted)' : ap.is_loss ? 'var(--amber)' : 'var(--green)'
+                const cleanAlt = pos.ticker === 'SPY' ? ' A different-index fund (VTI/ITOT) sidesteps it; VOO/IVV are the common-but-grayer swap.' : ''
+                return (
+                  <div className="text-xs px-3 py-2.5" style={{ borderLeft: `2px solid ${accent}`, backgroundColor: 'var(--surface)', borderRadius: 'var(--radius-sm)' }}>
+                    <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--muted)' }}>
+                      If assigned at ${pos.strike}
+                    </div>
+                    {!ap.basis_known ? (
+                      <div style={{ color: 'var(--muted)' }}>
+                        No matching stock lot in this portfolio — add your {pos.ticker} shares to see the tax impact of an assignment.
+                      </div>
+                    ) : (
+                      <>
+                        <div className="font-mono font-semibold" style={{ color: g >= 0 ? 'var(--green)' : 'var(--amber)' }}>
+                          {g >= 0 ? 'Taxable gain' : 'Taxable loss'} {money(g)}{termLabel ? ` · ${termLabel}` : ''}
+                        </div>
+                        <div className="text-[10px] mt-0.5" style={{ color: 'var(--muted)' }}>
+                          {ap.shares} sh × ${pos.strike} + premium = {money(ap.tax_proceeds_total)} proceeds vs {money(ap.cost_basis_total)} basis (FIFO)
+                        </div>
+                        {ap.is_loss && (
+                          <div className="text-[11px] mt-1.5 leading-snug" style={{ color: 'var(--amber)' }}>
+                            ⚠ A loss starts a <strong>30-day wash-sale window</strong> — rebuying {pos.ticker} (or {pos.ticker} calls) within 30 days before/after disallows the loss, across all your accounts (an IRA rebuy disallows it permanently).{cleanAlt}
+                          </div>
+                        )}
+                        {!ap.is_loss && ap.term === 'long' && (
+                          <div className="text-[11px] mt-1 leading-snug" style={{ color: 'var(--muted)' }}>
+                            Long-term — taxed at lower rates. No wash-sale concern on a gain.
+                          </div>
+                        )}
+                        {!ap.is_loss && ap.term === 'short' && (
+                          <div className="text-[11px] mt-1 leading-snug" style={{ color: 'var(--muted)' }}>
+                            Short-term — taxed as ordinary income. Holding past one year would qualify for lower long-term rates.
+                          </div>
+                        )}
+                        {!ap.covered && (
+                          <div className="text-[10px] mt-1" style={{ color: 'var(--muted)' }}>
+                            Only {ap.shares_available} of {ap.shares} covered shares are tracked here — basis covers what's tracked.
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )
+              })()}
+
               {/* Action card (close / wait / roll) */}
               {action && <TaxAwareActionCard pos={pos} action={action} onRollTo={onRollTo} />}
 
@@ -1350,23 +1477,46 @@ function PositionRow({ pos, portfolios, currentPortfolioId, onClose, onDelete, o
               <div className="flex flex-wrap items-center gap-4 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
                 {isClosing ? (
                   <div className="flex flex-wrap items-center gap-2">
+                    {/* How did this close? Bought back (you pay to close) vs Assigned (shares move) */}
+                    <select
+                      value={closeMode}
+                      onChange={e => setCloseMode(e.target.value)}
+                      className="px-2 py-1 text-xs border focus:outline-none"
+                      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}
+                      title="How did this position close?"
+                    >
+                      <option value="bought_back">Bought back</option>
+                      <option value="assigned">Assigned</option>
+                    </select>
                     <input
                       type="number" min="1" max={pos.contracts} step="1"
                       value={contractsToClose}
                       onChange={e => setContractsToClose(e.target.value)}
                       className="w-20 px-2 py-1 text-xs font-mono border focus:outline-none"
                       style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}
-                      title={`Contracts to close (max ${pos.contracts})`}
+                      title={`Contracts (max ${pos.contracts})`}
                     />
-                    <span className="text-xs" style={{ color: 'var(--muted)' }}>of {pos.contracts} @ buy-back</span>
-                    <input
-                      type="number" step="0.01" min="0" placeholder="price" value={closePrice}
-                      onChange={e => setClosePrice(e.target.value)}
-                      className="w-24 px-2 py-1 text-xs font-mono border focus:outline-none"
-                      style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}
-                    />
-                    <button onClick={doClose} className="text-xs" style={{ color: 'var(--green)' }}>✓ Confirm</button>
-                    <button onClick={() => { setIsClosing(false); setContractsToClose(String(pos.contracts)); setClosePrice('') }}
+                    {closeMode === 'bought_back' ? (
+                      <>
+                        <span className="text-xs" style={{ color: 'var(--muted)' }}>of {pos.contracts} @ buy-back</span>
+                        <input
+                          type="number" step="0.01" min="0" placeholder="price" value={closePrice}
+                          onChange={e => setClosePrice(e.target.value)}
+                          className="w-24 px-2 py-1 text-xs font-mono border focus:outline-none"
+                          style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', color: 'var(--text)' }}
+                        />
+                        <button onClick={doClose} className="text-xs" style={{ color: 'var(--green)' }}>✓ Confirm</button>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-xs" style={{ color: 'var(--muted)' }}>
+                          of {pos.contracts} → {(parseInt(contractsToClose, 10) || 0) * 100} shares{' '}
+                          {isPut ? 'put to you' : 'called away'} @ ${pos.strike}
+                        </span>
+                        <button onClick={doAssign} className="text-xs" style={{ color: 'var(--amber)' }}>✓ Confirm assignment</button>
+                      </>
+                    )}
+                    <button onClick={() => { setIsClosing(false); setCloseMode('bought_back'); setContractsToClose(String(pos.contracts)); setClosePrice('') }}
                       className="text-xs" style={{ color: 'var(--muted)' }}>Cancel</button>
                   </div>
                 ) : (
@@ -1467,7 +1617,7 @@ function ScorecardView() {
         ].map(s => (
           <div key={s.label} className="p-5 border" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}>
             <div className="text-xs uppercase tracking-wider mb-1" style={{ color: 'var(--muted)' }}>{s.label}</div>
-            <div className="text-3xl font-bold font-mono" style={{ color: s.color }}>{s.value}</div>
+            <div className="text-3xl font-bold font-mono" style={{ color: s.color, minWidth: 0, overflowWrap: 'break-word' }}>{s.value}</div>
             {s.sub && <div className="text-[10px] mt-0.5" style={{ color: 'var(--muted)' }}>{s.sub}</div>}
           </div>
         ))}
@@ -1546,6 +1696,7 @@ function ScorecardView() {
 
 export default function Portfolios({ positions, portfolios, holdings, dashData, signalData, onRefresh, userTier, onUpgrade }) {
   const { apiFetch } = useAuth()
+  const isMobile = useIsMobile()
   const active = portfolios.filter(p => !p.archived)
   const archived = portfolios.filter(p => p.archived)
 
@@ -1582,6 +1733,19 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
       setSelectedId(active[0].id)
     }
   }, [portfolios])
+
+  // Assigned-shares history for the selected portfolio. Refetches when positions change
+  // (e.g. right after an assignment closes a position via onRefresh).
+  const [assignments, setAssignments] = useState([])
+  useEffect(() => {
+    if (!selectedId) { setAssignments([]); return }
+    let cancelled = false
+    apiFetch(`/api/assignments?portfolio_id=${selectedId}`)
+      .then(r => (r.ok ? r.json() : []))
+      .then(d => { if (!cancelled) setAssignments(Array.isArray(d) ? d : []) })
+      .catch(() => { if (!cancelled) setAssignments([]) })
+    return () => { cancelled = true }
+  }, [selectedId, positions])
 
   const selected = portfolios.find(p => p.id === selectedId)
   const myPositions = positions.filter(p => p.portfolio_id === selectedId)
@@ -1703,10 +1867,76 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
   }
 
   return (
-    <div className="flex gap-6 min-h-[70vh]">
+    <div className="flex flex-col md:flex-row gap-4 md:gap-6 min-h-[70vh]">
 
-      {/* ── Left sidebar: portfolio list ─────────────────────── */}
-      <div className="w-60 shrink-0">
+      {/* ── Mobile: portfolio picker dropdown (replaces the sidebar) ─── */}
+      <div className="md:hidden">
+        <div className="flex items-center gap-2">
+          <select
+            value={selectedId ?? '__all__'}
+            onChange={e => setSelectedId(e.target.value)}
+            className="flex-1 px-3 py-2 text-sm border"
+            style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)', color: 'var(--text)', borderRadius: 'var(--radius-sm)', minWidth: 0 }}
+          >
+            <option value="__all__">All Portfolios</option>
+            <option value="__scorecard__">Scorecard</option>
+            {(() => {
+              const starred = active.filter(p => p.starred)
+              const custom = active.filter(p => !p.brokerage_connection_id && !p.starred)
+              const brokerage = active.filter(p => p.brokerage_connection_id)
+              const groups = {}
+              for (const p of brokerage) {
+                const k = p.brokerage_name || 'Connected Brokerage'
+                ;(groups[k] = groups[k] || []).push(p)
+              }
+              return (
+                <Fragment>
+                  {starred.length > 0 && (
+                    <optgroup label="★ Starred">
+                      {starred.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </optgroup>
+                  )}
+                  {custom.length > 0 && (
+                    <optgroup label="My Portfolios">
+                      {custom.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </optgroup>
+                  )}
+                  {Object.entries(groups).map(([name, items]) => (
+                    <optgroup key={name} label={name}>
+                      {items.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </optgroup>
+                  ))}
+                  {archived.length > 0 && (
+                    <optgroup label="Archived">
+                      {archived.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </optgroup>
+                  )}
+                </Fragment>
+              )
+            })()}
+          </select>
+          <button onClick={() => setShowNewForm(s => !s)}
+            className="text-xs px-3 py-2 border shrink-0" style={{ borderColor: 'var(--gold)', color: 'var(--gold)', borderRadius: 'var(--radius-sm)' }}>
+            + New
+          </button>
+        </div>
+        {showNewForm && (
+          <div className="flex gap-1 mt-2">
+            <input
+              autoFocus value={newName} onChange={e => setNewName(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && createPortfolio()}
+              placeholder="Portfolio name"
+              className="flex-1 px-2 py-1.5 text-sm border focus:outline-none"
+              style={{ backgroundColor: 'var(--bg)', borderColor: 'var(--border)', color: 'var(--text)', minWidth: 0 }}
+            />
+            <button onClick={createPortfolio} disabled={creating} className="text-sm px-3" style={{ color: 'var(--gold)' }}>{creating ? '…' : '✓'}</button>
+            <button onClick={() => { setShowNewForm(false); setNewName('') }} className="text-sm px-3" style={{ color: 'var(--muted)' }}>✗</button>
+          </div>
+        )}
+      </div>
+
+      {/* ── Left sidebar: portfolio list (desktop) ───────────── */}
+      <div className="w-60 shrink-0 hidden md:block">
         <div className="flex items-center justify-between mb-3">
           <span className="text-xs uppercase tracking-wider font-mono" style={{ color: 'var(--muted)' }}>Portfolios</span>
           <button onClick={() => setShowNewForm(s => !s)}
@@ -1952,7 +2182,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
               ].map(s => (
                 <div key={s.label} className="p-5 border" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}>
                   <div className="text-xs uppercase tracking-wider mb-1" style={{ color: 'var(--muted)' }}>{s.label}</div>
-                  <div className="text-3xl font-bold font-mono" style={{ color: s.color }}>{s.value}</div>
+                  <div className="text-3xl font-bold font-mono" style={{ color: s.color, minWidth: 0, overflowWrap: 'break-word' }}>{s.value}</div>
                 </div>
               ))}
             </div>
@@ -1980,9 +2210,12 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                 </div>
               ) : (
                 <div style={{ padding: '0 20px' }}>
-                  {/* Column headers */}
+                 {/* Desktop: dense grid scrolls sideways in its track. Mobile: HoldingRow renders full-width cards (no scroll). */}
+                 <div className={isMobile ? undefined : 'h-scroll-x'}>
+                  <div style={{ minWidth: isMobile ? undefined : 760 }}>
+                  {/* Column headers — hidden on mobile (cards carry their own labels) */}
                   <div style={{
-                    display: 'grid',
+                    display: isMobile ? 'none' : 'grid',
                     gridTemplateColumns: '44px 1fr 1fr 1fr 1fr 1fr 1fr 140px 64px',
                     gap: '0 20px',
                     padding: '8px 0 4px',
@@ -2014,6 +2247,8 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                       onEdit={() => setEditingHolding(h)}
                     />
                   ))}
+                  </div>
+                 </div>
                 </div>
               )}
             </div>
@@ -2111,7 +2346,7 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                   <table className="w-full text-xs font-mono">
                     <thead>
                       <tr className="border-b" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
-                        {['Strike','Expiry','Contracts','Sold At','Closed At','Final P&L','Date',''].map(h => (
+                        {['Strike','Expiry','Contracts','Sold At','Closed At','How','Final P&L','Date',''].map(h => (
                           <th key={h} className="px-4 py-2 text-left font-normal">{h}</th>
                         ))}
                       </tr>
@@ -2124,6 +2359,18 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                           <td className="px-4 py-2" style={{ color: 'var(--text)' }}>{p.contracts}</td>
                           <td className="px-4 py-2" style={{ color: 'var(--text)' }}>${p.sell_price?.toFixed(2)}</td>
                           <td className="px-4 py-2" style={{ color: 'var(--text)' }}>${p.close_price?.toFixed(2) ?? '—'}</td>
+                          <td className="px-4 py-2">
+                            {(() => {
+                              const reason = p.close_reason || 'bought_back'
+                              const label = { assigned: 'Assigned', bought_back: 'Bought back', expired: 'Expired', rolled: 'Rolled' }[reason] || 'Bought back'
+                              const color = reason === 'assigned' ? 'var(--amber)' : 'var(--muted)'
+                              return (
+                                <span className="text-[10px] px-1.5 py-0.5" style={{ backgroundColor: color + '20', color, borderRadius: 'var(--radius-sm)' }}>
+                                  {label}
+                                </span>
+                              )
+                            })()}
+                          </td>
                           <td className="px-4 py-2 font-semibold" style={{ color: (p.final_pnl||0) >= 0 ? 'var(--green)' : 'var(--red)' }}>
                             {(p.final_pnl||0) >= 0 ? '+' : ''}${p.final_pnl?.toFixed(2) ?? '—'}
                           </td>
@@ -2144,6 +2391,72 @@ export default function Portfolios({ positions, portfolios, holdings, dashData, 
                       ))}
                     </tbody>
                   </table>
+                </div>
+              </div>
+            )}
+
+            {/* ── Assigned Shares ────────────────────────────────── */}
+            {assignments.length > 0 && (
+              <div className="border" style={{ backgroundColor: 'var(--surface)', borderColor: 'var(--border)', borderRadius: 'var(--radius-md)' }}>
+                <div className="px-5 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+                  <h2 className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Assigned Shares</h2>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--muted)' }}>
+                    Shares that moved when an option was assigned — with the cost basis you'll need at tax time.
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs font-mono">
+                    <thead>
+                      <tr className="border-b" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
+                        {['Date','Ticker','Event','Shares','Strike','Cost Basis','Proceeds (tax)','Realized Gain','Term'].map(h => (
+                          <th key={h} className="px-4 py-2 text-left font-normal">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {assignments.map(a => {
+                        const called = a.direction === 'called_away'
+                        const gain = a.realized_gain
+                        const money = v => (v == null ? null : '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))
+                        return (
+                          <tr key={a.id} className="border-b hover:opacity-100 transition-opacity" style={{ borderColor: 'var(--border)' }}>
+                            <td className="px-4 py-2" style={{ color: 'var(--muted)' }}>{a.assignment_date}</td>
+                            <td className="px-4 py-2 font-semibold" style={{ color: 'var(--blue)' }}>{a.ticker}</td>
+                            <td className="px-4 py-2">
+                              <span className="text-[10px] px-1.5 py-0.5" style={{ backgroundColor: 'var(--amber)20', color: 'var(--amber)', borderRadius: 'var(--radius-sm)' }}>
+                                {called ? 'Called away' : 'Put to you'}
+                              </span>
+                            </td>
+                            <td className="px-4 py-2" style={{ color: 'var(--text)' }}>{a.shares}</td>
+                            <td className="px-4 py-2" style={{ color: 'var(--text)' }}>${a.strike}</td>
+                            <td className="px-4 py-2" style={{ color: 'var(--text)' }}>
+                              {a.basis_known === false
+                                ? <span title="No matching stock holding found — add the lot to record its basis." style={{ color: 'var(--amber)' }}>unknown</span>
+                                : (money(a.cost_basis_total) ?? '—')}
+                            </td>
+                            <td className="px-4 py-2" style={{ color: 'var(--text)' }}>
+                              {called ? (money(a.tax_proceeds_total) ?? '—') : <span style={{ color: 'var(--muted)' }}>— acquired</span>}
+                            </td>
+                            <td className="px-4 py-2 font-semibold" style={{ color: gain == null ? 'var(--muted)' : gain >= 0 ? 'var(--green)' : 'var(--red)' }}>
+                              {gain == null ? '—' : (gain >= 0 ? '+' : '') + money(gain)}
+                            </td>
+                            <td className="px-4 py-2">
+                              {a.term
+                                ? <span className="text-[10px] px-1.5 py-0.5" style={{ backgroundColor: 'var(--border)', color: 'var(--muted)', borderRadius: 'var(--radius-sm)' }}>
+                                    {a.term === 'long' ? 'Long-term' : a.term === 'short' ? 'Short-term' : 'Mixed'}
+                                  </span>
+                                : <span style={{ color: 'var(--muted)' }}>—</span>}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="px-5 py-3 border-t text-[11px] leading-relaxed" style={{ borderColor: 'var(--border)', color: 'var(--muted)' }}>
+                  <strong style={{ color: 'var(--text)' }}>Tax basis:</strong> For called-away shares, proceeds include the option
+                  premium added to the strike (IRS), and basis is relieved oldest-lot-first (FIFO). For shares put to you,
+                  the premium reduces the new shares' cost basis. Not tax advice — confirm with your broker's 1099-B.
                 </div>
               </div>
             )}

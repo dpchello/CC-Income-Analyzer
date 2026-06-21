@@ -1,6 +1,8 @@
 // Harvest primitive components — Button, Chip, EyebrowLabel, StatCell, Card.
 // All styling flows through CSS tokens in index.css; no inline theme values here.
 
+import { useIsMobile } from '../../hooks/useMediaQuery.js'
+
 // ── Button ────────────────────────────────────────────────────────────────────
 
 export function Button({
@@ -73,16 +75,19 @@ export function Eyebrow({ children, className = '', style }) {
 // ── StatCell — eyebrow + large value + optional sub ──────────────────────────
 
 export function StatCell({ label, value, sub, valueStyle, className = '' }) {
+  const isMobile = useIsMobile()
   return (
     <div className={`flex flex-col gap-0.5 ${className}`}>
       <Eyebrow>{label}</Eyebrow>
       <span style={{
         fontFamily: 'var(--sans)',
         fontWeight: 600,
-        fontSize: 22,
+        fontSize: isMobile ? 18 : 22,
         letterSpacing: '-0.02em',
         lineHeight: 1.1,
         color: 'var(--fg)',
+        minWidth: 0,
+        overflowWrap: 'break-word',
         ...valueStyle,
       }}>
         {value}

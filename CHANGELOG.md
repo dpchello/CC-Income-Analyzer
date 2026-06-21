@@ -4,6 +4,64 @@ All notable changes to Harvest are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.4.3.0] - 2026-06-18
+
+### Added
+- **"If assigned" tax preview on every covered call.** Expand a position and you'll see
+  what an assignment would do at tax time *before* it happens: the embedded **gain or
+  loss** on the underlying shares (proceeds = strike × shares + premium, per IRS, vs.
+  your cost basis relieved oldest-lot-first), and whether those shares are **long- or
+  short-term**. When an assignment would book a **loss**, it flags the **30-day
+  wash-sale window** — rebuying the same ticker (or its calls) within 30 days disallows
+  the loss, across all accounts (permanently in an IRA) — and, for SPY, names the clean
+  (VTI/ITOT) vs. grayer (VOO/IVV) substitutes. If no matching stock lot is tracked, it
+  says so instead of guessing. (PIPE-041, extends the PIPE-040 assignment tracker.)
+
+### Fixed
+- **Close/assign actions now surface errors.** Clicking Confirm against a stale or
+  unreachable backend used to close the drawer as if it worked; both the buy-back and
+  assignment flows now show the status code and message on failure instead of failing
+  silently.
+
+## [0.4.2.0] - 2026-06-18
+
+### Added
+- **Track shares that were assigned.** When a covered call gets assigned, your shares
+  are called away at the strike; when a cash-secured put gets assigned, shares are put
+  to you. Closing a position now asks **"How did this close?"** — *Bought back* (the
+  usual buy-back price flow) or *Assigned*. Picking *Assigned* records the share
+  movement, automatically adjusts your holdings (relieving the called-away shares
+  oldest-lot-first, or adding the put-to-you shares), and logs it in a new **Assigned
+  Shares** table with the cost basis, proceeds, realized gain, and holding-period term
+  you'll need at tax time. The Closed Positions table now shows a *Bought back* /
+  *Assigned* badge so you can tell them apart. (PIPE-040 — see `ASSIGNMENT_PLAN.md`.)
+  - *Tax handling:* for called-away shares, proceeds include the option premium added
+    to the strike (IRS treatment) and basis is relieved FIFO; for shares put to you,
+    the premium reduces the new shares' cost basis. Requires running
+    `backend/migrations/006_assignments.sql` in the Supabase SQL editor.
+
+## [0.4.1.0] - 2026-06-14
+
+### Added
+- **Works on your phone.** The whole dashboard is now mobile-responsive. The left
+  sidebar collapses into a hamburger menu that slides in over the page, the top bar
+  condenses to just what fits, the big portfolio number and stat cards stack instead
+  of squashing, and dense tables (holdings, positions) scroll sideways inside their
+  own track so the page itself never scrolls off-screen. Tap targets are bigger and
+  form inputs no longer trigger iOS's annoying zoom-on-focus. Nothing changes on
+  desktop. (PIPE-024 — see `RESPONSIVE_PLAN.md` for the full plan and rationale.)
+- **Collapsible sidebar.** A toggle (« / ») collapses the desktop sidebar to an icon
+  rail (60px), reclaiming horizontal space so the numbers have room to breathe. The
+  choice persists across sessions. Icons keep their alert dots and show tooltips on
+  hover; on phones the sidebar remains a hamburger drawer.
+
+### Fixed
+- **Card text no longer bleeds past the borders.** Audited every information card and
+  fixed 22 spots where long dollar amounts, tickers, or labels could spill past the
+  card edge on narrow screens — values now shrink-and-wrap inside their card, oversized
+  figures step down a notch on phones, and a CSS backstop wraps anything that slips
+  through. Desktop layout is unchanged.
+
 ## [0.4.0.0] - 2026-06-12
 
 ### Added

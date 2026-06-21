@@ -316,6 +316,24 @@ def upsert_holding(user_id: str, holding: dict) -> tuple:
     return r.data[0], True
 
 
+# ── Assignment events ─────────────────────────────────────────────────────────
+
+def get_assignment_events(user_id: str, portfolio_id: Optional[str] = None) -> list:
+    def _query():
+        q = sb.table("assignment_events").select("*").eq("user_id", user_id)
+        if portfolio_id:
+            q = q.eq("portfolio_id", portfolio_id)
+        return q.order("assignment_date", desc=True).execute()
+    r = _with_retry(_query)
+    return r.data or []
+
+def create_assignment_event(user_id: str, event: dict) -> dict:
+    event["user_id"] = user_id
+    event.setdefault("id", str(uuid.uuid4()))
+    r = sb.table("assignment_events").insert(event).execute()
+    return r.data[0]
+
+
 # ── SnapTrade credentials ─────────────────────────────────────────────────────
 
 def get_snaptrade_credentials(user_id: str) -> Optional[dict]:

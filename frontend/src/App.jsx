@@ -13,6 +13,7 @@ import Recommendations from './components/Recommendations.jsx'
 import Markets from './components/Markets.jsx'
 import Performance from './components/Performance.jsx'
 import { useAuth } from './auth.jsx'
+import { useIsMobile } from './hooks/useMediaQuery.js'
 
 function computeAlertCount(positions) {
   if (!positions?.length) return 0
@@ -26,6 +27,19 @@ function computeAlertCount(positions) {
 
 export default function App() {
   const { user, ready, logout, apiFetch } = useAuth()
+  const isMobile = useIsMobile()
+  const [navOpen, setNavOpen] = useState(false)
+  // Desktop-only: collapse the sidebar to an icon rail to reclaim width for the numbers.
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem('harvest.sidebarCollapsed') === '1'
+  )
+  function toggleCollapsed() {
+    setCollapsed(c => {
+      const next = !c
+      localStorage.setItem('harvest.sidebarCollapsed', next ? '1' : '0')
+      return next
+    })
+  }
   const [activeTab, setActiveTab]   = useState(
     () => localStorage.getItem('harvest.route') || 'Dashboard'
   )
@@ -91,6 +105,7 @@ export default function App() {
     setActiveTab(tab)
     localStorage.setItem('harvest.route', tab)
     if (tab === 'Screener' && params.ticker) setScreenerTicker(params.ticker)
+    setNavOpen(false) // close the mobile drawer on any navigation
   }
 
   const alertCount = computeAlertCount(positions)
@@ -114,16 +129,35 @@ export default function App() {
   return (
     <div style={{
       display: 'grid',
-      gridTemplateColumns: '240px 1fr',
+      gridTemplateColumns: isMobile ? '1fr' : (collapsed ? '60px 1fr' : '240px 1fr'),
       minHeight: '100vh',
       background: 'var(--bg)',
     }}>
-      {/* Left sidebar */}
+      {/* Backdrop behind the mobile drawer — rendered BEFORE the drawer so paint
+          order keeps the drawer on top. iOS Safari can paint a transformed fixed
+          element (the drawer) under a later non-transformed fixed sibling despite
+          a higher z-index; DOM order makes the stack correct regardless. */}
+      {isMobile && navOpen && (
+        <div
+          onClick={() => setNavOpen(false)}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 40,
+            background: 'rgba(24,28,20,0.45)',
+          }}
+        />
+      )}
+
+      {/* Left sidebar — fixed off-canvas drawer on mobile, sticky column on desktop */}
       <Sidebar
         activeTab={activeTab}
         onNavigate={navigate}
         alertCount={alertCount}
         recCount={recCount}
+        isMobile={isMobile}
+        open={navOpen}
+        onClose={() => setNavOpen(false)}
+        collapsed={!isMobile && collapsed}
+        onToggleCollapse={toggleCollapsed}
       />
 
       {/* Right: topbar + content */}
@@ -132,6 +166,8 @@ export default function App() {
           activeTab={activeTab}
           alertCount={alertCount}
           onNavigate={navigate}
+          isMobile={isMobile}
+          onMenu={() => setNavOpen(true)}
         />
 
         {snapHealth?.needs_reconnect && (
@@ -153,7 +189,7 @@ export default function App() {
           </div>
         )}
 
-        <main style={{ flex: 1, overflowY: 'auto', padding: '28px 32px' }}>
+        <main style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px 16px' : '28px 32px' }}>
           {fetchError && !loading && (
             <div style={{
               padding: '10px 24px', fontSize: 13, marginBottom: 16,

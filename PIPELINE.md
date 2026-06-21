@@ -26,6 +26,82 @@
 
 ## Pipeline
 
+### PIPE-040 · Assignment Tracking (shares assigned by a position)
+**Status:** `done` (built 2026-06-18, v0.4.2.0)
+**Description:** Track shares that move when an option is *assigned* — covered calls (shares called
+away) and cash-secured puts (shares put to you) — with tax-correct cost basis. Adds a
+`close_reason` to positions, a new `assignment_events` table, auto-adjusts holdings on assignment
+(FIFO lot relief for calls, basis-reduced new lot for puts), and surfaces an **Assigned Shares**
+history with realized gain + holding-period term.
+
+**Why:** A covered-call writer's positions don't only get bought back — they get assigned, and the
+shares move. Today the app can't distinguish "bought back" from "assigned" and never reflects the
+share movement, leaving stale holdings and no tax record. Extends the "Track" half of the tagline.
+
+**Tax model (IRS equity options):**
+- *Call called away* — sell at strike. Option leg keeps full premium as income (existing semantics);
+  stock leg records `(strike − avg_cost) × shares` realized gain at the pure strike (premium already
+  on the option leg → no double-count); UI shows the 1099-B-style *strike + premium* tax proceeds.
+  Holdings relieved FIFO oldest-first; term per lot (`short`/`long`/`mixed`).
+- *Put assigned* — buy at strike. Premium **reduces basis**: new lot `avg_cost = strike − premium`,
+  option leg books `$0` (premium not double-counted as income); gain realized later on sale.
+
+**Scope:** `backend/migrations/006_assignments.sql` (new), `backend/db.py`, `backend/main.py`
+(`AssignIn`, `POST /api/positions/{id}/assign`, `GET /api/assignments`, basis helpers),
+`frontend/src/components/Portfolios.jsx` (close-form "How did this close?" selector, Assigned Shares
+section, close_reason badge). Full plan + rationale in `ASSIGNMENT_PLAN.md`.
+
+**Out of scope (logged):** specific-lot (non-FIFO) selection, wash-sale detection, 8949/CSV export
+(Pro follow-up post-Stripe).
+
+**Implementation notes (2026-06-18):**
+- `backend/migrations/006_assignments.sql` (new) — `positions.close_reason TEXT` + `assignment_events`
+  table (RLS owner policy + indexes). **Must be run in the Supabase SQL editor** (same manual
+  convention as `001_schema.sql`); the supabase-py client can't issue DDL.
+- `backend/db.py` — `get_assignment_events`, `create_assignment_event`.
+- `backend/main.py` — `AssignIn`; `POST /api/positions/{id}/assign` (infers call/put via
+  `_is_put_position`, relieves holdings FIFO via `_relieve_holdings_fifo`, computes term via
+  `_term_for`, writes the event, then full- or partial-closes the option with
+  `close_reason='assigned'`); `GET /api/assignments` (adds `tax_proceeds_total` = strike proceeds +
+  premium for called-away rows). Existing buy-back/partial-close paths now tag `close_reason='bought_back'`;
+  reopen clears it. Premium accounting avoids double-count: calls book full premium on the option leg
+  (`close_price=0`) and the stock gain at the pure strike; puts book `$0` option P&L and fold the
+  premium into the new lot's basis.
+- `frontend/src/components/Portfolios.jsx` — close drawer "How did this close?" selector
+  (Bought back / Assigned) with a live share-movement preview; Closed Positions gains a "How" badge;
+  new **Assigned Shares** table (date, event, shares, strike, cost basis, tax proceeds, realized gain,
+  term) with a tax-basis footnote and an "unknown basis" flag when no matching stock lot exists.
+- Frontend build passed (v0.4.2.0); `main.py`/`db.py` parse clean.
+
+---
+
+### PIPE-041 · If-Assigned Tax Preview (embedded gain/loss + wash-sale flag)
+**Status:** `done` (built 2026-06-18, v0.4.3.0)
+**Description:** On every open covered call, preview the tax consequence of an assignment *before*
+it happens — the embedded gain/loss on the underlying shares, the holding-period term, and a
+wash-sale-window warning when an assignment would realize a loss. Direct follow-up to PIPE-040,
+prompted by a real user question about whether deliberately assigning shares avoids tax (it
+doesn't — it realizes the gain/loss, and a loss triggers the 30-day wash-sale rule on rebuy).
+
+**Implementation notes (2026-06-18):**
+- `backend/main.py` — `_preview_fifo_basis` (non-mutating twin of `_relieve_holdings_fifo`) and
+  `_assignment_preview(pos, matching_holdings)`: computes `stock_gain_if_assigned`
+  (= strike × shares + premium − FIFO basis, IRS premium-fold-in), `term`, `is_loss`,
+  `wash_sale_risk`, `basis_known`, `covered`. `GET /api/positions` loads holdings once and
+  attaches `assignment_preview` to each open covered call (puts → null).
+- `frontend/src/components/Portfolios.jsx` — "If assigned at $X" callout in the position drawer:
+  taxable gain/loss + term, a proceeds-vs-basis breakdown, and an amber 30-day wash-sale warning
+  (names SPY's clean VTI/ITOT vs. gray VOO/IVV substitutes; notes IRA permanence). Falls back to
+  "add your stock lot" when basis is unknown.
+- Also hardened `doClose`/`doAssign` to surface non-OK responses (they previously closed the drawer
+  silently — the cause of the "nothing happens on Confirm" report when the backend was stale).
+- Frontend build passed (v0.4.3.0); `main.py` parses clean; backend reloaded.
+
+**Not tax advice — UI says so.** Out of scope (logged): cross-account wash-sale detection from real
+trade history, automatic substitute-fund routing, multi-lot specific-ID basis selection.
+
+---
+
 ### PIPE-039 · Portfolios vanish on cold restart (transient Supabase 500 → first-run empty state)
 **Status:** `done`
 **Severity:** P0 — looks like total data loss to the user; data is actually intact.
@@ -1278,9 +1354,29 @@ but not peak. Consider waiting if IV rises before the next expiry cycle.
 ---
 
 ### PIPE-024 · Mobile Layout (Full Responsive Redesign)
-**Status:** `pending`
-**Description:** Full mobile-optimized layout. Deferred — user does not yet have a mobile access path to the app. To be prioritized after mobile deployment is set up.
-**Note:** The sidebar navigation installed in PIPE-017 will include a working hamburger → drawer on narrow screens as a foundation.
+**Status:** `done`
+**Description:** Full mobile-optimized layout. Previously deferred for lack of a mobile access path; activated 2026-06-13 by user request. Plan + four-perspective rationale captured in `RESPONSIVE_PLAN.md`.
+**Note:** The PIPE-017 sidebar drawer had regressed in a later refactor (App.jsx rendered the sidebar as a fixed 240px grid column; `MobileMenuButton` was orphaned). This item restores and completes the drawer behavior.
+**Implementation notes:** Frontend-only, no backend/data change, no new deps; every layout switch is gated behind a `≤768px` breakpoint so the desktop layout above 768px is unchanged.
+- **New** `frontend/src/hooks/useMediaQuery.js` — `useMediaQuery`, `useIsMobile()` (≤768px), `useIsNarrow()` (≤480px); `matchMedia` + change listener, SSR-safe.
+- **`index.html`** — `viewport-fit=cover` for iOS safe areas.
+- **`App.jsx`** — root grid `1fr` on mobile (was `240px 1fr`); `navOpen` drawer state + tap-scrim backdrop; `navigate()` closes drawer; `main` padding `16px` on mobile.
+- **`Sidebar.jsx`** — `Sidebar` is a fixed off-canvas drawer on mobile (`translateX`, `min(280px,84vw)`, `100dvh`, close ✕); `TopBar` gets a hamburger, hides ⌘K search / Alerts button / version footer and the timestamp sub-line on mobile, tighter padding.
+- **`index.css`** — `@media (max-width:768px)` block: `.h-display` 36px, 40px tap targets, 16px inputs (stops iOS focus-zoom), tighter table cells, safe-area padding; new `.h-scroll-x` table-scroll utility.
+- **`Dashboard.jsx`** — hero stat grid → 2-up (hero number spans full width); holdings 8-col table → horizontal scroll track (`minWidth 720`); CC drawer `1fr 1.8fr` → stacked; open-call card 5-col → 2-up.
+- **`Portfolios.jsx`** — holdings 9-col grid wrapped in `.h-scroll-x` (`minWidth 760`); open/closed position tables already had `overflow-x-auto`; stat rows already `grid-cols-2 md:grid-cols-4`.
+- **`Recommendations.jsx`** — `minmax(480px,1fr)` → `minmax(min(480px,100%),1fr)` (removes phone overflow).
+- **Modals** — `AuthGate` outer `p-4`; `ConnectBrokerage` outer `padding:16` so cards inset from screen edges (UpgradeModal already padded).
+- **Already responsive (verified, untouched):** Screener results table (`overflow-x-auto`), Pinning panel (`flex flex-wrap`), SignalTracker/ScoreGuide stat grids (`md:grid-cols-*`), charts (`@visx/responsive ParentSize`).
+- **Out of scope (documented in RESPONSIVE_PLAN.md):** server `0.0.0.0` bind for LAN access (backend/deploy follow-up), table card-ification, bottom-tab nav, PWA.
+- Build passed (`npm run build`). Visual QA at 375×812 pending (Playwright screenshots blocked on this Mac per project CLAUDE.md — user to confirm).
+
+**Follow-up (2026-06-14) — user dogfooded via Cloudflare tunnel, two real bugs fixed:**
+- **Collapsible desktop sidebar.** PIPE-017's collapse toggle had been lost in a refactor; restored. `App.jsx` holds a persisted `collapsed` state (`localStorage harvest.sidebarCollapsed`); root grid is `60px 1fr` collapsed / `240px 1fr` expanded / `1fr` mobile. `Sidebar.jsx` renders an icon rail when collapsed (labels/section-headers/account-text hidden, icons centered with hover tooltips + alert dots, account avatar taps to sign out) and a « / » toggle in the logo row. Mobile drawer is unaffected (`collapsed={!isMobile && collapsed}`).
+- **Card text overflow.** A parallel read-only audit (workflow `card-overflow-audit`, 11 agents) found 22 vectors where long $-values/tickers bled past card borders on narrow viewports — root cause overwhelmingly flex/grid children with default `min-width:auto`. Fixed across Dashboard, Portfolios, SignalTracker, Markets, Recommendations, StrategyPerformance, Settings, ConnectBrokerage, ui/primitives (add `minWidth:0`+`overflowWrap:'break-word'` to value spans; cap StatCell/PnlBar sizes via `useIsMobile()`; ellipsis on the brokerage meta line). Added a global backstop: `.h-card`/`.h-elev { overflow-wrap: anywhere }`. All gated so desktop >768px is unchanged. Build passed.
+- **Note:** "Cloudflare tunnel cannot be reached" (Error 1033) the user also hit is an INFRA issue, not this item — the Mac sleeps (`pmset sleep 1`) and drops the tunnel; fix is `sudo pmset -c disablesleep 1` (per `deploy/README.md` §5), tracked separately.
+
+**Follow-up 2 (2026-06-14) — Portfolios tab mobile pass (user: "still looks really bad on mobile"):** root cause was the tab's OWN `w-60` portfolio sidebar (`flex` row) stealing 240px on a phone, squeezing the content column so cards overflowed and the page scrolled sideways. Fixes in `Portfolios.jsx`: (1) outer layout `flex` → `flex flex-col md:flex-row` so it stacks on mobile; (2) the portfolio sidebar is `hidden md:block` and replaced on mobile by a native `<select>` dropdown (All Portfolios / Scorecard / Starred / My Portfolios / per-brokerage optgroups / Archived) + a "+ New" affordance; (3) `HoldingRow` renders a full-width stacked **card** on mobile (ticker header + 2-col label/value grid + coverage bar) instead of the 9-col grid, and the holdings column-header + `minWidth:760` scroll track are suppressed on mobile. Desktop >768px unchanged. Build passed. **Still open:** the Open/Closed **Positions** tables (`PositionRow`, a `<table>`) still scroll horizontally on mobile — card-ifying that stateful component (close/edit/roll forms) is a larger change, deferred pending user confirmation it's wanted.
 
 ---
 

@@ -1196,36 +1196,36 @@ function PinningStrip({ pin, spot }) {
       </div>
       <div className="flex flex-wrap items-start gap-x-7 gap-y-3 text-xs">
         {/* Gamma pin + strength */}
-        <div style={{ minWidth: 160 }}>
+        <div style={{ minWidth: 0 }}>
           <div className="flex items-center gap-1.5 mb-1" style={{ color: 'var(--muted)' }}>
             {dot(PIN_COLOR)}<Term id="GammaPin" />
           </div>
-          <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>
+          <div className="font-mono font-semibold" style={{ color: 'var(--text)', minWidth: 0, overflowWrap: 'break-word' }}>
             {fmtPrice(pin_strike)} <span style={{ color: labelColor }}>· {pin_label}</span>
           </div>
           <div className="mt-1 h-1.5" style={{ width: 128, background: 'var(--border)', borderRadius: 9999 }}>
             <div style={{ width: `${strengthPct}%`, height: '100%', background: PIN_COLOR, borderRadius: 9999 }} />
           </div>
-          <div className="text-[10px] mt-0.5" style={{ color: 'var(--muted)' }}>
+          <div className="text-[10px] mt-0.5" style={{ color: 'var(--muted)', minWidth: 0, overflowWrap: 'break-word' }}>
             {strengthPct}% of {method === 'gamma' ? 'gamma' : 'near-spot OI'}{pin_gex != null ? ` · ${fmtGex(pin_gex)} GEX` : ''}
           </div>
         </div>
         {/* Max pain */}
-        <div style={{ minWidth: 120 }}>
+        <div style={{ minWidth: 0 }}>
           <div className="flex items-center gap-1.5 mb-1" style={{ color: 'var(--muted)' }}>
             {dot(PAIN_COLOR)}<Term id="MaxPain" />
           </div>
-          <div className="font-mono font-semibold" style={{ color: 'var(--text)' }}>{fmtPrice(max_pain)}</div>
-          {dir && <div className="text-[10px] mt-0.5" style={{ color: 'var(--muted)' }}>{dir}</div>}
+          <div className="font-mono font-semibold" style={{ color: 'var(--text)', minWidth: 0, overflowWrap: 'break-word' }}>{fmtPrice(max_pain)}</div>
+          {dir && <div className="text-[10px] mt-0.5" style={{ color: 'var(--muted)', minWidth: 0, overflowWrap: 'break-word' }}>{dir}</div>}
         </div>
         {/* Call / Put walls */}
-        <div style={{ minWidth: 100 }}>
+        <div style={{ minWidth: 0 }}>
           <div className="mb-1" style={{ color: 'var(--muted)' }}><Term id="CallWall" /></div>
-          <div className="font-mono font-semibold" style={{ color: 'var(--green)' }}>{fmtPrice(call_wall)}</div>
+          <div className="font-mono font-semibold" style={{ color: 'var(--green)', minWidth: 0, overflowWrap: 'break-word' }}>{fmtPrice(call_wall)}</div>
         </div>
-        <div style={{ minWidth: 100 }}>
+        <div style={{ minWidth: 0 }}>
           <div className="mb-1" style={{ color: 'var(--muted)' }}><Term id="PutWall" /></div>
-          <div className="font-mono font-semibold" style={{ color: 'var(--red)' }}>{fmtPrice(put_wall)}</div>
+          <div className="font-mono font-semibold" style={{ color: 'var(--red)', minWidth: 0, overflowWrap: 'break-word' }}>{fmtPrice(put_wall)}</div>
         </div>
       </div>
     </div>
@@ -1621,7 +1621,7 @@ export default function SignalTracker({ signalData, alphaData }) {
             <div className="text-3xl font-bold font-mono" style={{ color: regimeColor }}>
               {total_score}<span className="text-lg" style={{ color: 'var(--muted)' }}>/{max_score}</span>
             </div>
-            <div className="w-48 h-2 mt-2 ml-auto" style={{ backgroundColor: 'var(--border)' }}>
+            <div className="h-2 mt-2 ml-auto" style={{ maxWidth: '100%', width: 192, backgroundColor: 'var(--border)' }}>
               <div className="h-full transition-all" style={{ width: `${pct}%`, backgroundColor: regimeColor }} />
             </div>
           </div>

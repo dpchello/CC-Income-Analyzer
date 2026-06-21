@@ -51,7 +51,7 @@ export default function AuthGate() {
 
   return (
     <div
-      className="flex items-center justify-center min-h-screen"
+      className="flex items-center justify-center min-h-screen p-4"
       style={{ backgroundColor: 'var(--bg)' }}
     >
       <div

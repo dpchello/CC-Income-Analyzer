@@ -646,7 +646,7 @@ export default function Markets({ user, onUpgrade }) {
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 6 }}>
         <h1 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>Markets</h1>
         {primary?.kind === 'composite' && primary.ticker_count?.length > 0 && (
-          <div style={{ fontSize: 11, color: 'var(--fg-faint)', fontFamily: 'var(--mono)', letterSpacing: '0.05em' }}>
+          <div style={{ fontSize: 11, color: 'var(--fg-faint)', fontFamily: 'var(--mono)', letterSpacing: '0.05em', minWidth: 0, overflowWrap: 'break-word' }}>
             {primary.ticker_count[primary.ticker_count.length - 1]} tickers ≈ 80% of S&P market cap
           </div>
         )}
