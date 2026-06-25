@@ -339,20 +339,43 @@ class DataFetcher:
         return mid
 
     def get_available_expiries(self) -> list:
+        """Expiries offered in the Add Position dropdown.
+
+        SPY now lists daily (M–F), weekly (Friday), and quarterly (3rd Friday of
+        Mar/Jun/Sep/Dec) expirations. We surface a generous spread of each so the
+        writer can pick a near-dated daily, a normal weekly, or a longer-dated
+        quarterly — 10 dailies, 10 weeklies, and at least 2 quarterlies — merged
+        and sorted by date.
+        """
         cached = _cache.get("expiries")
         if cached:
             return cached
         try:
             t = _ticker("SPY")
-            all_expiries = t.options
             today = datetime.today().date()
-            filtered = []
-            for exp in all_expiries:
+            dated = []
+            for exp in t.options:
                 exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
-                dte = (exp_date - today).days
-                if 21 <= dte <= 60:
-                    filtered.append(exp)
-            result = filtered[:6]
+                if exp_date > today:
+                    dated.append((exp, exp_date))
+            dated.sort(key=lambda x: x[1])
+
+            def is_third_friday(d):
+                return d.weekday() == 4 and 15 <= d.day <= 21
+
+            fridays      = [(e, d) for e, d in dated if d.weekday() == 4]
+            non_fridays  = [(e, d) for e, d in dated if d.weekday() != 4]
+            quarterlies  = [(e, d) for e, d in fridays
+                            if d.month in (3, 6, 9, 12) and is_third_friday(d)]
+
+            dailies = non_fridays[:10]                # next 10 daily expirations
+            weeklies = fridays[:10]                    # next 10 Friday expirations
+            quarters = quarterlies[:2] if len(quarterlies) >= 2 else quarterlies
+
+            merged = {}
+            for e, d in dailies + weeklies + quarters:
+                merged[e] = d
+            result = sorted(merged.keys(), key=lambda e: merged[e])
         except Exception:
             result = []
         _cache.set("expiries", result)
