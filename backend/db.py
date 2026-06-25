@@ -15,6 +15,7 @@ from typing import Optional
 
 from dotenv import load_dotenv
 from supabase import create_client, Client
+from supabase.lib.client_options import SyncClientOptions
 
 logger = logging.getLogger(__name__)
 
@@ -29,31 +30,81 @@ if not _SUPABASE_URL or not _SUPABASE_KEY:
         "Create a project at supabase.com and copy the service role key."
     )
 
-sb: Client = create_client(_SUPABASE_URL, _SUPABASE_KEY)
+def _build_client() -> Client:
+    """Construct the service-role Supabase client.
+
+    - postgrest_client_timeout=10: a wedged/stale connection fails in 10s instead
+      of hanging up to the 120s httpx default. That 2-minute hang on a stale pool
+      was the freeze — every authed request blocked, taking the SPA and the
+      AppleScript control app down with it.
+    - auto_refresh_token / persist_session disabled: we authenticate with the
+      service key, so there's no user session to refresh. Leaving refresh on would
+      spawn a background thread on every client build — and we rebuild on recycle.
+    """
+    return create_client(
+        _SUPABASE_URL,
+        _SUPABASE_KEY,
+        options=SyncClientOptions(
+            postgrest_client_timeout=10,
+            auto_refresh_token=False,
+            persist_session=False,
+        ),
+    )
+
+
+sb: Client = _build_client()
+
+
+def _recreate_client() -> None:
+    """Rebuild the client with a fresh connection pool — the in-process equivalent
+    of `harvestctl.sh reload`. Stale keep-alive sockets (which throw [Errno 35]
+    after long uptime) are discarded along with the old pool, so a wedged backend
+    self-heals instead of staying broken until the next restart."""
+    global sb
+    try:
+        sb = _build_client()
+        logger.warning("Recreated Supabase client (fresh connection pool)")
+    except Exception as exc:  # construction is offline + cheap; failure is unexpected
+        logger.error("Failed to recreate Supabase client: %s", exc)
+
+
+def _is_transient(exc: Exception) -> bool:
+    """True for connection-level blips worth retrying: a stale-pool EAGAIN, a
+    dropped keep-alive socket, or the 10s timeout firing on a wedged connection."""
+    err = str(exc).lower()
+    return (
+        "resource temporarily unavailable" in err
+        or "errno 35" in err
+        or "read error" in err
+        or "connection reset" in err
+        or "connect timeout" in err
+        or "read timeout" in err
+        or "pool timeout" in err
+        or "timed out" in err
+        or "server disconnected" in err
+        or "connection refused" in err
+        or "remote protocol" in err
+    )
 
 
 def _with_retry(fn, retries=3, backoff=0.5):
-    """Retry a Supabase query on transient connection errors (cold-start httpx)."""
+    """Retry a Supabase read on transient connection errors. After the second
+    failure the pool is likely wedged for good, so rebuild the client before the
+    remaining attempts rather than retrying against the same dead sockets."""
     last_exc = None
     for attempt in range(retries):
         try:
             return fn()
         except Exception as exc:
-            err_str = str(exc).lower()
-            transient = (
-                "resource temporarily unavailable" in err_str
-                or "errno 35" in err_str
-                or "read error" in err_str
-                or "connection reset" in err_str
-                or "connect timeout" in err_str
-            )
-            if not transient:
+            if not _is_transient(exc):
                 raise
             last_exc = exc
             wait = backoff * (2 ** attempt)
             logger.warning("Supabase transient error (attempt %d/%d), retrying in %.1fs: %s",
                            attempt + 1, retries, wait, exc)
             time.sleep(wait)
+            if attempt >= 1:
+                _recreate_client()
     raise last_exc
 
 
@@ -68,11 +119,11 @@ def warm_connection():
 # ── Users ─────────────────────────────────────────────────────────────────────
 
 def get_user_by_id(user_id: str) -> Optional[dict]:
-    r = sb.table("users").select("*").eq("id", user_id).limit(1).execute()
+    r = _with_retry(lambda: sb.table("users").select("*").eq("id", user_id).limit(1).execute())
     return r.data[0] if r.data else None
 
 def get_user_by_email(email: str) -> Optional[dict]:
-    r = sb.table("users").select("*").eq("email", email).limit(1).execute()
+    r = _with_retry(lambda: sb.table("users").select("*").eq("email", email).limit(1).execute())
     return r.data[0] if r.data else None
 
 def create_user(email: str, hashed_password: str) -> dict:
@@ -92,13 +143,13 @@ def update_user(user_id: str, updates: dict) -> dict:
 # ── Usage logs (screener gate) ─────────────────────────────────────────────────
 
 def get_usage(user_id: str, action: str, log_date: str) -> Optional[dict]:
-    r = (sb.table("usage_logs")
+    r = _with_retry(lambda: (sb.table("usage_logs")
            .select("*")
            .eq("user_id", user_id)
            .eq("action", action)
            .eq("log_date", log_date)
            .limit(1)
-           .execute())
+           .execute()))
     return r.data[0] if r.data else None
 
 def increment_usage(user_id: str, action: str, log_date: str) -> dict:
@@ -131,12 +182,12 @@ def get_portfolios(user_id: str) -> list:
     return r.data or []
 
 def get_portfolio(user_id: str, portfolio_id: str) -> Optional[dict]:
-    r = (sb.table("portfolios")
+    r = _with_retry(lambda: (sb.table("portfolios")
            .select("*")
            .eq("user_id", user_id)
            .eq("id", portfolio_id)
            .limit(1)
-           .execute())
+           .execute()))
     return r.data[0] if r.data else None
 
 def create_portfolio(user_id: str, name: str) -> dict:
@@ -217,12 +268,12 @@ def get_positions(user_id: str, portfolio_id: Optional[str] = None) -> list:
     return r.data or []
 
 def get_position(user_id: str, position_id: str) -> Optional[dict]:
-    r = (sb.table("positions")
+    r = _with_retry(lambda: (sb.table("positions")
            .select("*")
            .eq("user_id", user_id)
            .eq("id", position_id)
            .limit(1)
-           .execute())
+           .execute()))
     return r.data[0] if r.data else None
 
 def create_position(user_id: str, position: dict) -> dict:
@@ -245,11 +296,11 @@ def delete_position(user_id: str, position_id: str) -> None:
     sb.table("positions").delete().eq("user_id", user_id).eq("id", position_id).execute()
 
 def get_open_positions(user_id: str) -> list:
-    r = (sb.table("positions")
+    r = _with_retry(lambda: (sb.table("positions")
            .select("*")
            .eq("user_id", user_id)
            .eq("status", "open")
-           .execute())
+           .execute()))
     return r.data or []
 
 
@@ -265,12 +316,12 @@ def get_holdings(user_id: str, portfolio_id: Optional[str] = None) -> list:
     return r.data or []
 
 def get_holding(user_id: str, holding_id: str) -> Optional[dict]:
-    r = (sb.table("holdings")
+    r = _with_retry(lambda: (sb.table("holdings")
            .select("*")
            .eq("user_id", user_id)
            .eq("id", holding_id)
            .limit(1)
-           .execute())
+           .execute()))
     return r.data[0] if r.data else None
 
 def create_holding(user_id: str, holding: dict) -> dict:
@@ -293,13 +344,13 @@ def delete_holding(user_id: str, holding_id: str) -> None:
     sb.table("holdings").delete().eq("user_id", user_id).eq("id", holding_id).execute()
 
 def get_holding_by_snaptrade(user_id: str, snaptrade_id: str, snaptrade_account_id: str) -> Optional[dict]:
-    r = (sb.table("holdings")
+    r = _with_retry(lambda: (sb.table("holdings")
            .select("*")
            .eq("user_id", user_id)
            .eq("snaptrade_id", snaptrade_id)
            .eq("snaptrade_account_id", snaptrade_account_id)
            .limit(1)
-           .execute())
+           .execute()))
     return r.data[0] if r.data else None
 
 def upsert_holding(user_id: str, holding: dict) -> tuple:
@@ -337,11 +388,11 @@ def create_assignment_event(user_id: str, event: dict) -> dict:
 # ── SnapTrade credentials ─────────────────────────────────────────────────────
 
 def get_snaptrade_credentials(user_id: str) -> Optional[dict]:
-    r = (sb.table("snaptrade_credentials")
+    r = _with_retry(lambda: (sb.table("snaptrade_credentials")
            .select("*")
            .eq("user_id", user_id)
            .limit(1)
-           .execute())
+           .execute()))
     return r.data[0] if r.data else None
 
 def upsert_snaptrade_credentials(user_id: str, snaptrade_user_id: str, user_secret: str) -> dict:
@@ -363,11 +414,11 @@ def upsert_snaptrade_credentials(user_id: str, snaptrade_user_id: str, user_secr
 # ── SnapTrade connections ─────────────────────────────────────────────────────
 
 def get_snaptrade_connections(user_id: str) -> list:
-    r = (sb.table("snaptrade_connections")
+    r = _with_retry(lambda: (sb.table("snaptrade_connections")
            .select("*")
            .eq("user_id", user_id)
            .order("created_at")
-           .execute())
+           .execute()))
     return r.data or []
 
 def upsert_snaptrade_connection(user_id: str, connection: dict) -> dict:
@@ -398,9 +449,9 @@ def save_raw_import(user_id: str, account_id: str, raw_json: dict) -> dict:
     return r.data[0]
 
 def get_raw_imports(user_id: str) -> list:
-    r = (sb.table("snaptrade_raw_imports")
+    r = _with_retry(lambda: (sb.table("snaptrade_raw_imports")
            .select("account_id, fetched_at")
            .eq("user_id", user_id)
            .order("fetched_at", desc=True)
-           .execute())
+           .execute()))
     return r.data or []
