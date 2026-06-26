@@ -122,13 +122,16 @@ keep") into the moment it matters most.
 3. **Track the runway** — show *cost-to-close* and *financing runway*: how many income cycles, at
    the current premium pace, to neutralize the position.
 
-**Status:** **partially built.** Item #1 (roll up / out / up-and-out) is live: near-dated
+**Status:** **mostly built.** Item #1 (roll up / out / up-and-out) is live: near-dated
 3-scenario roll targets surface in the action cards (PIPE-001), and the **diagonal-restructure
 LEAP engine** (PIPE-002) extends it across the full long-dated horizon — ranking candidates on
 upside kept, tax deferral, net credit, and assignment safety, and exposing the coverage-ratio
-(contract-count) lever. Item #2 (finance-the-buyback) and item #3 (runway) remain queued
-(PIPE-036). Scored as goal #6 in the `/whats-next` strategist rubric; leading indicator is
-*positions defended without a forced assignment* and the trend in their cost-to-close.
+(contract-count) lever. Item #2 (finance-the-buyback) and item #3 (runway) are now live
+(PIPE-036): the `FinanceBuybackPanel` scans short-dated, low-delta income trades on the user's
+uncovered holdings, computes the cost-to-close shortfall after the best roll credit, and
+projects a runway forecast (cycles/months to neutralize). Scored as goal #6 in the `/whats-next`
+strategist rubric; leading indicator is *positions defended without a forced assignment* and the
+trend in their cost-to-close.
 
 **Why it's a wedge:** holder-focused tools *warn* you about assignment; none *engineer the way
 out*. A visible "roll-to-credit + finance-the-buyback, with a runway" workflow is differentiated
@@ -211,6 +214,7 @@ Every shipped feature, what it does, and why it exists.
 | PIPE-024 | Mobile Responsive Layout | The whole dashboard works on a phone: sidebar becomes a hamburger drawer, the topbar condenses, the hero/stat grids stack, and dense financial tables scroll sideways inside their own track so the page never does. Desktop (>768px) is byte-for-byte unchanged. Plan + business/design/UX/eng rationale in `RESPONSIVE_PLAN.md` (v0.4.1.0) |
 | PIPE-040 | Assignment Tracking | Distinguishes *assigned* from *bought back* when closing a position and records the share movement. Covered calls → shares called away (holdings relieved FIFO, sold at strike); cash-secured puts → shares put to you (new lot at strike − premium). Tax-correct cost basis: premium added to proceeds for calls, premium reduces basis for puts; holding-period term per lot. New `close_reason` column + `assignment_events` table, `POST /api/positions/{id}/assign`, `GET /api/assignments`, and an Assigned Shares history table. Plan in `ASSIGNMENT_PLAN.md` (v0.4.2.0) |
 | PIPE-041 | If-Assigned Tax Preview | Per covered call, previews the tax impact of an assignment *before* it happens: embedded gain/loss on the underlying (strike + premium proceeds vs. FIFO cost basis), long/short-term holding period, and a wash-sale-window warning when assignment would book a loss (with SPY-specific clean/gray substitute funds). Non-mutating `assignment_preview` attached to each open covered call in `GET /api/positions`. Extends PIPE-040. (v0.4.3.0) |
+| PIPE-036 | Finance-the-Buyback + Runway | For deep-ITM calls where a roll can't fully fund the close: scans short-dated, low-delta income trades on uncovered holdings, computes cost-to-close shortfall after best roll credit, and projects runway (cycles/months to neutralize). `GET /api/finance-buyback/{id}`, `FinanceBuybackPanel` in action cards. Completes Position Defense items #2 and #3 from STRATEGY.md. (v0.4.4.0) |
 
 ---
 

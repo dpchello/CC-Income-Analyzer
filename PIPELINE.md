@@ -240,6 +240,7 @@ Pro sees all).
 
 ### PIPE-030 · Marketing Site Deploy + QA Pass (Launch Readiness)
 **Status:** `approved`
+**Note:** Skipped by nightly agent (2026-06-26) — this is a deployment + manual QA task that requires human interaction (Vercel config, live endpoint testing). Needs to be run manually.
 **Description:** Deploy the marketing site to Vercel, run a full QA pass on the end-to-end user flow, and validate the product is ready for real users.
 
 **Deploy steps:**
@@ -263,7 +264,7 @@ Pro sees all).
 ---
 
 ### PIPE-036 · Finance-the-Buyback + Runway Forecast (Goal #6 net-new)
-**Status:** `approved`
+**Status:** `done`
 **Description:** For a deep-ITM tested position where a roll alone can't fund the close, generate the financing plan from STRATEGY.md "Position Defense / Repair": short-dated, low-delta income trades whose premium buys back the tested call, plus a runway forecast. Builds on PIPE-001 — depends on it, queue after. (Approved from the 2026-05-31 `/whats-next` memo.)
 **Tasks:**
 1. Define "deep ITM" explicitly (e.g. delta ≥ 0.70, or intrinsic ≥ X% of original premium) and flag qualifying positions.
@@ -273,6 +274,7 @@ Pro sees all).
 5. Plain-English framing; respect Goal #5 (no jargon, show the "why").
 **Scope:** `backend/main.py` (new endpoint(s) for deep-ITM detection + income-trade scan + runway), `frontend/src/components/Portfolios.jsx` (defense panel on the card).
 **Rationale:** The net-new ~30% of Goal #6 and Harvest's clearest wedge — holder tools warn about assignment; none engineer the way out.
+**Implementation notes:** Added `GET /api/finance-buyback/{position_id}` endpoint with deep-ITM detection (delta ≥ 0.70 or intrinsic ≥ 50% of option price), cost-to-close with roll-credit offset and shortfall calculation, income-trade scanner across all user holdings (7–28 DTE, delta ≤ 0.20, ranked by premium-per-day), runway forecast (cycles/months to neutralize), and plain-English summary via `_buyback_summary()`. Frontend: new `FinanceBuybackPanel` component lazy-loads the endpoint when expanded from the action card on ITM positions — shows cost breakdown, runway forecast, and top 5 income candidates. Files changed: `backend/main.py`, `frontend/src/components/Portfolios.jsx`, `frontend/dist/`.
 
 ---
 
