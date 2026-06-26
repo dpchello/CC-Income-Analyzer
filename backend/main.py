@@ -3026,6 +3026,306 @@ def get_diagonal_restructure(
     }
 
 
+# ── Finance-the-Buyback + Runway Forecast (PIPE-036) ─────────────────────────
+#
+# When a covered call is deep in-the-money and a simple roll can't fully fund
+# the close, this endpoint generates a concrete financing plan:
+#   1. cost-to-close the tested call,
+#   2. income candidates — short-dated, low-delta calls the holder can sell on
+#      shares they already own to generate premium toward the buyback,
+#   3. a runway forecast: how many income cycles to neutralize the position.
+
+_DEEP_ITM_DELTA_THRESHOLD = 0.70
+_DEEP_ITM_INTRINSIC_PCT   = 0.50  # intrinsic >= 50% of option price
+_INCOME_MAX_DTE           = 28
+_INCOME_MIN_DTE           = 7
+_INCOME_MAX_DELTA         = 0.20
+
+
+@app.get("/api/finance-buyback/{position_id}")
+def get_finance_buyback(
+    position_id: str,
+    current_user: User = Depends(auth_module.get_current_user),
+):
+    """For a deep-ITM position, surface short-dated income trades on the user's
+    holdings that can finance buying back the tested call, plus a runway forecast.
+    """
+    pos = db.get_position(current_user.id, position_id)
+    if not pos:
+        raise HTTPException(status_code=404, detail="Position not found")
+    if pos.get("status") != "open":
+        raise HTTPException(status_code=400, detail="Position is not open")
+
+    ticker    = (pos.get("ticker") or "SPY").upper()
+    contracts = int(pos.get("contracts") or 1)
+    strike    = float(pos.get("strike") or 0)
+    sell_price = float(pos.get("sell_price") or 0)
+
+    # Fetch underlying spot price
+    try:
+        spot = fetcher.get_price_for(ticker)
+    except Exception:
+        spot = fetcher.get_spy_price().get("price", 0)
+    if not spot or spot <= 0:
+        raise HTTPException(status_code=502, detail="Could not fetch underlying price")
+
+    # Current option mark → cost to close
+    buyback_mid = fetcher.get_option_price(pos["expiry"], pos["strike"], "call") or 0.0
+    buyback_total = round(buyback_mid * contracts * 100, 2)
+    intrinsic_now = round(max(0.0, spot - strike), 2)
+
+    # Deep-ITM gate: must meet delta OR intrinsic-percentage threshold
+    # We use position-level delta if available from the enriched data; otherwise
+    # approximate from intrinsic proportion.
+    chain_row = None
+    try:
+        chain = fetcher.get_options_chain(pos["expiry"]) if ticker == "SPY" else fetcher.get_options_chain_for(ticker, pos["expiry"])
+        for row in chain:
+            if row.get("strike") is not None and abs(float(row["strike"]) - strike) < 0.01:
+                chain_row = row
+                break
+    except Exception:
+        pass
+    pos_delta = None
+    if chain_row and chain_row.get("delta") is not None:
+        pos_delta = float(chain_row["delta"])
+
+    intrinsic_pct = (intrinsic_now / buyback_mid) if buyback_mid > 0 else 0.0
+    is_deep_itm = (pos_delta is not None and pos_delta >= _DEEP_ITM_DELTA_THRESHOLD) or intrinsic_pct >= _DEEP_ITM_INTRINSIC_PCT
+
+    if not is_deep_itm:
+        return {
+            "position_id": position_id,
+            "deep_itm": False,
+            "reason": "Position is not deep enough in-the-money for a financing plan. "
+                       "Consider the standard roll targets instead.",
+            "buyback_total": buyback_total,
+            "delta": pos_delta,
+            "intrinsic_pct": round(intrinsic_pct * 100, 1),
+        }
+
+    # ── Gather the user's holdings across all portfolios ─────────────────────
+    all_holdings = db.get_holdings(current_user.id)
+    all_positions = db.get_positions(current_user.id)
+    open_shorts = [p for p in all_positions
+                   if p.get("status") == "open" and p.get("type") == "short_call"]
+
+    # Build per-ticker share counts and already-covered contracts
+    ticker_shares: dict = {}   # ticker → total shares held
+    ticker_covered: dict = {}  # ticker → contracts already sold
+    for h in all_holdings:
+        t = (h.get("ticker") or "").upper()
+        if t:
+            ticker_shares[t] = ticker_shares.get(t, 0) + int(h.get("shares") or 0)
+    for p in open_shorts:
+        t = (p.get("ticker") or "").upper()
+        if t:
+            ticker_covered[t] = ticker_covered.get(t, 0) + int(p.get("contracts") or 0)
+
+    # Coverable tickers: shares owned minus shares already covered, at least 100
+    coverable: dict = {}
+    for t, shares in ticker_shares.items():
+        covered_contracts = ticker_covered.get(t, 0)
+        free_shares = shares - (covered_contracts * 100)
+        free_contracts = free_shares // 100
+        if free_contracts >= 1:
+            coverable[t] = free_contracts
+
+    # ── Scan income candidates ───────────────────────────────────────────────
+    today = date.today()
+    income_candidates: list = []
+
+    for inc_ticker, available_contracts in coverable.items():
+        try:
+            spot_t = fetcher.get_price_for(inc_ticker)
+        except Exception:
+            continue
+        if not spot_t or spot_t <= 0:
+            continue
+
+        # Get short-dated expiries for this ticker
+        expiries = fetcher.get_screener_expiries_for(inc_ticker, max_dte=_INCOME_MAX_DTE) if inc_ticker != "SPY" else fetcher.get_screener_expiries(max_dte=_INCOME_MAX_DTE)
+        for exp in expiries:
+            try:
+                exp_date = datetime.strptime(exp, "%Y-%m-%d").date()
+            except Exception:
+                continue
+            dte = (exp_date - today).days
+            if dte < _INCOME_MIN_DTE:
+                continue
+
+            chain = fetcher.get_options_chain(exp) if inc_ticker == "SPY" else fetcher.get_options_chain_for(inc_ticker, exp)
+            for row in chain:
+                row_strike = row.get("strike")
+                if row_strike is None:
+                    continue
+                row_strike = float(row_strike)
+                if row_strike <= spot_t:            # only OTM calls
+                    continue
+                row_delta = row.get("delta")
+                if row_delta is not None and float(row_delta) > _INCOME_MAX_DELTA:
+                    continue
+                bid = row.get("bid") or 0
+                ask = row.get("ask") or 0
+                mid = round((bid + ask) / 2, 2) if (bid or ask) else 0
+                if mid <= 0.01:
+                    continue
+                premium_per_day = round(mid / max(dte, 1), 4)
+                premium_total_1c = round(mid * 100, 2)
+                max_contracts = min(available_contracts, contracts)  # cap at tested position size
+                income_candidates.append({
+                    "ticker": inc_ticker,
+                    "strike": row_strike,
+                    "expiry": exp,
+                    "dte": dte,
+                    "mid": mid,
+                    "delta": round(float(row_delta), 4) if row_delta is not None else None,
+                    "premium_per_day": premium_per_day,
+                    "premium_total_1c": premium_total_1c,
+                    "max_contracts": max_contracts,
+                    "max_premium": round(mid * max_contracts * 100, 2),
+                    "iv_pct": round((row.get("impliedVolatility") or 0) * 100, 1),
+                })
+
+    # Rank by premium-per-day (best income efficiency first), cap at top 12
+    income_candidates.sort(key=lambda c: -c["premium_per_day"])
+    income_candidates = income_candidates[:12]
+
+    # ── Runway forecast ──────────────────────────────────────────────────────
+    # "At the current premium pace, ~N cycles to neutralize this position."
+    # Pace estimate: use the top candidate's per-cycle premium × max_contracts,
+    # extrapolated to 30-day cycles.  If no candidates, use the original
+    # position's sell_price as the historical pace.
+    if income_candidates:
+        best = income_candidates[0]
+        cycle_dte = best["dte"]
+        per_cycle_income = best["max_premium"]
+        # Normalize to a 30-day "monthly" cadence
+        monthly_income = round(per_cycle_income * (30.0 / max(cycle_dte, 1)), 2)
+    else:
+        # Fall back to the original premium as the historical monthly pace
+        monthly_income = round(sell_price * contracts * 100 * (30.0 / max(_dte(pos["expiry"]), 30)), 2)
+        per_cycle_income = monthly_income
+        cycle_dte = 30
+
+    if monthly_income > 0:
+        cycles_to_neutralize = max(1, round(buyback_total / per_cycle_income + 0.49))
+        months_to_neutralize = round(buyback_total / monthly_income, 1)
+        days_to_neutralize = round(months_to_neutralize * 30)
+    else:
+        cycles_to_neutralize = None
+        months_to_neutralize = None
+        days_to_neutralize = None
+
+    # Net shortfall after the best available roll credit
+    # (check if the DEFENSIVE roll from roll-targets produces a credit)
+    best_roll_credit_total = 0.0
+    try:
+        # Re-use roll-targets logic inline: find highest OTM credit strike
+        all_expiries_rt = fetcher.get_screener_expiries(max_dte=60)
+        target_expiries_rt = [
+            e for e in all_expiries_rt
+            if 28 <= (datetime.strptime(e, "%Y-%m-%d").date() - today).days <= 50
+        ]
+        if not target_expiries_rt:
+            target_expiries_rt = [
+                e for e in all_expiries_rt
+                if 21 <= (datetime.strptime(e, "%Y-%m-%d").date() - today).days <= 60
+            ]
+        for exp in target_expiries_rt:
+            rt_chain = fetcher.get_options_chain(exp) if ticker == "SPY" else fetcher.get_options_chain_for(ticker, exp)
+            for row in rt_chain:
+                rs = row.get("strike")
+                if rs is None:
+                    continue
+                if float(rs) <= spot:
+                    continue
+                bid = row.get("bid") or 0
+                ask = row.get("ask") or 0
+                mid = round((bid + ask) / 2, 2) if (bid or ask) else 0
+                net_credit = mid - buyback_mid
+                if net_credit > 0:
+                    total = round(net_credit * contracts * 100, 2)
+                    if total > best_roll_credit_total:
+                        best_roll_credit_total = total
+    except Exception:
+        pass
+
+    shortfall = round(max(0.0, buyback_total - best_roll_credit_total), 2)
+
+    return {
+        "position_id": position_id,
+        "deep_itm": True,
+        "ticker": ticker,
+        "spot": round(spot, 2),
+        "position": {
+            "strike": strike, "expiry": pos["expiry"], "dte": _dte(pos["expiry"]),
+            "contracts": contracts, "sell_price": sell_price,
+            "delta": pos_delta,
+            "intrinsic": intrinsic_now,
+        },
+        "cost_to_close": {
+            "buyback_mid": round(buyback_mid, 2),
+            "buyback_total": buyback_total,
+            "best_roll_credit": best_roll_credit_total,
+            "shortfall": shortfall,
+        },
+        "income_candidates": income_candidates,
+        "runway": {
+            "cycle_dte": cycle_dte,
+            "per_cycle_income": per_cycle_income,
+            "monthly_income": monthly_income,
+            "cycles_to_neutralize": cycles_to_neutralize,
+            "months_to_neutralize": months_to_neutralize,
+            "days_to_neutralize": days_to_neutralize,
+        },
+        "plain_english": _buyback_summary(buyback_total, shortfall, monthly_income,
+                                          cycles_to_neutralize, months_to_neutralize,
+                                          income_candidates),
+    }
+
+
+def _buyback_summary(buyback_total: float, shortfall: float, monthly_income: float,
+                     cycles: Optional[int], months: Optional[float],
+                     candidates: list) -> dict:
+    """Plain-English framing for the finance-the-buyback plan."""
+    if shortfall <= 0:
+        headline = "A standard roll can cover the full buyback cost at a net credit."
+        detail = ("You don't need extra income trades — the best available roll "
+                  "already pays for closing this call. Check the roll scenarios above.")
+    elif not candidates:
+        headline = "No income candidates available right now."
+        detail = ("You don't have uncovered shares to sell short-dated calls against. "
+                  "Consider buying back the call outright or waiting for the position "
+                  "to approach expiry.")
+    else:
+        headline = "Sell short-dated calls on your other shares to finance the buyback."
+        if cycles is not None and months is not None:
+            detail = (
+                "It costs ${cost} to close this call. The best roll covers "
+                "${roll_credit}, leaving a ${shortfall} gap. "
+                "At the current premium pace (~${monthly}/mo from short-dated income "
+                "trades), that's roughly {cycles} cycle{s} ({months} months) to "
+                "neutralize the position."
+            ).format(
+                cost=f"{buyback_total:,.0f}",
+                roll_credit=f"{buyback_total - shortfall:,.0f}",
+                shortfall=f"{shortfall:,.0f}",
+                monthly=f"{monthly_income:,.0f}",
+                cycles=cycles,
+                s="s" if cycles != 1 else "",
+                months=months,
+            )
+        else:
+            detail = (
+                "It costs ${cost} to close this call, with a ${shortfall} gap "
+                "after the best roll credit. Sell short-dated, low-risk calls on "
+                "shares you own to chip away at the difference."
+            ).format(cost=f"{buyback_total:,.0f}", shortfall=f"{shortfall:,.0f}")
+
+    return {"headline": headline, "detail": detail}
+
+
 # ── SnapTrade endpoints ───────────────────────────────────────────────────────
 
 import snaptrade as st
