@@ -340,6 +340,139 @@ function DiagonalRestructurePanel({ pos, onRollTo }) {
   )
 }
 
+// ── Finance-the-Buyback panel (PIPE-036) ────────────────────────────────────
+// When a covered call is deep ITM and a roll alone can't fund the close, this
+// panel shows short-dated income trades on the user's other holdings plus a
+// runway forecast: how many cycles to neutralize the position.
+
+function FinanceBuybackPanel({ pos }) {
+  const { apiFetch } = useAuth()
+  const [open, setOpen] = useState(false)
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    if (!open) return
+    setLoading(true); setError(null)
+    apiFetch(`/api/finance-buyback/${pos.id}`)
+      .then(r => { if (!r.ok) throw new Error(); return r.json() })
+      .then(d => setData(d))
+      .catch(() => setError('Could not load financing plan.'))
+      .finally(() => setLoading(false))
+  }, [open]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Don't render the toggle if data loaded and position isn't deep ITM
+  if (data && !data.deep_itm) return null
+
+  const ctc = data?.cost_to_close
+  const runway = data?.runway
+  const candidates = data?.income_candidates || []
+  const summary = data?.plain_english
+
+  return (
+    <div className="mt-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="text-[11px] font-semibold"
+        style={{ color: 'var(--amber)' }}
+      >
+        {open ? '▾' : '▸'} Finance the buyback
+      </button>
+
+      {open && (
+        <div className="mt-2 space-y-3">
+          {loading && <div className="text-[11px]" style={{ color: 'var(--muted)' }}>Scanning income opportunities…</div>}
+          {error && <div className="text-[11px]" style={{ color: 'var(--muted)' }}>{error}</div>}
+
+          {data && data.deep_itm && (
+            <>
+              {/* Headline + detail */}
+              {summary && (
+                <div className="px-2.5 py-2 border text-[11px] leading-snug" style={{ borderColor: 'var(--amber)40', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(245,158,11,0.06)' }}>
+                  <div className="font-semibold mb-1" style={{ color: 'var(--amber)' }}>{summary.headline}</div>
+                  <div style={{ color: 'var(--muted)' }}>{summary.detail}</div>
+                </div>
+              )}
+
+              {/* Cost-to-close breakdown */}
+              {ctc && (
+                <div className="px-2.5 py-2 border text-[11px] font-mono" style={{ borderColor: 'var(--border)', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(128,128,128,0.04)' }}>
+                  <div className="flex justify-between"><span style={{ color: 'var(--muted)' }}>Cost to close:</span><span style={{ color: 'var(--red)' }}>${ctc.buyback_total.toLocaleString()}</span></div>
+                  {ctc.best_roll_credit > 0 && (
+                    <div className="flex justify-between"><span style={{ color: 'var(--muted)' }}>Best roll credit:</span><span style={{ color: 'var(--green)' }}>−${ctc.best_roll_credit.toLocaleString()}</span></div>
+                  )}
+                  <div className="flex justify-between mt-0.5 pt-0.5 border-t" style={{ borderColor: 'var(--border)' }}>
+                    <span style={{ color: 'var(--text)' }}>Gap to fund:</span>
+                    <span style={{ color: ctc.shortfall > 0 ? 'var(--amber)' : 'var(--green)' }}>${ctc.shortfall.toLocaleString()}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Runway forecast */}
+              {runway && runway.cycles_to_neutralize != null && (
+                <div className="px-2.5 py-2 border text-[11px]" style={{ borderColor: 'var(--border)', borderRadius: 'var(--radius-sm)', backgroundColor: 'rgba(128,128,128,0.04)' }}>
+                  <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--muted)' }}>Runway forecast</div>
+                  <div className="font-mono space-y-0.5">
+                    <div className="flex justify-between"><span style={{ color: 'var(--muted)' }}>Income per cycle (~{runway.cycle_dte}d):</span><span style={{ color: 'var(--green)' }}>${runway.per_cycle_income.toLocaleString()}</span></div>
+                    <div className="flex justify-between"><span style={{ color: 'var(--muted)' }}>Monthly pace:</span><span style={{ color: 'var(--green)' }}>~${runway.monthly_income.toLocaleString()}/mo</span></div>
+                    <div className="flex justify-between mt-1 pt-1 border-t" style={{ borderColor: 'var(--border)' }}>
+                      <span style={{ color: 'var(--text)' }}>Cycles to neutralize:</span>
+                      <span style={{ color: 'var(--text)' }}>~{runway.cycles_to_neutralize} ({runway.months_to_neutralize} mo)</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Income candidates */}
+              {candidates.length > 0 && (
+                <div>
+                  <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: 'var(--muted)' }}>
+                    Income trades (short-dated, low assignment risk)
+                  </div>
+                  <div className="space-y-1.5">
+                    {candidates.slice(0, 5).map((c, i) => (
+                      <div key={`${c.ticker}-${c.strike}-${c.expiry}`} className="px-3 py-2 border text-xs"
+                        style={{ borderColor: i === 0 ? 'var(--amber)' : 'var(--border)', borderRadius: 'var(--radius-sm)',
+                                 backgroundColor: i === 0 ? 'rgba(245,158,11,0.06)' : 'rgba(128,128,128,0.04)' }}>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="font-semibold font-mono" style={{ color: i === 0 ? 'var(--amber)' : 'var(--text)' }}>
+                            {c.ticker} ${c.strike} Call · {c.expiry}
+                          </span>
+                          <span className="text-[10px] font-mono px-1.5 py-0.5" style={{ color: 'var(--green)', backgroundColor: 'var(--green)20', border: '1px solid var(--green)40', borderRadius: 'var(--radius-sm)' }}>
+                            ${c.mid.toFixed(2)}/contract
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono text-[11px]">
+                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Days out:</span><span style={{ color: 'var(--text)' }}>{c.dte}d</span></div>
+                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Assign. risk:</span><span style={{ color: 'var(--text)' }}>{c.delta != null ? `Δ ${c.delta.toFixed(2)}` : '—'}</span></div>
+                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>$/day:</span><span style={{ color: 'var(--green)' }}>${c.premium_per_day.toFixed(3)}</span></div>
+                          <div className="flex justify-between gap-2"><span style={{ color: 'var(--muted)' }}>Up to:</span><span style={{ color: 'var(--text)' }}>{c.max_contracts}×  ${c.max_premium.toLocaleString()}</span></div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  {candidates.length > 5 && (
+                    <div className="text-[10px] mt-1" style={{ color: 'var(--muted)' }}>
+                      +{candidates.length - 5} more candidates available
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {candidates.length === 0 && !loading && (
+                <div className="text-[11px]" style={{ color: 'var(--muted)' }}>
+                  No income candidates found — you may not have uncovered shares to sell calls against right now.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TaxAwareActionCard({ pos, action, onRollTo }) {
   const { apiFetch } = useAuth()
   const [expanded] = useState(true)
@@ -472,6 +605,10 @@ function TaxAwareActionCard({ pos, action, onRollTo }) {
             {/* Deep-ITM defense: when a 30–45d roll can't lift the ceiling much, offer the LEAP restructure */}
             {shouldShowRolls && (pos.intrinsic_value ?? 0) > 0 && (
               <DiagonalRestructurePanel pos={pos} onRollTo={onRollTo} />
+            )}
+            {/* Finance-the-buyback: when deep ITM, offer income trades + runway forecast */}
+            {shouldShowRolls && (pos.intrinsic_value ?? 0) > 0 && (
+              <FinanceBuybackPanel pos={pos} />
             )}
             {!shouldShowRolls && (
               <div className="space-y-1 text-xs" style={{ color: 'var(--muted)' }}>
