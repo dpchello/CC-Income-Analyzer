@@ -1435,6 +1435,45 @@ but not peak. Consider waiting if IV rises before the next expiry cycle.
 
 ---
 
+### PIPE-042 · Hide placeholder nav items for launch
+**Status:** `pending`
+**Description:** Four sidebar entries — Watchlist, Trade Journal, Academy, and Alerts — render a generic "Coming soon" placeholder screen (`PlaceholderScreen` in `App.jsx`). A first user clicking any of these sees an unfinished app, which undermines the polished, trustworthy first impression required for the one-shot r/dividends + Seeking Alpha launch channel. Hide these four items from the sidebar until they have real backends. Leave the components in the tree (dormant) so they can be re-enabled later.
+**Tasks:**
+1. Remove the four placeholder entries (Watchlist, Journal, Academy, Alerts) from the sidebar navigation component.
+2. Remove or guard any deep links or cross-references that point to these screens.
+3. Verify no other nav items route to `PlaceholderScreen`.
+4. Rebuild frontend and confirm the sidebar renders cleanly with the remaining items.
+**Scope:** `frontend/src/App.jsx`, sidebar/navigation component only. No backend changes.
+**Rationale:** Trust is the product (Strategy goal #5). Every "Coming soon" screen signals "not ready" to a first user evaluating whether to trust their portfolio data to this tool. Hiding is a 15-minute fix with outsized polish impact on first impressions.
+
+---
+
+### PIPE-043 · Guard Recommendations against mock-data exposure
+**Status:** `pending`
+**Description:** `frontend/src/components/Recommendations.jsx` contains hardcoded mock data (`MOCK_META`, `MOCK_DOTS`, `MOCK_RECS`) that renders fabricated trade recommendations (NVDA, META, AAPL, AMD) when the backend endpoint fails or returns unexpected data. A holder who catches the tool showing invented numbers will never trust it again — and on a one-shot acquisition channel, that's fatal. This was the #2 scored item in the 2026-06-09 `/whats-next` memo. Two options: **(A)** hide Recommendations from nav until fully backed (fastest, recommended for launch), or **(B)** remove mock fallbacks and wire exclusively to the live backend endpoint (if `GET /api/recommendations` is confirmed working). If (A), the component stays in the tree, dormant.
+**Tasks:**
+1. Decision gate: confirm whether `GET /api/recommendations` returns real data. If yes → option B; if no → option A.
+2. If (A): remove Recommendations from sidebar nav; leave component dormant.
+3. If (B): delete all `MOCK_*` constants and the fallback path in `fetchRecs`; show a clean empty state if the endpoint errors.
+4. Grep the frontend for any other `mock`/`placeholder`/`fabricated` data fallbacks that render financial numbers; list findings in implementation notes.
+**Scope:** `frontend/src/components/Recommendations.jsx`, sidebar/nav component. Optionally `backend/main.py` if wiring.
+**Rationale:** Trust is the product. No user-facing surface may render invented numbers. Cheapest insurance on the first-impression channel. (Aligns with WHATS_NEXT.md item #2, score 24.)
+
+---
+
+### PIPE-044 · Backend enforcement of 3-position hard cap
+**Status:** `pending`
+**Description:** The 3-position free-tier hard cap is currently enforced only in the frontend UI (`PositionLimitBanner`). A user who calls the API directly (e.g. `POST /api/positions`) can bypass the limit. STRATEGY.md locks the cap at 3 positions, and PIPE-029's notes explicitly flag "backend enforcement queued." Add server-side enforcement: before creating a new position, count the user's active (non-closed) positions; if ≥ 3 and the user is not Pro, return 403 with a clear message. This closes a freemium bypass that could surface on day one if a technically savvy user inspects network requests.
+**Tasks:**
+1. In the `POST /api/positions` endpoint, count the user's active positions (where `closed_at IS NULL`).
+2. If count ≥ 3 and `user.subscription_tier != 'pro'`, return 403 with `{"detail": "Free tier limited to 3 positions. Upgrade to Pro for unlimited."}`.
+3. Add a test (or inline verification) confirming the gate blocks position #4 for a free user and allows it for a Pro user.
+4. Confirm the existing `$1,000 profit gate` (`check_write_access`) still runs independently — both gates must pass.
+**Scope:** `backend/main.py` (position creation endpoint only). No frontend changes.
+**Rationale:** Freemium enforcement must be server-side to be real. A frontend-only gate is a suggestion, not a limit. Pre-launch hardening aligned with Strategy's locked "3 positions" decision and the existing PIPE-029 TODO.
+
+---
+
 ## Completed
 
 *(Items move here when status = done)*
