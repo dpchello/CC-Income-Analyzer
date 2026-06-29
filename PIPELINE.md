@@ -1474,6 +1474,45 @@ but not peak. Consider waiting if IV rises before the next expiry cycle.
 
 ---
 
+### PIPE-045 · Fix broken backtest tests (dev health)
+**Status:** `pending`
+**Description:** Two tests in `backend/tests/test_backtest.py` — `test_dual_track_invariant` (line 290) and `test_cache_roundtrip` (line 307) — call `data_store.get_macro_coverage()`, which was removed from the `data_store` module. The test suite runs 55/57 green; these 2 fail with `AttributeError: module 'data_store' has no attribute 'get_macro_coverage'`. Because the nightly upgrade agent pushes directly to `main` with no PR gate, a red test suite means regressions can ship unnoticed. Also affects `backend/scripts/backfill_macro.py` (line 67) which calls the same function.
+**Tasks:**
+1. Determine what replaced `get_macro_coverage()` in `data_store.py` (likely removed during the Supabase migration).
+2. Rewrite the 2 tests to use the current API — or delete them if the feature they tested no longer exists.
+3. Update `backfill_macro.py` to remove or fix the stale call.
+4. Run the full test suite and confirm 57/57 green.
+**Scope:** `backend/tests/test_backtest.py`, `backend/scripts/backfill_macro.py`. No production code changes.
+**Rationale:** A green test suite is the nightly agent's only safety net. Two red tests desensitize to failures and mask real regressions. XS effort (~30 min), high dev-health impact. Flagged in the 2026-06-09 `/whats-next` memo as a shipping risk.
+
+---
+
+### PIPE-046 · Per-ticker dividend data for multi-stock portfolios
+**Status:** `pending`
+**Description:** `data_fetcher.get_spy_dividends()` is hardcoded to `yf.Ticker("SPY")`. When a user holds AAPL, MSFT, or any non-SPY stock, every position's ex-dividend date, dividend amount, and early-assignment risk warning reflects SPY's dividend schedule — not the actual stock's. For the r/dividends target audience, who track dividends obsessively, showing the wrong ex-div date on their AAPL position is a trust-breaker on first use. Generalize to `get_dividends(ticker: str)` with per-ticker caching (24h TTL, same pattern as existing cache). Update `GET /api/positions` to enrich each position with its own ticker's dividend data instead of broadcasting SPY's data to all positions.
+**Tasks:**
+1. Refactor `get_spy_dividends()` → `get_dividends(ticker: str)` with per-ticker cache dict (key = ticker, value = `{data, ts}`). Keep `get_spy_dividends()` as a thin wrapper calling `get_dividends("SPY")` for backward compat.
+2. In `GET /api/positions` enrichment loop, call `fetcher.get_dividends(pos["ticker"])` per position instead of using the global `div_data` for all.
+3. Update the screener enrichment (`_screener_candidates`) if it also hardcodes SPY dividend data for non-SPY tickers.
+4. Frontend: no changes needed — it already reads `pos.next_ex_div_date` / `pos.days_until_ex_div` generically.
+**Scope:** `backend/data_fetcher.py` (refactor + new cache), `backend/main.py` (per-ticker enrichment in positions and screener endpoints).
+**Rationale:** Target audience #1 is r/dividends investors. Showing SPY's ex-div date on their AAPL position breaks trust at the exact moment the product is supposed to prove it understands their portfolio. The fix is a mechanical refactor of existing, working code — no new data source, no new dependency.
+
+---
+
+### PIPE-047 · "Uncovered Income" opportunity banner on Overview
+**Status:** `pending`
+**Description:** For holdings that don't have an active covered call, estimate the monthly premium they could generate and surface it as a banner on the Overview page and All Portfolios view. The r/dividends first-acquisition message is "Here's what you're leaving on the table on the same stocks" — this banner makes it a literal, personalized number: "3 of your holdings have no active covered call. Estimated missed income: ~$420/month." Tapping it links to the screener filtered to uncovered tickers. Uses the existing screener scoring engine and options chain data — no new data source.
+**Tasks:**
+1. Backend: `GET /api/uncovered-income` — for each holding without a matching open covered-call position, fetch the nearest ATM call (~0.30 delta, 30-45 DTE), compute estimated monthly premium (mid price × 100 × contracts possible from shares held ÷ DTE × 30). Return: `{uncovered_count, estimated_monthly, tickers: [{sym, shares, est_premium}]}`.
+2. Frontend (Overview/Dashboard): render a banner card when `uncovered_count > 0` — icon + "N holdings have no active covered call — est. ~$X/month in uncollected premium" + "Find opportunities →" link to screener.
+3. Frontend (All Portfolios): show the same stat in the summary stats row alongside "Income Earned" and "Total Positions".
+4. Respect freemium: free users see the banner (the dollar amount is the upgrade hook) but only the top ticker's detail; Pro sees all.
+**Scope:** `backend/main.py` (new endpoint), `frontend/src/components/Dashboard.jsx` (banner), `frontend/src/components/Portfolios.jsx` (All Portfolios stat).
+**Rationale:** The conversion message that resonates with r/dividends is "you track your dividends; here's what you're leaving on the table." Making that number visible and personal — computed from their actual holdings — converts the tagline into a product feature. It's also a natural freemium hook: show the dollar amount to everyone, gate the details behind Pro.
+
+---
+
 ## Completed
 
 *(Items move here when status = done)*
