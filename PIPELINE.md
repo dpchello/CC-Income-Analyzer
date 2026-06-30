@@ -1513,6 +1513,45 @@ but not peak. Consider waiting if IV rises before the next expiry cycle.
 
 ---
 
+### PIPE-048 · Startup health gate + offline banner (self-hosted UX)
+**Status:** `pending`
+**Description:** Harvest is a self-hosted local Mac app — the backend (`uvicorn` on `127.0.0.1:8000`) may not be running when the user opens the frontend. Today, if the backend is down, every `apiFetch` call fails silently: auth clears, data never loads, and the user sees an empty app with no explanation. A first user who just installed Harvest.app and opens the dashboard before `harvestctl.sh start` runs sees... nothing. Add a startup health probe and an offline banner so the app explains itself when the backend is unreachable.
+**Tasks:**
+1. Frontend: on app mount (before auth check), `fetch('/api/version')` — if it fails or times out (2s), render a full-screen "Backend not running" gate with instructions ("Run `harvestctl start` or open Harvest.app") instead of the auth/dashboard flow.
+2. Frontend: add a periodic heartbeat (every 30s) that pings `/api/version`. If it fails after previously succeeding, show a non-blocking banner: "Backend connection lost — reconnecting..." with auto-dismiss on recovery.
+3. Frontend: when `apiFetch` gets a network error (not a 401/403, but a `TypeError: Failed to fetch`), surface a toast "Cannot reach backend" instead of silently failing.
+4. No backend changes — `/api/version` already exists and is unauthenticated.
+**Scope:** `frontend/src/auth.jsx` (health gate + heartbeat), `frontend/src/App.jsx` (offline banner). No backend changes.
+**Rationale:** Every other web app has a server that's always running. This one doesn't — and the self-hosted model is a locked decision. The first-run experience must handle the "backend not started" case explicitly, or the first impression is a blank screen. This is cheap insurance (S effort) against the most likely first-user confusion scenario for a local app.
+
+---
+
+### PIPE-049 · Session expiration toast + auto-redirect
+**Status:** `pending`
+**Description:** When a JWT expires mid-session, `apiFetch` in `auth.jsx` receives a 401, silently calls `clearAuth()`, and returns the failed response. The calling component must check `r.ok` to handle it — most don't, so the user sees stale or empty data with no explanation. For a self-hosted app that stays open in a browser tab for hours/days, token expiry is the normal case, not an edge case. Add a user-visible "Session expired — please log in again" toast when `apiFetch` detects a 401, and redirect to the login screen automatically.
+**Tasks:**
+1. In `apiFetch` (auth.jsx), when a 401 is received: show a toast notification "Session expired — please log in again" before calling `clearAuth()`.
+2. After `clearAuth()`, trigger a state change that causes `AuthGate` to re-render the login screen (this may already happen — verify).
+3. Ensure the toast doesn't fire repeatedly if multiple parallel requests all get 401 (debounce: only show once per expiration event, e.g. a flag that resets on next successful login).
+4. Optional: show the remaining session time in Settings or a subtle indicator, so power users know when to expect re-auth.
+**Scope:** `frontend/src/auth.jsx` (apiFetch 401 handler), toast component (new or existing).
+**Rationale:** A self-hosted app lives in a persistent browser tab. JWT expiry is inevitable and frequent. Silent auth clearing with no feedback is the most confusing UX failure for a non-technical user — they don't know why things stopped working. A clear toast + redirect turns a confusing break into a normal flow. XS effort, high polish impact.
+
+---
+
+### PIPE-050 · Graceful market-data degradation banner
+**Status:** `pending`
+**Description:** Harvest depends on `yfinance` (options chains, prices) and `AlphaVantage` (25 calls/day free tier). When either source is down, rate-limited, or returns stale data, the frontend receives either empty results or cached data with no staleness indicator. A dividend investor who checks their positions and sees yesterday's prices with no "as of" timestamp may act on stale data — or worse, assume the app is broken. Add staleness indicators and a degradation banner so the user always knows when data is fresh vs. cached.
+**Tasks:**
+1. Backend: on each data-fetching endpoint (`GET /api/positions`, `GET /api/screener`, `GET /api/signal`), include a `data_as_of` ISO timestamp (the cache timestamp or live fetch time) and a `data_source_status` field (`live` | `cached` | `unavailable`) in the response envelope.
+2. Frontend (Dashboard / Positions / Screener): if `data_source_status` is `cached`, show a subtle banner: "Market data as of [time] — live data temporarily unavailable." If `unavailable`, show: "Market data source is down — showing last known data."
+3. Backend: when `yfinance` raises an exception or returns empty, catch gracefully and return the last cached result with `status: cached` instead of a 500.
+4. Frontend: show the `data_as_of` timestamp in a small footer on any card displaying market prices (positions, screener results).
+**Scope:** `backend/main.py` (response envelope), `backend/data_fetcher.py` (error handling + cache status), `frontend/src/components/Dashboard.jsx`, `Portfolios.jsx`, `SignalTracker.jsx` (staleness banners).
+**Rationale:** Target audience #1 (r/dividends) makes decisions based on data accuracy. A tool that silently shows stale prices without disclosure loses trust the moment the user cross-checks with their broker. This is table-stakes data hygiene for any financial tool — especially one asking for $29/month. Moderate effort (M), high trust impact.
+
+---
+
 ## Completed
 
 *(Items move here when status = done)*
